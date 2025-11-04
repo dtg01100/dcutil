@@ -20,6 +20,7 @@ A general purpose devcontainer utility script that provides convenient commands 
 - `status` - Show container status
 - `logs` - Show container logs
 - `run <cmd>` - Run a command in the container
+- `init` - Initialize a devcontainer (fast or wizard mode)
 - `install-opencode` - Install opencode inside the devcontainer
 - `help` - Show help message
 
@@ -33,6 +34,25 @@ The script automatically detects the project directory:
 1. Uses the provided path if specified
 2. Uses current directory if it contains `.devcontainer/`
 3. Falls back to the script's directory
+
+### Initialization
+
+Use the `init` command to create a devcontainer configuration:
+
+```bash
+# Interactive wizard with multiple project types
+./dcutil init
+
+# Quick basic Ubuntu setup
+./dcutil init fast
+```
+
+The wizard supports:
+- Basic Ubuntu container with common tools
+- Node.js development environment
+- Python development environment  
+- Go development environment
+- Custom Docker images
 
 ## Requirements
 

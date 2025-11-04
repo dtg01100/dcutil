@@ -32,12 +32,13 @@ print_usage() {
     echo "Commands:"
     echo "  up          Start the devcontainer"
     echo "  down        Stop the devcontainer"
-    echo "  enter        Enter the container shell"
+    echo "  enter       Enter the container shell"
     echo "  build       Build the devcontainer image"
     echo "  clean       Remove the devcontainer and clean up"
     echo "  status      Show container status"
     echo "  logs        Show container logs"
     echo "  run <cmd>   Run a command in the container"
+    echo "  init        Initialize a devcontainer (fast or wizard)"
     echo "  install-opencode Install opencode inside the devcontainer"
     echo "  help        Show this help message"
     echo ""
@@ -117,7 +118,7 @@ case "$COMMAND" in
     "run")
         # Handle project path argument
         if [ -n "$2" ] && [ -d "$2" ]; then
-            PROJECT_PATH="$2"
+            PROJECT_DIR="$2"
             shift 2
         else
             shift 1
@@ -128,7 +129,7 @@ case "$COMMAND" in
             echo "Usage: dcutil run [project_path] <command>"
             exit 1
         fi
-        echo -e "${BLUE}🚀 Running command in container: $@${NC}"
+        echo -e "${BLUE}🚀 Running command in container: $*${NC}"
         check_devcontainer_cli
         devcontainer exec --workspace-folder "$PROJECT_DIR" "$@"
         ;;
@@ -144,16 +145,182 @@ case "$COMMAND" in
         fi
         
         echo -e "${BLUE}🔧 Installing opencode...${NC}"
-        devcontainer exec --workspace-folder . /bin/bash -c "
+        if devcontainer exec --workspace-folder . /bin/bash -c "
             curl -fsSL https://opencode.ai/install | bash
-        "
-        
-        if [ $? -eq 0 ]; then
+        "; then
             echo -e "${GREEN}✅ Opencode installed successfully in devcontainer${NC}"
         else
             echo -e "${RED}❌ Failed to install opencode${NC}"
             exit 1
         fi
+        ;;
+    
+    "init")
+        check_devcontainer_cli
+        
+        # Check if devcontainer already exists
+        if [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
+            echo -e "${YELLOW}⚠️  Devcontainer configuration already exists${NC}"
+            echo -e "${YELLOW}   Use 'dcutil clean' first to remove existing configuration${NC}"
+            exit 1
+        fi
+        
+        # Parse init options
+        INIT_MODE=${2:-"wizard"}
+        
+        case "$INIT_MODE" in
+            "--fast"|"fast")
+                echo -e "${BLUE}🚀 Creating fast devcontainer configuration...${NC}"
+                
+                # Create .devcontainer directory
+                mkdir -p .devcontainer
+                
+                # Create basic devcontainer.json
+                cat > .devcontainer/devcontainer.json << 'EOF'
+{
+    "name": "Basic Dev Container",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.vscode-json"
+            ]
+        }
+    },
+    "postCreateCommand": "apt-get update && apt-get install -y curl git"
+}
+EOF
+                
+                echo -e "${GREEN}✅ Fast devcontainer configuration created${NC}"
+                echo -e "${BLUE}💡 Run 'dcutil up' to start the container${NC}"
+                ;;
+                
+            "--wizard"|"wizard"|"")
+                echo -e "${BLUE}🧙 Devcontainer Initialization Wizard${NC}"
+                echo ""
+                
+                # Get project type
+                echo -e "${YELLOW}📋 Choose project type:${NC}"
+                echo "1) Basic (Ubuntu + common tools)"
+                echo "2) Node.js"
+                echo "3) Python"
+                echo "4) Go"
+                echo "5) Custom image"
+                echo ""
+                read -r -p "Enter choice [1-5]: " project_choice
+                
+                # Get container name
+                read -r -p "Container name [My Project]: " container_name
+                container_name=${container_name:-"My Project"}
+                
+                mkdir -p .devcontainer
+                
+                case "$project_choice" in
+                    "1")
+                        cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.vscode-json",
+                "ms-vscode.vscode-git"
+            ]
+        }
+    },
+    "postCreateCommand": "apt-get update && apt-get install -y curl git vim nano"
+}
+EOF
+                        ;;
+                    "2")
+                        cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.vscode-json",
+                "esbenp.prettier-vscode"
+            ]
+        }
+    },
+    "postCreateCommand": "npm install"
+}
+EOF
+                        ;;
+                    "3")
+                        cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance"
+            ]
+        }
+    },
+    "postCreateCommand": "pip install -r requirements.txt"
+}
+EOF
+                        ;;
+                    "4")
+                        cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "golang:1.21",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "golang.go"
+            ]
+        }
+    },
+    "postCreateCommand": "go mod download"
+}
+EOF
+                        ;;
+                    "5")
+                        read -r -p "Enter Docker image name: " custom_image
+                        cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "$custom_image"
+}
+EOF
+                        ;;
+                    *)
+                        echo -e "${RED}❌ Invalid choice${NC}"
+                        exit 1
+                        ;;
+                esac
+                
+                echo -e "${GREEN}✅ Devcontainer configuration created${NC}"
+                echo -e "${BLUE}💡 Run 'dcutil up' to start the container${NC}"
+                ;;
+                
+            "--help"|"-h")
+                echo "Usage: dcutil init [mode]"
+                echo ""
+                echo "Modes:"
+                echo "  fast     Create basic Ubuntu container automatically"
+                echo "  wizard   Interactive setup (default)"
+                echo ""
+                echo "Examples:"
+                echo "  dcutil init          # Start wizard"
+                echo "  dcutil init fast     # Quick basic setup"
+                echo "  dcutil init --fast   # Quick basic setup"
+                ;;
+                
+            *)
+                echo -e "${RED}❌ Unknown init mode: $INIT_MODE${NC}"
+                echo "Use 'dcutil init --help' for usage information"
+                exit 1
+                ;;
+        esac
         ;;
     
     "help"|"-h"|"--help")
