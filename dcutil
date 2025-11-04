@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# General purpose devcontainer utility script
+# Provides various operations for managing development containers
+
+set -e
+
+# Determine project directory:
+# 1. Use first argument if provided and is a directory
+# 2. Use current working directory if it contains .devcontainer
+# 3. Use script's directory as fallback
+if [ -n "$2" ] && [ -d "$2" ]; then
+    PROJECT_DIR="$(cd "$2" && pwd)"
+elif [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
+    PROJECT_DIR="$(pwd)"
+else
+    PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+COMMAND=${1:-"help"}
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Helper functions
+print_usage() {
+    echo "Usage: dcutil <command> [project_path] [options]"
+    echo ""
+    echo "Commands:"
+    echo "  up          Start the devcontainer"
+    echo "  down        Stop the devcontainer"
+    echo "  enter        Enter the container shell"
+    echo "  build       Build the devcontainer image"
+    echo "  clean       Remove the devcontainer and clean up"
+    echo "  status      Show container status"
+    echo "  logs        Show container logs"
+    echo "  run <cmd>   Run a command in the container"
+    echo "  install-opencode Install opencode inside the devcontainer"
+    echo "  help        Show this help message"
+    echo ""
+    echo "Project path detection:"
+    echo "  - If provided as second argument, uses that directory"
+    echo "  - If current directory has .devcontainer/, uses current directory"
+    echo "  - Otherwise uses script's directory"
+}
+
+check_devcontainer_cli() {
+    if ! command -v devcontainer &> /dev/null; then
+        echo -e "${RED}❌ devcontainer CLI not found. Please install it first:${NC}"
+        echo "   npm install -g @devcontainers/cli"
+        exit 1
+    fi
+}
+
+# Change to project directory
+echo -e "${BLUE}📁 Using project directory: $PROJECT_DIR${NC}"
+cd "$PROJECT_DIR"
+
+case "$COMMAND" in
+    "up")
+        echo -e "${BLUE}🐳 Starting devcontainer setup...${NC}"
+        check_devcontainer_cli
+        devcontainer up --workspace-folder .
+        echo -e "${GREEN}✅ Devcontainer started successfully${NC}"
+        ;;
+    
+    "down")
+        echo -e "${YELLOW}🛑 Stopping devcontainer...${NC}"
+        check_devcontainer_cli
+        devcontainer down --workspace-folder .
+        echo -e "${GREEN}✅ Devcontainer stopped${NC}"
+        ;;
+    
+    "enter")
+        echo -e "${BLUE}🔗 Entering container...${NC}"
+        check_devcontainer_cli
+        
+        # Check if container is running, start it if needed
+        if ! devcontainer ps --workspace-folder . | grep -q "Running"; then
+            echo -e "${YELLOW}⚠️  Container is not running. Starting it...${NC}"
+            devcontainer up --workspace-folder .
+        fi
+        
+        devcontainer exec --workspace-folder . /bin/bash
+        ;;
+    
+    "build")
+        echo -e "${BLUE}🔨 Building devcontainer image...${NC}"
+        check_devcontainer_cli
+        devcontainer build --workspace-folder .
+        echo -e "${GREEN}✅ Build completed${NC}"
+        ;;
+    
+    "clean")
+        echo -e "${YELLOW}🧹 Cleaning up devcontainer...${NC}"
+        check_devcontainer_cli
+        devcontainer down --workspace-folder .
+        devcontainer delete --workspace-folder . --force
+        echo -e "${GREEN}✅ Cleanup completed${NC}"
+        ;;
+    
+    "status")
+        echo -e "${BLUE}📊 Checking container status...${NC}"
+        check_devcontainer_cli
+        devcontainer ps --workspace-folder .
+        ;;
+    
+    "logs")
+        echo -e "${BLUE}📋 Showing container logs...${NC}"
+        check_devcontainer_cli
+        devcontainer logs --workspace-folder .
+        ;;
+    
+    "run")
+        # Handle project path argument
+        if [ -n "$2" ] && [ -d "$2" ]; then
+            PROJECT_PATH="$2"
+            shift 2
+        else
+            shift 1
+        fi
+        
+        if [ $# -eq 0 ]; then
+            echo -e "${RED}❌ Error: run command requires a command to execute${NC}"
+            echo "Usage: dcutil run [project_path] <command>"
+            exit 1
+        fi
+        echo -e "${BLUE}🚀 Running command in container: $@${NC}"
+        check_devcontainer_cli
+        devcontainer exec --workspace-folder "$PROJECT_DIR" "$@"
+        ;;
+    
+    "install-opencode")
+        echo -e "${BLUE}📦 Installing opencode inside devcontainer...${NC}"
+        check_devcontainer_cli
+        
+        # Check if container is running
+        if ! devcontainer ps --workspace-folder . | grep -q "Running"; then
+            echo -e "${YELLOW}⚠️  Container is not running. Starting it first...${NC}"
+            devcontainer up --workspace-folder .
+        fi
+        
+        echo -e "${BLUE}🔧 Installing opencode...${NC}"
+        devcontainer exec --workspace-folder . /bin/bash -c "
+            curl -fsSL https://opencode.ai/install | bash
+        "
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}✅ Opencode installed successfully in devcontainer${NC}"
+        else
+            echo -e "${RED}❌ Failed to install opencode${NC}"
+            exit 1
+        fi
+        ;;
+    
+    "help"|"-h"|"--help")
+        print_usage
+        ;;
+    
+    *)
+        echo -e "${RED}❌ Unknown command: $COMMAND${NC}"
+        echo ""
+        print_usage
+        exit 1
+        ;;
+esac
