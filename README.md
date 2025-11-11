@@ -1,14 +1,18 @@
 # dcutil
 
-A general purpose devcontainer utility script that provides convenient commands for managing development containers.
+A general purpose devcontainer utility script that provides convenient commands for managing development containers with robust error handling and intelligent auto-completion.
 
 ## Features
 
 - Start, stop, and manage devcontainers with simple commands
-- Automatic project directory detection
+- Automatic project directory detection with validation
 - Colored output for better visibility
 - Support for running commands inside containers
 - Built-in opencode installation support
+- **Robust error handling** with proper exit codes
+- **Self-contained auto-completion** for bash and zsh
+- **Input validation** for all commands and arguments
+- **Docker daemon connectivity** checking
 
 ## Commands
 
@@ -54,7 +58,66 @@ The wizard supports:
 - Go development environment
 - Custom Docker images
 
+## Auto-completion
+
+dcutil has built-in completion that works without any installation or external files.
+
+### Quick Setup (Recommended)
+
+```bash
+# Auto-detect shell and setup completion
+./setup-completion.sh
+
+# Or specify dcutil path explicitly
+./setup-completion.sh /path/to/dcutil
+```
+
+### Manual Setup
+
+**Bash:**
+```bash
+# Add to ~/.bashrc
+eval "$(dcutil completion bash)"
+```
+
+**Zsh:**
+```bash
+# Add to ~/.zshrc  
+eval "$(dcutil completion zsh)"
+```
+
+### One-time Use
+
+```bash
+# Temporary completion for current session
+eval "$(dcutil completion bash)"  # or zsh
+```
+
+### Completion Features
+
+- **Command completion**: Tab-complete all dcutil commands
+- **Project path completion**: Automatically detects directories with `.devcontainer/`
+- **Init mode completion**: Complete init options (fast, wizard, etc.)
+- **Run command completion**: Suggest common container commands (bash, npm, python, etc.)
+- **Smart context**: Different completions based on command context
+- **No installation required**: Works immediately without external files
+
+## Error Handling
+
+dcutil includes comprehensive error handling with specific exit codes:
+
+- `0` - Success
+- `1` - Invalid arguments or user input
+- `2` - Dependencies not found (devcontainer CLI)
+- `3` - Docker daemon errors
+- `4` - Devcontainer operation failures
+- `5` - Permission errors
+- `6` - Configuration errors
+
+All errors provide clear, actionable messages to help resolve issues quickly.
+
 ## Requirements
 
 - Devcontainer CLI (`npm install -g @devcontainers/cli`)
 - Docker
+- Bash or Zsh shell (for auto-completion)

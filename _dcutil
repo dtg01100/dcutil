@@ -1,0 +1,106 @@
+#compdef dcutil
+
+# Zsh completion for dcutil
+# Install by placing this file in /usr/share/zsh/site-functions/ or ~/.zsh/completions/
+
+_dcutil() {
+    local -a commands
+    commands=(
+        'up:Start the devcontainer'
+        'down:Stop the devcontainer'
+        'enter:Enter the container shell'
+        'build:Build the devcontainer image'
+        'clean:Remove the devcontainer and clean up'
+        'status:Show container status'
+        'logs:Show container logs'
+        'run:Run a command in the container'
+        'init:Initialize a devcontainer'
+        'install-opencode:Install opencode inside the devcontainer'
+        'help:Show help message'
+    )
+
+    local -a init_commands
+    init_commands=(
+        'fast:Create basic Ubuntu container automatically'
+        'wizard:Interactive setup'
+        '--fast:Create basic Ubuntu container automatically'
+        '--wizard:Interactive setup'
+        '--help:Show init help'
+        '-h:Show init help'
+    )
+
+    local -a common_container_commands
+    common_container_commands=(
+        'bash:Bash shell'
+        'sh:POSIX shell'
+        'npm:Node Package Manager'
+        'node:Node.js runtime'
+        'python:Python interpreter'
+        'pip:Python package installer'
+        'go:Go compiler'
+        'make:Make build tool'
+        'cmake:CMake build system'
+        'cargo:Rust package manager'
+        'rustc:Rust compiler'
+    )
+
+    local context state state_descr line
+    typeset -A opt_args
+
+    _arguments -C \
+        '1: :->command' \
+        '*: :->args' \
+        && return 0
+
+    case $state in
+        command)
+            _describe 'command' commands
+            ;;
+        args)
+            case $line[1] in
+                init)
+                    if [[ $line[2] == --* || $line[2] == -h ]]; then
+                        _describe 'init option' init_commands
+                    else
+                        _describe 'init mode' init_commands
+                    fi
+                    ;;
+                run)
+                    # Complete project paths first, then commands
+                    if [[ ${#line} -eq 2 ]]; then
+                        _alternative \
+                            'paths:project path:_directories -S /' \
+                            'devcontainer-projects:devcontainer projects:_dcutil_devcontainer_projects'
+                    else
+                        _describe 'container command' common_container_commands
+                    fi
+                    ;;
+                help|--help|-h)
+                    # No further completion for help
+                    ;;
+                *)
+                    # For other commands, complete project paths
+                    _alternative \
+                        'paths:project path:_directories -S /' \
+                        'devcontainer-projects:devcontainer projects:_dcutil_devcontainer_projects'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_dcutil_devcontainer_projects() {
+    local -a projects
+    for dir in */; do
+        if [[ -d "$dir" && ( -f "$dir.devcontainer/devcontainer.json" || -f "$dir.devcontainer.json" ) ]]; then
+            projects+=("${dir%/}")
+        fi
+    done
+    # Add current directory if it has .devcontainer
+    if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]]; then
+        projects+=(".")
+    fi
+    _describe 'devcontainer projects' projects
+}
+
+_dcutil "$@"
