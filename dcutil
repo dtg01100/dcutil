@@ -42,7 +42,7 @@ info() {
 # Input validation functions
 validate_command() {
     local cmd="$1"
-    local valid_commands="up down enter build clean status logs run init install-opencode help completion"
+    local valid_commands="up down restart enter build clean status logs list run init install-agent help completion"
     
     if [[ ! " $valid_commands " =~ " $cmd " ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." $EXIT_INVALID_ARGS
@@ -79,10 +79,47 @@ validate_run_command() {
 validate_init_mode() {
     local mode="$1"
     local valid_modes="fast wizard --fast --wizard --help -h"
-    
+
     if [ -n "$mode" ] && [[ ! " $valid_modes " =~ " $mode " ]]; then
         error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." $EXIT_INVALID_ARGS
     fi
+}
+
+get_agent_install_command() {
+    local agent="$1"
+
+    case "$agent" in
+        "opencode")
+            echo "curl -fsSL https://opencode.ai/install | bash"
+            ;;
+        "aider")
+            echo "pip install aider-chat"
+            ;;
+        "copilot-cli")
+            echo "npm install -g @github/copilot"
+            ;;
+        "cody")
+            echo "npm install -g @sourcegraph/cody"
+            ;;
+        "tabnine")
+            echo "npm install -g tabnine"
+            ;;
+        "qwen-cli")
+            echo "pip install qwen-cli"
+            ;;
+        "gemini")
+            echo "pip install gemini-cli"
+            ;;
+        "claude-cli")
+            echo "pip install claude-cli"
+            ;;
+        "openai-cli")
+            echo "pip install openai-cli"
+            ;;
+        *)
+            error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli" $EXIT_INVALID_ARGS
+            ;;
+    esac
 }
 
 # Dependency checking functions
@@ -136,7 +173,7 @@ _dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down enter build clean status logs run init install-opencode help completion"
+    local commands="up down restart enter build clean status logs list run init install-agent help completion"
     local init_commands="fast wizard --fast --wizard --help -h"
     
     case "${prev}" in
@@ -203,14 +240,16 @@ _dcutil() {
     commands=(
         'up:Start the devcontainer'
         'down:Stop the devcontainer'
+        'restart:Restart the devcontainer'
         'enter:Enter the container shell'
         'build:Build the devcontainer image'
         'clean:Remove the devcontainer and clean up'
         'status:Show container status'
         'logs:Show container logs'
+        'list:List running devcontainers'
         'run:Run a command in the container'
         'init:Initialize a devcontainer'
-        'install-opencode:Install opencode inside the devcontainer'
+        'install-agent:Install AI agent inside the devcontainer'
         'help:Show help message'
         'completion:Generate completion script'
     )
@@ -308,9 +347,28 @@ fi
 validate_command "$COMMAND"
 
 # Handle special case for run command (project path can be second arg)
-if [ "$COMMAND" = "run" ] && [ -n "$2" ] && [ -d "$2" ]; then
-    determine_project_dir "$2"
-    shift 2  # Remove command and project path
+if [ "$COMMAND" = "run" ]; then
+    if [ -n "$2" ] && [ -d "$2" ]; then
+        determine_project_dir "$2"
+        shift 2  # Remove command and project path
+    else
+        determine_project_dir
+        shift 1
+    fi
+elif [ "$COMMAND" = "install-agent" ]; then
+    if [ -n "$2" ] && [ -d "$2" ]; then
+        # Second arg is project path, agent is third
+        determine_project_dir "$2"
+        shift 2
+    else
+        # Second arg is agent, no project path
+        determine_project_dir
+        shift 1
+    fi
+elif [ "$COMMAND" = "init" ]; then
+    # For init, second arg is mode, not project path
+    determine_project_dir
+    shift 1
 else
     determine_project_dir "$2"
     shift 1  # Remove command only
@@ -323,14 +381,16 @@ print_usage() {
     echo "Commands:"
     echo "  up          Start the devcontainer"
     echo "  down        Stop the devcontainer"
+    echo "  restart     Restart the devcontainer"
     echo "  enter       Enter the container shell"
     echo "  build       Build the devcontainer image"
     echo "  clean       Remove the devcontainer and clean up"
     echo "  status      Show container status"
     echo "  logs        Show container logs"
+    echo "  list        List running devcontainers"
     echo "  run <cmd>   Run a command in the container"
     echo "  init        Initialize a devcontainer (fast or wizard)"
-    echo "  install-opencode Install opencode inside the devcontainer"
+    echo "  install-agent <agent> Install AI agent inside the devcontainer"
     echo "  completion  Generate completion script for bash/zsh"
     echo "  help        Show this help message"
     echo ""
@@ -375,6 +435,14 @@ case "$COMMAND" in
         success "Devcontainer stopped"
         ;;
     
+    "restart")
+        info "Restarting devcontainer..."
+        # Stop if running (ignore errors)
+        devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
+        safe_devcontainer_command "up"
+        success "Devcontainer restarted successfully"
+        ;;
+    
     "enter")
         info "Entering container..."
         check_devcontainer_cli
@@ -416,12 +484,37 @@ case "$COMMAND" in
     
     "status")
         info "Checking container status..."
-        safe_devcontainer_command "ps"
+        if devcontainer exec --workspace-folder . echo "Container is running" 2>/dev/null; then
+            echo "Container is running"
+        else
+            echo "Container is not running"
+        fi
         ;;
     
     "logs")
         info "Showing container logs..."
-        safe_devcontainer_command "logs"
+        check_docker_daemon
+        
+        # Get container ID using docker ps with devcontainer label
+        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+        if [ -z "$CONTAINER_ID" ]; then
+            error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+        fi
+        
+        # Show logs
+        if ! docker logs "$CONTAINER_ID" 2>/dev/null; then
+            error_exit "Failed to show container logs" $EXIT_DEVCONTAINER_ERROR
+        fi
+        ;;
+    
+    "list")
+        info "Listing running devcontainers..."
+        check_docker_daemon
+        
+        # List containers with devcontainer labels
+        if ! docker ps --filter "label=devcontainer.local_folder" --format "table {{.ID}}\t{{.Image}}\t{{.Names}}" 2>/dev/null | grep -v "CONTAINER ID"; then
+            echo "No running devcontainers found"
+        fi
         ;;
     
     "run")
@@ -435,26 +528,63 @@ case "$COMMAND" in
         fi
         ;;
     
-    "install-opencode")
-        info "Installing opencode inside devcontainer..."
+    "install-agent")
+        if [ $# -eq 0 ]; then
+            error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" $EXIT_INVALID_ARGS
+        fi
+        AGENT="$1"
+        INSTALL_CMD=$(get_agent_install_command "$AGENT")
+
+        info "Installing $AGENT inside devcontainer..."
         check_devcontainer_cli
         check_docker_daemon
-        
+
         # Check if container is running
-        if ! devcontainer ps --workspace-folder . 2>/dev/null | grep -q "Running"; then
+        if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
             warning "Container is not running. Starting it first..."
             if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                error_exit "Failed to start devcontainer for opencode installation" $EXIT_DEVCONTAINER_ERROR
+                error_exit "Failed to start devcontainer for $AGENT installation" $EXIT_DEVCONTAINER_ERROR
             fi
         fi
-        
-        info "Installing opencode..."
-        if devcontainer exec --workspace-folder . /bin/bash -c "
-            curl -fsSL https://opencode.ai/install | bash
-        " 2>/dev/null; then
-            success "Opencode installed successfully in devcontainer"
+
+        info "Installing $AGENT..."
+        # Install npm if required
+        if [[ "$INSTALL_CMD" == npm* ]]; then
+            info "Ensuring npm is available..."
+            if ! devcontainer exec --workspace-folder . /bin/bash -c "command -v npm" 2>/dev/null; then
+                warning "npm not found. Installing latest Node.js LTS..."
+                if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
+                " 2>/dev/null; then
+                    error_exit "Failed to install Node.js and npm" $EXIT_DEVCONTAINER_ERROR
+                fi
+            fi
+        fi
+
+        # For pip-based agents, use portable Python
+        if [[ "$INSTALL_CMD" == pip* ]]; then
+            info "Downloading portable Python for package installation..."
+            PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241002/cpython-3.12.7+20241002-x86_64-unknown-linux-gnu-install_only.tar.gz"
+            PYTHON_DIR="/home/vscode/.local/python"
+            if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                mkdir -p $PYTHON_DIR && cd $PYTHON_DIR && curl -L '$PYTHON_URL' | tar -xz --strip-components=1
+            " 2>/dev/null; then
+                error_exit "Failed to download and extract Python" $EXIT_DEVCONTAINER_ERROR
+            fi
+            # Add to PATH
+            if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                echo 'export PATH=\"$PYTHON_DIR/bin:\$PATH\"' >> ~/.bashrc
+            " 2>/dev/null; then
+                warning "Failed to add Python to PATH"
+            fi
+            info "Installing Python package..."
+            # Use the portable pip
+            INSTALL_CMD="$PYTHON_DIR/bin/pip install ${INSTALL_CMD#pip install }"
+        fi
+        if devcontainer exec --workspace-folder . /bin/bash -c "$INSTALL_CMD" 2>/dev/null; then
+            success "$AGENT installed successfully in devcontainer"
         else
-            error_exit "Failed to install opencode" $EXIT_DEVCONTAINER_ERROR
+            error_exit "Failed to install $AGENT" $EXIT_DEVCONTAINER_ERROR
         fi
         ;;
     
@@ -467,7 +597,7 @@ case "$COMMAND" in
         fi
         
         # Parse init options
-        INIT_MODE="${2:-wizard}"
+        INIT_MODE="${1:-wizard}"
         validate_init_mode "$INIT_MODE"
         
         case "$INIT_MODE" in

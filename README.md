@@ -8,7 +8,8 @@ A general purpose devcontainer utility script that provides convenient commands 
 - Automatic project directory detection with validation
 - Colored output for better visibility
 - Support for running commands inside containers
-- Built-in opencode installation support
+- **Hermetic AI agent installation** with portable Python binaries
+- Support for installing AI agents inside devcontainers
 - **Robust error handling** with proper exit codes
 - **Self-contained auto-completion** for bash and zsh
 - **Input validation** for all commands and arguments
@@ -17,15 +18,17 @@ A general purpose devcontainer utility script that provides convenient commands 
 ## Commands
 
 - `up` - Start the devcontainer
-- `down` - Stop the devcontainer  
+- `down` - Stop the devcontainer
+- `restart` - Restart the devcontainer
 - `enter` - Enter the container shell
 - `build` - Build the devcontainer image
 - `clean` - Remove the devcontainer and clean up
 - `status` - Show container status
 - `logs` - Show container logs
+- `list` - List running devcontainers
 - `run <cmd>` - Run a command in the container
 - `init` - Initialize a devcontainer (fast or wizard mode)
-- `install-opencode` - Install opencode inside the devcontainer
+- `install-agent <agent>` - Install AI agent inside the devcontainer
 - `help` - Show help message
 
 ## Usage
@@ -54,9 +57,35 @@ Use the `init` command to create a devcontainer configuration:
 The wizard supports:
 - Basic Ubuntu container with common tools
 - Node.js development environment
-- Python development environment  
+- Python development environment
 - Go development environment
 - Custom Docker images
+
+### Installing AI Agents
+
+Use the `install-agent` command to install AI coding assistants inside your devcontainer. Agents are installed hermetically using portable Python binaries, ensuring no conflicts with system packages:
+
+```bash
+# Install opencode
+./dcutil install-agent opencode
+
+# Install aider
+./dcutil install-agent aider
+
+# Install in specific project
+./dcutil install-agent aider /path/to/project
+```
+
+Currently supported agents:
+- `opencode` - Installs opencode AI assistant
+- `aider` - Installs aider-chat AI coding assistant
+- `copilot-cli` - Installs GitHub Copilot CLI
+- `cody` - Installs Sourcegraph Cody CLI
+- `tabnine` - Installs Tabnine CLI
+- `qwen-cli` - Installs Qwen CLI
+- `gemini` - Installs Gemini CLI
+- `claude-cli` - Installs Claude CLI
+- `openai-cli` - Installs OpenAI CLI
 
 ## Auto-completion
 
