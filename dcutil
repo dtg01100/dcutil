@@ -564,7 +564,9 @@ case "$COMMAND" in
         # For pip-based agents, use portable Python
         if [[ "$INSTALL_CMD" == pip* ]]; then
             info "Downloading portable Python for package installation..."
-            PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/20241002/cpython-3.12.7+20241002-x86_64-unknown-linux-gnu-install_only.tar.gz"
+            PYTHON_VERSION="3.12.7"
+            PYTHON_RELEASE_DATE="20241002"
+            PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PYTHON_RELEASE_DATE/cpython-$PYTHON_VERSION+$PYTHON_RELEASE_DATE-x86_64-unknown-linux-gnu-install_only.tar.gz"
             PYTHON_DIR="/home/vscode/.local/python"
             if ! devcontainer exec --workspace-folder . /bin/bash -c "
                 mkdir -p $PYTHON_DIR && cd $PYTHON_DIR && curl -L '$PYTHON_URL' | tar -xz --strip-components=1
