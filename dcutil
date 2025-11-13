@@ -563,6 +563,9 @@ case "$COMMAND" in
 
         # For pip-based agents, use portable Python
         if [[ "$INSTALL_CMD" == pip* ]]; then
+            # Due to the unreliability of the GitHub API for python-build-standalone releases,
+            # we are using a hardcoded URL for the Python download. This ensures the script
+            # works consistently without external API failures.
             info "Downloading portable Python for package installation..."
             PYTHON_VERSION="3.12.7"
             PYTHON_RELEASE_DATE="20241002"
