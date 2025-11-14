@@ -4,7 +4,7 @@
 # Install by sourcing this file in your .bashrc or placing it in /etc/bash_completion.d/
 
 _dcutil_completion() {
-    local cur prev words cword
+    local cur prev cword
     _init_completion || return
 
     # Main commands
@@ -15,11 +15,11 @@ _dcutil_completion() {
     
     case "${prev}" in
         dcutil)
-            COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
+            mapfile -t COMPREPLY < <(compgen -W "${commands}" -- "${cur}")
             return
             ;;
         init)
-            COMPREPLY=($(compgen -W "${init_commands}" -- "${cur}"))
+            mapfile -t COMPREPLY < <(compgen -W "${init_commands}" -- "${cur}")
             return
             ;;
         run)
@@ -35,15 +35,17 @@ _dcutil_completion() {
                 # Also add current directory if it has .devcontainer
                 if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]]; then
                     paths+=(".")
-                fi
-                # Add common directory names
-                paths+=($(compgen -d -- "${cur}"))
-                COMPREPLY=($(compgen -W "${paths[*]}" -- "${cur}"))
-            else
-                # Complete common commands for running in containers
-                local common_commands="bash sh npm node python pip go make cmake cargo rustc"
-                COMPREPLY=($(compgen -W "${common_commands}" -- "${cur}"))
-            fi
+                 fi
+                 # Add common directory names
+                 local temp_paths
+                 mapfile -t temp_paths < <(compgen -d -- "${cur}")
+                 paths+=("${temp_paths[@]}")
+                 mapfile -t COMPREPLY < <(compgen -W "${paths[*]}" -- "${cur}")
+             else
+                 # Complete common commands for running in containers
+                 local common_commands="bash sh npm node python pip go make cmake cargo rustc"
+                 mapfile -t COMPREPLY < <(compgen -W "${common_commands}" -- "${cur}")
+             fi
             return
             ;;
         --help|-h)
@@ -61,21 +63,16 @@ _dcutil_completion() {
                 # Also add current directory if it has .devcontainer
                 if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]]; then
                     paths+=(".")
-                fi
-                # Add common directory names
-                paths+=($(compgen -d -- "${cur}"))
-                COMPREPLY=($(compgen -W "${paths[*]}" -- "${cur}"))
-            fi
-            return
+                 fi
+                 # Add common directory names
+                 local temp_paths
+                 mapfile -t temp_paths < <(compgen -d -- "${cur}")
+                 paths+=("${temp_paths[@]}")
+                 mapfile -t COMPREPLY < <(compgen -W "${paths[*]}" -- "${cur}")
+             fi
+             return
             ;;
     esac
-
-    # Handle options
-    if [[ "${cur}" == -* ]]; then
-        local options="--help -h"
-        COMPREPLY=($(compgen -W "${options}" -- "${cur}"))
-        return
-    fi
 }
 
 # Register the completion function

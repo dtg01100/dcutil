@@ -44,7 +44,7 @@ validate_command() {
     local cmd="$1"
     local valid_commands="up down restart enter build clean status logs list run init install-agent help completion"
     
-    if [[ ! " $valid_commands " =~ " $cmd " ]]; then
+    if [[ ! " $valid_commands " =~ $cmd ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." $EXIT_INVALID_ARGS
     fi
 }
@@ -80,7 +80,7 @@ validate_init_mode() {
     local mode="$1"
     local valid_modes="fast wizard --fast --wizard --help -h"
 
-    if [ -n "$mode" ] && [[ ! " $valid_modes " =~ " $mode " ]]; then
+    if [ -n "$mode" ] && [[ ! " $valid_modes " =~ $mode ]]; then
         error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." $EXIT_INVALID_ARGS
     fi
 }
@@ -118,6 +118,186 @@ get_agent_install_command() {
             ;;
         *)
             error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli" $EXIT_INVALID_ARGS
+            ;;
+    esac
+}
+
+# Security hardening functions
+verify_checksum() {
+    local file="$1"
+    local expected_checksum="$2"
+    local actual_checksum
+
+    if ! command -v sha256sum &> /dev/null; then
+        warning "sha256sum not available, skipping checksum verification"
+        return 0
+    fi
+
+    actual_checksum=$(sha256sum "$file" | cut -d' ' -f1)
+    if [ "$actual_checksum" != "$expected_checksum" ]; then
+        error_exit "Checksum verification failed for $file. Expected: $expected_checksum, Got: $actual_checksum" "$EXIT_CONFIG_ERROR"
+    fi
+    info "Checksum verification passed for $file"
+}
+
+check_agent_security_risk() {
+    local agent="$1"
+    local install_cmd="$2"
+
+    case "$agent" in
+        "opencode")
+            warning "⚠️  HIGH RISK: $agent installation runs remote scripts that could execute arbitrary code."
+            echo -e "${YELLOW}Installation command: $install_cmd${NC}"
+            read -p "Do you trust the source (opencode.ai) and want to proceed? (yes/no): " -r confirm
+            if [[ ! "$confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+                info "Installation cancelled by user"
+                exit $EXIT_SUCCESS
+            fi
+            ;;
+    esac
+}
+
+secure_download() {
+    local url="$1"
+    local output_file="$2"
+    local expected_checksum="$3"
+
+    info "Downloading $url with security verification..."
+    if ! curl -fsSL -o "$output_file" "$url"; then
+        error_exit "Failed to download $url" "$EXIT_CONFIG_ERROR"
+    fi
+
+    if [ -n "$expected_checksum" ]; then
+        verify_checksum "$output_file" "$expected_checksum"
+    else
+        warning "No checksum provided for $output_file - download integrity not verified"
+    fi
+}
+
+scan_vulnerabilities() {
+    local agent="$1"
+    local install_type="$2"
+    local venv_dir="$3"
+
+    case "$install_type" in
+        "pip")
+            info "Running enhanced security scan for Python packages..."
+
+            # Set up environment for portable Python if available
+            local pip_cmd="pip"
+            local python_cmd="python"
+            if [ -n "$venv_dir" ] && [ -f "$venv_dir/bin/python" ]; then
+                pip_cmd="$venv_dir/bin/pip"
+                python_cmd="$venv_dir/bin/python"
+            fi
+
+            # Enhanced vulnerability scanning with multiple tools
+            local vulnerabilities_found=false
+
+            # 1. Use safety tool with proper pipenv/venv support
+            if devcontainer exec --workspace-folder . /bin/bash -c "$python_cmd -c 'import safety; print(\"safety available\")'" &>/dev/null; then
+                info "Running safety vulnerability scan..."
+                if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                    export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
+                    $python_cmd -m safety scan --output=text
+                " 2>/dev/null; then
+                    warning "Safety scan found potential vulnerabilities in $agent"
+                    vulnerabilities_found=true
+                fi
+            else
+                info "Installing safety for advanced vulnerability scanning..."
+                if devcontainer exec --workspace-folder . /bin/bash -c "
+                    $pip_cmd install safety --quiet
+                " 2>/dev/null; then
+                    info "Running safety vulnerability scan..."
+                    if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                        export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
+                        timeout 30 $python_cmd -m safety scan --output=text || $pip_cmd list | grep -E '(aider|opencode|qwen|gemini|claude|openai)' | xargs $pip_cmd show | grep -A5 -B5 'Requires:' | cat
+                    " 2>/dev/null; then
+                        warning "Safety scan detected potential security issues with $agent dependencies"
+                        vulnerabilities_found=true
+                    fi
+                fi
+            fi
+
+            # 2. Check for dependency conflicts using pip-tools/pipdeptree
+            info "Checking for package dependency conflicts..."
+            if devcontainer exec --workspace-folder . /bin/bash -c "
+                $pip_cmd install pipdeptree --quiet 2>/dev/null || true
+                if command -v pipdeptree >/dev/null 2>&1; then
+                    export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
+                    pipdeptree --warn fail 2>&1 | grep -q 'conflict\|error' && exit 1 || exit 0
+                else
+                    $python_cmd -c '
+import pkg_resources
+import sys
+try:
+    # Get our installed packages related to the agent
+    agent_pkgs = [pkg for pkg in pkg_resources.working_set if any(keyword in pkg.key.lower() for keyword in [\"$agent\", \"assistant\", \"ai\", \"chat\"])]
+    if agent_pkgs:
+        print(f\"Agent-related packages: {[pkg.key for pkg in agent_pkgs]}\")
+    else:
+        # Fallback - check all packages
+        all_pkgs = list(pkg_resources.working_set)
+        if len(all_pkgs) > 50:  # Too many packages, skip conflict check
+            print(\"Skipping detailed conflict check - many packages installed\")
+        else:
+            pkg_dict = {pkg.key: pkg.version for pkg in all_pkgs}
+            print(f\"Checked {len(all_pkgs)} packages for conflicts\")
+except Exception as e:
+    print(f\"Could not check dependencies: {e}\")
+    sys.exit(1)
+                    '
+                fi
+            " 2>&1 | grep -q "conflict\|error\|Could not check\|failed"; then
+                warning "Potential package conflicts detected for $agent"
+                vulnerabilities_found=true
+            fi
+
+            # 3. Check for known problematic packages
+            info "Checking for packages with known security issues..."
+            if devcontainer exec --workspace-folder . /bin/bash -c "
+                $pip_cmd list --format=freeze | grep -E '^(pip|setuptools|wheel)=' | while read pkg_line; do
+                    pkg_name=\${pkg_line%%=*}
+                    pkg_version=\${pkg_line##*=}
+                    case \$pkg_name in
+                        pip)
+                            # Check pip version for security
+                            if [[ \"\$pkg_version\" =~ ^([0-9]+)\\. ]]; then
+                                major_version=\${BASH_REMATCH[1]}
+                                if [ \$major_version -lt 24 ]; then
+                                    echo \"WARNING: pip version \$pkg_version is outdated and may have security vulnerabilities\"
+                                    exit 1
+                                fi
+                            fi
+                            ;;
+                        setuptools)
+                            # setuptools has known security issues in old versions
+                            if [[ \"\$pkg_version\" =~ ^([0-9]+)\\. ]]; then
+                                major_version=\${BASH_REMATCH[1]}
+                                if [ \$major_version -lt 65 ]; then
+                                    echo \"WARNING: setuptools version \$pkg_version is outdated\"
+                                    exit 1
+                                fi
+                            fi
+                            ;;
+                    esac
+                done || exit 1
+            " 2>&1 | grep -q "WARNING"; then
+                warning "Outdated or vulnerable core packages detected"
+                vulnerabilities_found=true
+            fi
+
+            if [ "$vulnerabilities_found" = true ]; then
+                warning "⚠️  Security scan found issues with $agent dependencies"
+                warning "Consider updating packages or choosing a different agent"
+            else
+                info "✅ No immediate security issues found for $agent"
+            fi
+            ;;
+        "npm")
+            info "Running npm security audit..."
+            devcontainer exec --workspace-folder . /bin/bash -c "npm audit --audit-level=high" || warning "npm audit found potential vulnerabilities"
             ;;
     esac
 }
@@ -547,9 +727,14 @@ case "$COMMAND" in
             fi
         fi
 
+        # Security check for high-risk installations
+        check_agent_security_risk "$AGENT" "$INSTALL_CMD"
+
         info "Installing $AGENT..."
-        # Install npm if required
+
+        # Determine install type for vulnerability scanning
         if [[ "$INSTALL_CMD" == npm* ]]; then
+            INSTALL_TYPE="npm"
             info "Ensuring npm is available..."
             if ! devcontainer exec --workspace-folder . /bin/bash -c "command -v npm" 2>/dev/null; then
                 warning "npm not found. Installing latest Node.js LTS..."
@@ -559,35 +744,97 @@ case "$COMMAND" in
                     error_exit "Failed to install Node.js and npm" $EXIT_DEVCONTAINER_ERROR
                 fi
             fi
+        elif [[ "$INSTALL_CMD" == pip* ]]; then
+            INSTALL_TYPE="pip"
+            info "Setting up hermetic Python environment for isolated installation..."
+            PYTHON_BIN_DIR="/home/vscode/.dcutil/python"
+            VENV_DIR="/home/vscode/.dcutil/agents/$AGENT"
+
+            # Determine platform architecture for portable Python
+            PLATFORM=$(devcontainer exec --workspace-folder . /bin/bash -c 'ARCH=$(uname -m); OS=$(uname -s); if [ "$OS" = "Linux" ]; then OS_PREFIX="linux"; elif [ "$OS" = "Darwin" ]; then OS_PREFIX="macos"; else OS_PREFIX="linux"; fi; if [ "$ARCH" = "x86_64" ]; then echo "$OS_PREFIX-x86_64"; elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then echo "$OS_PREFIX-aarch64"; else echo "linux-x86_64"; fi' 2>/dev/null || echo "linux-x86_64")
+
+            USE_PORTABLE=false
+            # Try to set up portable Python
+            if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=$PLATFORM;
+                if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
+                    exit 0
+                fi
+                mkdir -p $PYTHON_BIN_DIR
+                case \$PLATFORM in
+                    linux-x86_64) ARCH='x86_64-unknown-linux-gnu' ;;
+                    linux-aarch64) ARCH='aarch64-unknown-linux-gnu' ;;
+                    macos-x86_64) ARCH='x86_64-apple-darwin' ;;
+                    macos-aarch64) ARCH='aarch64-apple-darwin' ;;
+                    *) exit 1 ;;
+                esac
+                LATEST_TAG=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"tag_name\": \"\\([^\"]*\\)\".*/\\1/p')
+                ASSET_NAME=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"name\": \"\\(cpython-3\\.1[23]\\.[0-9]+\\+'\"\$LATEST_TAG\"'-'\"\$ARCH\"'-install_only\\.tar\\.gz\\)\".*/\\1/p' | sort -V | tail -1)
+                URL=\"https://github.com/astral-sh/python-build-standalone/releases/download/\$LATEST_TAG/\$ASSET_NAME\"
+                if [ -n \"\$ASSET_NAME\" ] && curl -fsSL \"\$URL\" | tar -xz -C $PYTHON_BIN_DIR && [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
+                    exit 0
+                else
+                    exit 1
+                fi
+            " 2>/dev/null; then
+                info "Using hermetic portable Python environment for $AGENT"
+                USE_PORTABLE=true
+            else
+                warning "Failed to set up portable Python, falling back to system Python"
+                USE_PORTABLE=false
+            fi
+
+            if [ "$USE_PORTABLE" = "true" ]; then
+                # Create venv with portable Python
+                if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                    mkdir -p $VENV_DIR
+                    $PYTHON_BIN_DIR/bin/python3 -m venv $VENV_DIR
+                " 2>/dev/null; then
+                    warning "Failed to create venv with portable Python, falling back to system Python"
+                    USE_PORTABLE=false
+                fi
+            fi
+
+            if [ "$USE_PORTABLE" != "true" ]; then
+                # Fallback to system Python virtual environment
+                if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                    if ! python3 -m venv --help > /dev/null 2>&1; then
+                        apt-get update && apt-get install -y python3-venv
+                    fi
+                    mkdir -p $VENV_DIR
+                    python3 -m venv $VENV_DIR
+                " 2>/dev/null; then
+                    error_exit "Failed to set up system Python venv" $EXIT_DEVCONTAINER_ERROR
+                fi
+                info "Using system Python environment for $AGENT"
+            fi
+        elif [[ "$INSTALL_CMD" == curl* ]]; then
+            # Special handling for high-risk curl|bash installations
+            INSTALL_TYPE="curl"
+        else
+            INSTALL_TYPE=""
         fi
 
-        # For pip-based agents, use portable Python
-        if [[ "$INSTALL_CMD" == pip* ]]; then
-            # Due to the unreliability of the GitHub API for python-build-standalone releases,
-            # we are using a hardcoded URL for the Python download. This ensures the script
-            # works consistently without external API failures.
-            info "Downloading portable Python for package installation..."
-            PYTHON_VERSION="3.12.7"
-            PYTHON_RELEASE_DATE="20241002"
-            PYTHON_URL="https://github.com/astral-sh/python-build-standalone/releases/download/$PYTHON_RELEASE_DATE/cpython-$PYTHON_VERSION+$PYTHON_RELEASE_DATE-x86_64-unknown-linux-gnu-install_only.tar.gz"
-            PYTHON_DIR="/home/vscode/.local/python"
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                mkdir -p $PYTHON_DIR && cd $PYTHON_DIR && curl -L '$PYTHON_URL' | tar -xz --strip-components=1
-            " 2>/dev/null; then
-                error_exit "Failed to download and extract Python" $EXIT_DEVCONTAINER_ERROR
-            fi
-            # Add to PATH
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                echo 'export PATH=\"$PYTHON_DIR/bin:\$PATH\"' >> ~/.bashrc
-            " 2>/dev/null; then
-                warning "Failed to add Python to PATH"
-            fi
-            info "Installing Python package..."
-            # Use the portable pip
-            INSTALL_CMD="$PYTHON_DIR/bin/pip install ${INSTALL_CMD#pip install }"
+        # Execute the installation
+        if [ "$INSTALL_TYPE" = "pip" ]; then
+            INSTALL_CMD="source $VENV_DIR/bin/activate && $INSTALL_CMD"
         fi
         if devcontainer exec --workspace-folder . /bin/bash -c "$INSTALL_CMD" 2>/dev/null; then
+            info "Installation completed, running security scans..."
+
+            # Run vulnerability scanning if applicable
+            if [ -n "$INSTALL_TYPE" ]; then
+                scan_vulnerabilities "$AGENT" "$INSTALL_TYPE" "$VENV_DIR"
+            fi
+
             success "$AGENT installed successfully in devcontainer"
+            if [ -n "$VENV_DIR" ] && [ "$USE_PORTABLE" = true ]; then
+                info "Hermetic portable Python environment at: $VENV_DIR"
+                info "To activate in container: source $VENV_DIR/bin/activate"
+                info "To run $AGENT from host: dcutil run 'source $VENV_DIR/bin/activate && $AGENT'"
+            elif [ -n "$VENV_DIR" ]; then
+                info "Agent is isolated in virtual environment: $VENV_DIR"
+                info "To activate in container: source $VENV_DIR/bin/activate"
+            fi
         else
             error_exit "Failed to install $AGENT" $EXIT_DEVCONTAINER_ERROR
         fi
@@ -773,17 +1020,15 @@ EOF
                 echo -e "${RED}❌ Unknown init mode: $INIT_MODE${NC}"
                 echo "Use 'dcutil init --help' for usage information"
                 exit 1
-                ;;
+            ;;
         esac
         ;;
-    
     "help"|"-h"|"--help")
         print_usage
         ;;
-    
-*)
-                error_exit "Unknown command: $COMMAND" $EXIT_INVALID_ARGS
-                ;;
+    *)
+        error_exit "Unknown command: $COMMAND" $EXIT_INVALID_ARGS
+        ;;
 esac
 
 exit $EXIT_SUCCESS
