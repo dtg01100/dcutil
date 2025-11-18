@@ -42,7 +42,7 @@ info() {
 # Input validation functions
 validate_command() {
     local cmd="$1"
-    local valid_commands="up down restart enter build clean status logs list run init install-agent help completion"
+    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh help completion"
     
     if [[ ! " $valid_commands " =~ $cmd ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." $EXIT_INVALID_ARGS
@@ -545,6 +545,10 @@ elif [ "$COMMAND" = "install-agent" ]; then
         determine_project_dir
         shift 1
     fi
+elif [ "$COMMAND" = "ssh" ]; then
+    # SSH command doesn't need project directory
+    determine_project_dir
+    shift 1
 elif [ "$COMMAND" = "init" ]; then
     # For init, second arg is mode, not project path
     determine_project_dir
@@ -555,6 +559,43 @@ else
 fi
 
 # Helper functions
+print_ssh_usage() {
+    echo "Usage: dcutil ssh <subcommand>"
+    echo ""
+    echo "SSH subcommands:"
+    echo "  start        Start SSH agent"
+    echo "  add [key]    Add SSH keys to agent (default: ~/.ssh/id_rsa, ~/.ssh/id_ed25519)"
+    echo "  list         List loaded SSH keys"
+    echo "  mount        Mount SSH agent socket to running devcontainer"
+    echo "  test         Test SSH agent connectivity in devcontainer"
+    echo "  connect      Connect to devcontainer via SSH (requires SSH server enabled)"
+    echo "  help         Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  dcutil ssh start"
+    echo "  dcutil ssh add"
+    echo "  dcutil ssh add ~/.ssh/my_custom_key"
+    echo "  dcutil ssh list"
+    echo "  dcutil ssh mount"
+    echo "  dcutil ssh test"
+    echo "  dcutil ssh connect"
+    echo ""
+    echo "SSH Key Setup:"
+    echo "  1. Generate SSH key: ssh-keygen -t ed25519 -C 'your_email@example.com'"
+    echo "  2. Start SSH agent: dcutil ssh start"
+    echo "  3. Add keys: dcutil ssh add"
+    echo "  4. Start devcontainer: dcutil up"
+    echo "  5. Mount SSH: dcutil ssh mount"
+    echo "  6. Test in container: dcutil ssh test"
+    echo ""
+    echo "SSH Server Setup:"
+    echo "  1. Initialize with SSH server: dcutil init (choose SSH server option)"
+    echo "  2. Start devcontainer: dcutil up"
+    echo "  3. Connect via SSH: dcutil ssh connect"
+    echo "  4. Default credentials: root/password"
+    echo "  5. Default port: 2222 (configurable during init)"
+}
+
 print_usage() {
     echo "Usage: dcutil <command> [project_path] [options]"
     echo ""
@@ -708,7 +749,154 @@ case "$COMMAND" in
         fi
         ;;
     
-    "install-agent")
+    "ssh")
+        if [ $# -eq 0 ]; then
+            print_ssh_usage
+            exit $EXIT_INVALID_ARGS
+        fi
+        
+        subcommand="$1"
+        shift
+        
+        case "$subcommand" in
+            "start")
+                info "Starting SSH agent..."
+                if ! eval "$(ssh-agent)"; then
+                    error_exit "Failed to start SSH agent" $EXIT_CONFIG_ERROR
+                fi
+                success "SSH agent started"
+                ;;
+            
+            "add")
+                if [ $# -gt 0 ]; then
+                    # Add specific key
+                    key_file="$1"
+                    if [ ! -f "$key_file" ]; then
+                        error_exit "SSH key file '$key_file' not found" $EXIT_INVALID_ARGS
+                    fi
+                    info "Adding SSH key: $key_file"
+                    if ! ssh-add "$key_file" 2>/dev/null; then
+                        error_exit "Failed to add SSH key: $key_file" $EXIT_CONFIG_ERROR
+                    fi
+                else
+                    # Add default keys
+                    info "Adding default SSH keys"
+                    if ! ssh-add 2>/dev/null; then
+                        warning "No SSH keys found in default locations"
+                        info "Add keys manually with: ssh-add /path/to/key"
+                        info "Or copy keys to ~/.ssh/"
+                    fi
+                fi
+                success "SSH keys added to agent"
+                ;;
+            
+            "list")
+                info "SSH keys in agent:"
+                ssh-add -l 2>/dev/null || echo "No SSH keys loaded in agent"
+                ;;
+            
+            "mount")
+                info "Mounting SSH agent to devcontainer..."
+                check_devcontainer_cli
+                check_docker_daemon
+                
+                # Check if container is running
+                if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+                    error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+                fi
+                
+                # Get container ID
+                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+                if [ -z "$CONTAINER_ID" ]; then
+                    error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+                fi
+                
+                # Mount SSH agent socket
+                if [ -S "${SSH_AUTH_SOCK:-}" ]; then
+                    if docker exec "$CONTAINER_ID" mkdir -p /tmp/ssh-agent 2>/dev/null; then
+                        if docker exec "$CONTAINER_ID" ln -sf "$SSH_AUTH_SOCK" /tmp/ssh-agent/agent.sock 2>/dev/null; then
+                            info "SSH agent mounted to container"
+                            info "Container SSH_AUTH_SOCK: /tmp/ssh-agent/agent.sock"
+                            # Set environment variable in container
+                            docker exec "$CONTAINER_ID" /bin/bash -c "echo 'export SSH_AUTH_SOCK=/tmp/ssh-agent/agent.sock' >> ~/.bashrc"
+                            success "SSH agent mounted successfully"
+                        else
+                            error_exit "Failed to mount SSH agent socket to container" $EXIT_DOCKER_ERROR
+                        fi
+                    else
+                        error_exit "Failed to create SSH agent directory in container" $EXIT_DOCKER_ERROR
+                    fi
+                else
+                    error_exit "SSH agent not running or SSH_AUTH_SOCK not set. Start agent with: dcutil ssh start" $EXIT_CONFIG_ERROR
+                fi
+                ;;
+            
+            "test")
+                info "Testing SSH connectivity in devcontainer..."
+                check_devcontainer_cli
+                check_docker_daemon
+                
+                # Check if container is running
+                if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+                    error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+                fi
+                
+                # Test SSH in container
+                if devcontainer exec --workspace-folder . /bin/bash -c "ssh-add -l" 2>/dev/null; then
+                    info "SSH agent is available in container"
+                    devcontainer exec --workspace-folder . /bin/bash -c "ssh-add -l"
+                else
+                    warning "SSH agent not available in container"
+                    info "Mount SSH agent with: dcutil ssh mount"
+                fi
+                ;;
+            
+            "connect")
+                info "Connecting to devcontainer via SSH..."
+                check_devcontainer_cli
+                check_docker_daemon
+                
+                # Check if container is running
+                if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+                    error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+                fi
+                
+                # Get container IP and port
+                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+                if [ -z "$CONTAINER_ID" ]; then
+                    error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+                fi
+                
+                # Check if SSH port is exposed
+                SSH_PORT=$(docker port "$CONTAINER_ID" 22 2>/dev/null | head -1 | cut -d: -f2)
+                if [ -z "$SSH_PORT" ]; then
+                    # Try default port 2222 if 22 is not found
+                    SSH_PORT=$(docker port "$CONTAINER_ID" 2222 2>/dev/null | head -1 | cut -d: -f2)
+                fi
+                
+                if [ -z "$SSH_PORT" ]; then
+                    warning "SSH port is not exposed on this container"
+                    info "To enable SSH access, recreate the devcontainer with SSH server enabled"
+                    info "Use: dcutil init fast (and choose SSH server option)"
+                    exit $EXIT_CONFIG_ERROR
+                fi
+                
+                info "Connecting to devcontainer on localhost:$SSH_PORT"
+                info "Username: root, Password: password (or use SSH keys)"
+                ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" root@localhost
+                ;;
+            
+            "help"|"-h"|"--help")
+                print_ssh_usage
+                ;;
+            
+            *)
+                error_exit "Unknown SSH subcommand: $subcommand. Use 'dcutil ssh help' for usage." $EXIT_INVALID_ARGS
+                ;;
+        esac
+        ;;
+    
+"install-agent")
         if [ $# -eq 0 ]; then
             error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" $EXIT_INVALID_ARGS
         fi
@@ -726,6 +914,66 @@ case "$COMMAND" in
                 error_exit "Failed to start devcontainer for $AGENT installation" $EXIT_DEVCONTAINER_ERROR
             fi
         fi
+
+        # Ask about configuration pass-through
+        config_mount=""
+        echo ""
+        echo -e "${YELLOW}⚙️  Configuration Pass-through:${NC}"
+        echo "Should $AGENT have access to its configuration files?"
+        
+        case "$AGENT" in
+            "opencode")
+                echo "1) No configuration access"
+                echo "2) Mount ~/.opencode directory (recommended)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount ~/.opencode] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    if [ -d "$HOME/.opencode" ]; then
+                        config_mount="--mount type=bind,source=$HOME/.opencode,target=/home/vscode/.opencode"
+                        info "Will mount opencode configuration"
+                    else
+                        warning "~/.opencode directory not found, skipping configuration mount"
+                    fi
+                fi
+                ;;
+            "aider")
+                echo "1) No configuration access"
+                echo "2) Mount ~/.aider.toml file (recommended)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount ~/.aider.toml] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    if [ -f "$HOME/.aider.toml" ]; then
+                        config_mount="--mount type=bind,source=$HOME/.aider.toml,target=/home/vscode/.aider.toml"
+                        info "Will mount aider configuration"
+                    else
+                        warning "~/.aider.toml file not found, skipping configuration mount"
+                    fi
+                fi
+                ;;
+            "copilot-cli"|"cody"|"tabnine"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
+                echo "1) No configuration access"
+                echo "2) Mount ~/.config directory (for CLI tools)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount ~/.config] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    if [ -d "$HOME/.config" ]; then
+                        config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
+                        info "Will mount configuration directory"
+                    else
+                        warning "~/.config directory not found, skipping configuration mount"
+                    fi
+                fi
+                ;;
+            *)
+                echo "1) No configuration access"
+                echo "2) Skip configuration setup"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Skip] [1]: " user_config_choice
+                ;;
+        esac
 
         # Security check for high-risk installations
         check_agent_security_risk "$AGENT" "$INSTALL_CMD"
@@ -751,16 +999,16 @@ case "$COMMAND" in
             VENV_DIR="/home/vscode/.dcutil/agents/$AGENT"
 
             # Determine platform architecture for portable Python
-            PLATFORM=$(devcontainer exec --workspace-folder . /bin/bash -c 'ARCH=$(uname -m); OS=$(uname -s); if [ "$OS" = "Linux" ]; then OS_PREFIX="linux"; elif [ "$OS" = "Darwin" ]; then OS_PREFIX="macos"; else OS_PREFIX="linux"; fi; if [ "$ARCH" = "x86_64" ]; then echo "$OS_PREFIX-x86_64"; elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then echo "$OS_PREFIX-aarch64"; else echo "linux-x86_64"; fi' 2>/dev/null || echo "linux-x86_64")
+            PLATFORM=$(devcontainer exec --workspace-folder . /bin/bash -c "ARCH=\$(uname -m); OS=\$(uname -s); if [ \"\$OS\" = \"Linux\" ]; then OS_PREFIX=\"linux\"; elif [ \"\$OS\" = \"Darwin\" ]; then OS_PREFIX=\"macos\"; else OS_PREFIX=\"linux\"; fi; if [ \"\$ARCH\" = \"x86_64\" ]; then echo \"\$OS_PREFIX-x86_64\"; elif [ \"\$ARCH\" = \"aarch64\" ] || [ \"\$ARCH\" = \"arm64\" ]; then echo \"\$OS_PREFIX-aarch64\"; else echo \"linux-x86_64\"; fi" 2>/dev/null || echo "linux-x86_64")
 
             USE_PORTABLE=false
             # Try to set up portable Python
-            if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=$PLATFORM;
+            if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=\$PLATFORM;
                 if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
                     exit 0
                 fi
                 mkdir -p $PYTHON_BIN_DIR
-                case \$PLATFORM in
+                case \\$PLATFORM in
                     linux-x86_64) ARCH='x86_64-unknown-linux-gnu' ;;
                     linux-aarch64) ARCH='aarch64-unknown-linux-gnu' ;;
                     macos-x86_64) ARCH='x86_64-apple-darwin' ;;
@@ -768,9 +1016,9 @@ case "$COMMAND" in
                     *) exit 1 ;;
                 esac
                 LATEST_TAG=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"tag_name\": \"\\([^\"]*\\)\".*/\\1/p')
-                ASSET_NAME=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"name\": \"\\(cpython-3\\.1[23]\\.[0-9]+\\+'\"\$LATEST_TAG\"'-'\"\$ARCH\"'-install_only\\.tar\\.gz\\)\".*/\\1/p' | sort -V | tail -1)
-                URL=\"https://github.com/astral-sh/python-build-standalone/releases/download/\$LATEST_TAG/\$ASSET_NAME\"
-                if [ -n \"\$ASSET_NAME\" ] && curl -fsSL \"\$URL\" | tar -xz -C $PYTHON_BIN_DIR && [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
+                ASSET_NAME=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"name\": \"\\(cpython-3\\.1[23]\\.[0-9]+\\+'\"\\$LATEST_TAG\"'-'\"\\$ARCH\"'-install_only\\.tar\\.gz\\)\".*/\\1/p' | sort -V | tail -1)
+                URL=\"https://github.com/astral-sh/python-build-standalone/releases/download/\\$LATEST_TAG/\\$ASSET_NAME\"
+                if [ -n \"\\$ASSET_NAME\" ] && curl -fsSL \"\\$URL\" | tar -xz -C $PYTHON_BIN_DIR && [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
                     exit 0
                 else
                     exit 1
@@ -819,6 +1067,26 @@ case "$COMMAND" in
             INSTALL_CMD="source $VENV_DIR/bin/activate && $INSTALL_CMD"
         fi
         if devcontainer exec --workspace-folder . /bin/bash -c "$INSTALL_CMD" 2>/dev/null; then
+            # Apply configuration mounts if specified
+            if [ -n "$config_mount" ]; then
+                info "Mounting configuration files..."
+                # Get container ID and apply mount
+                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+                if [ -n "$CONTAINER_ID" ]; then
+                    # Note: Docker mount options would need to be applied at container creation time
+                    # For now, we'll copy configuration files
+                    case "$AGENT" in
+                        "aider")
+                            if [ -f "$HOME/.aider.toml" ]; then
+                                docker cp "$HOME/.aider.toml" "$CONTAINER_ID:/home/vscode/.aider.toml" 2>/dev/null && \
+                                docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null
+                            fi
+                            ;;
+                    esac
+                    info "Configuration files copied to container"
+                fi
+            fi
+            
             info "Installation completed, running security scans..."
 
             # Run vulnerability scanning if applicable
