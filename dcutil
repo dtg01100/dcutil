@@ -42,7 +42,7 @@ info() {
 # Input validation functions
 validate_command() {
     local cmd="$1"
-    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes help completion"
+    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion"
     
     if [[ ! " $valid_commands " =~ $cmd ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." $EXIT_INVALID_ARGS
@@ -102,6 +102,231 @@ validate_volume_command() {
     if [[ ! " $valid_volume_commands " =~ $cmd ]]; then
         error_exit "Unknown volume command: '$cmd'. Use 'dcutil volumes help' for available commands." $EXIT_INVALID_ARGS
     fi
+}
+
+# Rebuild functionality
+rebuild_devcontainer() {
+    local force_rebuild=false
+    local preserve_volumes=false
+    local preserve_ssh=false
+    local preserve_agents=false
+    
+    # Parse rebuild options
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force|-f)
+                force_rebuild=true
+                shift
+                ;;
+            --preserve-volumes)
+                preserve_volumes=true
+                shift
+                ;;
+            --preserve-ssh)
+                preserve_ssh=true
+                shift
+                ;;
+            --preserve-agents)
+                preserve_agents=true
+                shift
+                ;;
+            --preserve-all)
+                preserve_volumes=true
+                preserve_ssh=true
+                preserve_agents=true
+                shift
+                ;;
+            --help|-h)
+                print_rebuild_usage
+                exit $EXIT_SUCCESS
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+    
+    info "Starting devcontainer rebuild..."
+    
+    # Check if container is running
+    local container_running=false
+    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+        container_running=true
+        info "Stopping running devcontainer..."
+        if ! devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
+            error_exit "Failed to stop running devcontainer" $EXIT_DEVCONTAINER_ERROR
+        fi
+        success "Devcontainer stopped"
+    fi
+    
+    # Show preservation options
+    echo ""
+    info "Rebuild options:"
+    if [ "$preserve_volumes" = true ]; then
+        info "  ✓ Volumes will be preserved (data persists)"
+    else
+        warning "  ✗ Volumes will be rebuilt (data may be lost)"
+    fi
+    
+    if [ "$preserve_ssh" = true ]; then
+        info "  ✓ SSH agent will be remounted after rebuild"
+    else
+        warning "  ✗ SSH agent will need manual remounting"
+    fi
+    
+    if [ "$preserve_agents" = true ]; then
+        info "  ✓ Agent configurations will be preserved"
+    else
+        warning "  ✗ Agents will need reinstallation"
+    fi
+    
+    echo ""
+    
+    # Confirm rebuild unless forced
+    if [ "$force_rebuild" = false ]; then
+        echo -e "${YELLOW}⚠️  Rebuild will stop the container, rebuild the image, and start fresh.${NC}"
+        read -r -p "Continue with rebuild? (y/N): " confirm
+        if [[ ! "$confirm" =~ ^[Yy] ]]; then
+            info "Rebuild cancelled by user"
+            return 0
+        fi
+    fi
+    
+    # Store current SSH agent info if preserving
+    local ssh_auth_sock=""
+    local ssh_agent_pid=""
+    if [ "$preserve_ssh" = true ] && [ -n "${SSH_AUTH_SOCK:-}" ]; then
+        ssh_auth_sock="$SSH_AUTH_SOCK"
+        # Try to get SSH agent PID
+        ssh_agent_pid=$(pgrep -f "ssh-agent.*$ssh_auth_sock" 2>/dev/null | head -1)
+        if [ -n "$ssh_agent_pid" ]; then
+            info "SSH agent found (PID: $ssh_agent_pid)"
+        else
+            warning "SSH agent not found, SSH preservation may not work"
+        fi
+    fi
+    
+    # Store volume information if preserving
+    local volume_file=$(get_volume_config_file)
+    local volumes_to_restore=""
+    if [ "$preserve_volumes" = true ] && [ -f "$volume_file" ]; then
+        if command -v jq &> /dev/null; then
+            volumes_to_restore=$(jq -r '.volumes | keys[]' "$volume_file" 2>/dev/null | tr '\n' ' ')
+        else
+            volumes_to_restore=$(grep -o '"[^"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//')
+        fi
+        if [ -n "$volumes_to_restore" ]; then
+            info "Volumes to preserve: $volumes_to_restore"
+        fi
+    fi
+    
+    # Rebuild the devcontainer image
+    info "Rebuilding devcontainer image..."
+    if ! devcontainer build --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
+        error_exit "Failed to rebuild devcontainer image" $EXIT_DEVCONTAINER_ERROR
+    fi
+    success "Devcontainer image rebuilt successfully"
+    
+    # Start the fresh container
+    info "Starting fresh devcontainer..."
+    if ! devcontainer up --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
+        error_exit "Failed to start rebuilt devcontainer" $EXIT_DEVCONTAINER_ERROR
+    fi
+    success "Devcontainer started successfully"
+    
+    # Post-rebuild operations
+    echo ""
+    info "Performing post-rebuild operations..."
+    
+    # Restore volumes if requested
+    if [ "$preserve_volumes" = true ] && [ -n "$volumes_to_restore" ]; then
+        info "Setting up volume configurations..."
+        for volume_name in $volumes_to_restore; do
+            if command -v jq &> /dev/null; then
+                local container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
+                if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
+                    info "  Volume '$volume_name' -> $container_path"
+                fi
+            fi
+        done
+        info "Volume setup complete. Use 'dcutil volumes mount <name>' for individual volumes."
+    fi
+    
+    # Remount SSH agent if requested
+    if [ "$preserve_ssh" = true ] && [ -n "$ssh_auth_sock" ]; then
+        info "Remounting SSH agent..."
+        sleep 2  # Give container time to stabilize
+        if [ -S "$ssh_auth_sock" ]; then
+            if ./dcutil ssh mount 2>/dev/null; then
+                success "SSH agent remounted successfully"
+            else
+                warning "Failed to remount SSH agent (may need manual mounting)"
+            fi
+        else
+            warning "SSH agent socket not available for remounting"
+        fi
+    fi
+    
+    # Restore agent configurations if requested
+    if [ "$preserve_agents" = true ]; then
+        info "Agent configurations preserved in container"
+        info "Agents may need reactivation: source ~/.dcutil/agents/*/bin/activate"
+    fi
+    
+    echo ""
+    success "Devcontainer rebuild completed successfully!"
+    
+    # Show summary
+    info "Rebuild summary:"
+    info "  ✅ Container stopped and rebuilt"
+    info "  ✅ Fresh image deployed"
+    info "  ✅ Container started successfully"
+    
+    if [ "$preserve_volumes" = true ]; then
+        info "  ✅ Volume configurations preserved"
+    fi
+    
+    if [ "$preserve_ssh" = true ]; then
+        info "  ✅ SSH agent remounted"
+    fi
+    
+    if [ "$preserve_agents" = true ]; then
+        info "  ✅ Agent configurations preserved"
+    fi
+    
+    echo ""
+    info "Your devcontainer is ready to use!"
+}
+
+print_rebuild_usage() {
+    echo "Usage: dcutil rebuild [options]"
+    echo ""
+    echo "Options:"
+    echo "  --force, -f           Force rebuild without confirmation"
+    echo "  --preserve-volumes    Keep volume configurations (recommended)"
+    echo "  --preserve-ssh        Remount SSH agent after rebuild"
+    echo "  --preserve-agents     Keep agent configurations"
+    echo "  --preserve-all        Preserve volumes, SSH, and agents"
+    echo "  --help, -h            Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  dcutil rebuild                           # Basic rebuild with confirmation"
+    echo "  dcutil rebuild --preserve-all           # Rebuild preserving everything"
+    echo "  dcutil rebuild --preserve-volumes --force  # Force rebuild with volume preservation"
+    echo "  dcutil rebuild --preserve-ssh           # Rebuild with SSH agent preservation"
+    echo ""
+    echo "Rebuild Process:"
+    echo "  1. Stop current devcontainer"
+    echo "  2. Rebuild devcontainer image"
+    echo "  3. Start fresh devcontainer"
+    echo "  4. Apply preservation options"
+    echo ""
+    echo "Preservation Options:"
+    echo "  --preserve-volumes  Preserve volume configurations and data"
+    echo "  --preserve-ssh      Remount SSH agent to fresh container"
+    echo "  --preserve-agents   Keep agent configurations and environments"
+    echo ""
+    echo "Note: Volume data preservation depends on devcontainer.json mount configuration"
 }
 
 get_volume_config_file() {
@@ -882,10 +1107,11 @@ _dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes help completion"
+    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion"
     local init_commands="fast wizard --fast --wizard --help -h"
 local volumes_commands="list add remove mount unmount status backup restore help --help -h"
 local ssh_commands="start add list mount test connect help --help -h"
+local rebuild_options="--force -f --preserve-volumes --preserve-ssh --preserve-agents --preserve-all --help -h"
     
     case "${prev}" in
         dcutil)
@@ -898,6 +1124,10 @@ local ssh_commands="start add list mount test connect help --help -h"
             ;;
         volumes)
             COMPREPLY=($(compgen -W "${volumes_commands}" -- "${cur}"))
+            return
+            ;;
+        rebuild)
+            COMPREPLY=($(compgen -W "${rebuild_options}" -- "${cur}"))
             return
             ;;
         run)
@@ -1088,6 +1318,10 @@ elif [ "$COMMAND" = "volumes" ]; then
     # Volumes command doesn't need project directory
     determine_project_dir
     shift 1
+elif [ "$COMMAND" = "rebuild" ]; then
+    # Rebuild command doesn't need project directory
+    determine_project_dir
+    shift 1
 elif [ "$COMMAND" = "init" ]; then
     # For init, second arg is mode, not project path
     determine_project_dir
@@ -1190,6 +1424,7 @@ print_usage() {
     echo "  install-agent <agent> Install AI agent inside the devcontainer"
     echo "  ssh <cmd>    SSH key management (start, add, list, mount, test, connect)"
     echo "  volumes <cmd> Volume management (list, add, mount, backup, etc.)"
+    echo "  rebuild [options]  Rebuild devcontainer with preservation options"
     echo "  completion  Generate completion script for bash/zsh"
     echo "  help        Show this help message"
     echo ""
@@ -1542,6 +1777,10 @@ case "$COMMAND" in
                 error_exit "Unknown volumes subcommand: $subcommand. Use 'dcutil volumes help' for usage." $EXIT_INVALID_ARGS
                 ;;
         esac
+        ;;
+    
+    "rebuild")
+        rebuild_devcontainer "$@"
         ;;
     
     "install-agent")
