@@ -17,7 +17,7 @@ A general purpose devcontainer utility script that provides convenient commands 
 
 ## Commands
 
-- `up` - Start the devcontainer
+- `up [options]` - Start the devcontainer (with optional --project-home)
 - `down` - Stop the devcontainer
 - `restart` - Restart the devcontainer
 - `enter` - Enter the container shell
@@ -34,13 +34,27 @@ A general purpose devcontainer utility script that provides convenient commands 
 ## Usage
 
 ```bash
-./dcutil <command> [project_path]
+./dcutil <command> [project_path] [options]
 ```
 
 The script automatically detects the project directory:
 1. Uses the provided path if specified
 2. Uses current directory if it contains `.devcontainer/`
 3. Falls back to the script's directory
+
+### Project Home Directory Feature
+
+The `--project-home` option allows you to set the container's home folder to the project directory:
+
+```bash
+# Start devcontainer with project directory as home folder
+./dcutil up --project-home
+
+# Start devcontainer with project directory as home folder for a specific project
+./dcutil up --project-home /path/to/project
+```
+
+When using `--project-home`, the project directory will be mounted as the home directory (`/home/vscode`) in the container, allowing the container to use the project as the default home folder.
 
 ### Initialization
 
