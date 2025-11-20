@@ -45,7 +45,7 @@ validate_command() {
     local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion"
 
     if [[ ! " $valid_commands " =~ $cmd ]]; then
-        error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." $EXIT_INVALID_ARGS
+        error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." "$EXIT_INVALID_ARGS"
     fi
 }
 
@@ -54,16 +54,16 @@ validate_project_path() {
 
     if [ -n "$path" ]; then
         if [ ! -d "$path" ]; then
-            error_exit "Project path '$path' does not exist or is not a directory." $EXIT_INVALID_ARGS
+            error_exit "Project path '$path' does not exist or is not a directory." "$EXIT_INVALID_ARGS"
         fi
 
         if [ ! -r "$path" ]; then
-            error_exit "Cannot read project path '$path'. Permission denied." $EXIT_PERMISSION_ERROR
+            error_exit "Cannot read project path '$path'. Permission denied." "$EXIT_PERMISSION_ERROR"
         fi
 
         # Convert to absolute path
         if ! cd "$path" 2>/dev/null; then
-            error_exit "Cannot access project path '$path'." $EXIT_PERMISSION_ERROR
+            error_exit "Cannot access project path '$path'." "$EXIT_PERMISSION_ERROR"
         fi
         PROJECT_DIR="$(pwd)"
         cd - >/dev/null
@@ -72,7 +72,7 @@ validate_project_path() {
 
 validate_run_command() {
     if [ $# -eq 0 ]; then
-        error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" $EXIT_INVALID_ARGS
+        error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" "$EXIT_INVALID_ARGS"
     fi
 }
 
@@ -81,28 +81,79 @@ validate_init_mode() {
     local valid_modes="fast wizard --fast --wizard --help -h"
 
     if [ -n "$mode" ] && [[ ! " $valid_modes " =~ $mode ]]; then
-        error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." $EXIT_INVALID_ARGS
+        error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." "$EXIT_INVALID_ARGS"
     fi
 }
 
-validate_ssh_option() {
-    local ssh_option="$1"
-    local valid_ssh_options="ssh mount-ssh --ssh --mount-ssh"
+# Validate a workspace folder path provided for devcontainer configuration
+validate_workspace_folder() {
+    local wf="$1"
 
-    if [ -n "$ssh_option" ] && [[ ! " $valid_ssh_options " =~ $ssh_option ]]; then
-        error_exit "Unknown SSH option: '$ssh_option'. Use 'ssh' or 'mount-ssh' to enable SSH key mounting." $EXIT_INVALID_ARGS
+    # Empty is invalid here (caller may provide a default)
+    if [ -z "${wf}" ]; then
+        return 1
+    fi
+
+    # Must be an absolute path
+    if [[ "${wf}" != /* ]]; then
+        return 2
+    fi
+
+    # Disallow root which would be dangerous
+    if [ "${wf}" = "/" ]; then
+        return 3
+    fi
+
+    # Disallow paths with whitespace at ends
+    if [[ "${wf}" =~ ^[[:space:]] || "${wf}" =~ [[:space:]]$ ]]; then
+        return 4
+    fi
+
+    # Basic.. path looks fine
+    return 0
+}
+
+# Validate JSON file with jq or python if available
+validate_json_if_available() {
+    local fp="$1"
+    if [ -z "$fp" ] || [ ! -f "$fp" ]; then
+        error_exit "JSON file not found for validation: $fp" "$EXIT_CONFIG_ERROR"
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq -e . "$fp" >/dev/null 2>&1; then
+            error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
+        fi
+    elif command -v python >/dev/null 2>&1; then
+        if ! python -m json.tool "$fp" >/dev/null 2>&1; then
+            error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
+        fi
+    else
+        warning "No JSON validator available (jq/python); could not validate $fp"
     fi
 }
+
+# Best-effort: check whether a given user exists in a docker image (requires docker)
+check_user_in_image() {
+    local image="$1"
+    local user="$2"
+
+    if ! command -v docker >/dev/null 2>&1; then
+        return 2
+    fi
+
+    # Try to run `id <user>` inside the image. This will pull the image if necessary.
+    if docker run --rm --entrypoint id "$image" "$user" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+
 
 # Volume management functions
-validate_volume_command() {
-    local cmd="$1"
-    local valid_volume_commands="list add remove mount unmount backup restore status"
 
-    if [[ ! " $valid_volume_commands " =~ $cmd ]]; then
-        error_exit "Unknown volume command: '$cmd'. Use 'dcutil volumes help' for available commands." $EXIT_INVALID_ARGS
-    fi
-}
 
 # Rebuild functionality
 rebuild_devcontainer() {
@@ -149,12 +200,10 @@ rebuild_devcontainer() {
     info "Starting devcontainer rebuild..."
 
     # Check if container is running
-    local container_running=false
     if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        container_running=true
         info "Stopping running devcontainer..."
         if ! devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
-            error_exit "Failed to stop running devcontainer" $EXIT_DEVCONTAINER_ERROR
+            error_exit "Failed to stop running devcontainer" "$EXIT_DEVCONTAINER_ERROR"
         fi
         success "Devcontainer stopped"
     fi
@@ -207,7 +256,8 @@ rebuild_devcontainer() {
     fi
 
     # Store volume information if preserving
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     local volumes_to_restore=""
     if [ "$preserve_volumes" = true ] && [ -f "$volume_file" ]; then
         if command -v jq &> /dev/null; then
@@ -223,14 +273,14 @@ rebuild_devcontainer() {
     # Rebuild the devcontainer image
     info "Rebuilding devcontainer image..."
     if ! devcontainer build --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
-        error_exit "Failed to rebuild devcontainer image" $EXIT_DEVCONTAINER_ERROR
+        error_exit "Failed to rebuild devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
     fi
     success "Devcontainer image rebuilt successfully"
 
     # Start the fresh container
     info "Starting fresh devcontainer..."
     if ! devcontainer up --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
-        error_exit "Failed to start rebuilt devcontainer" $EXIT_DEVCONTAINER_ERROR
+        error_exit "Failed to start rebuilt devcontainer" "$EXIT_DEVCONTAINER_ERROR"
     fi
     success "Devcontainer started successfully"
 
@@ -243,7 +293,8 @@ rebuild_devcontainer() {
         info "Setting up volume configurations..."
         for volume_name in $volumes_to_restore; do
             if command -v jq &> /dev/null; then
-                local container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
+                local container_path
+                container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
                 if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
                     info "  Volume '$volume_name' -> $container_path"
                 fi
@@ -334,8 +385,10 @@ get_volume_config_file() {
 }
 
 ensure_volume_config() {
-    local volume_file=$(get_volume_config_file)
-    local volume_dir=$(dirname "$volume_file")
+    local volume_file
+    volume_file=$(get_volume_config_file)
+    local volume_dir
+    volume_dir=$(dirname "$volume_file")
 
     if [ ! -d "$volume_dir" ]; then
         mkdir -p "$volume_dir"
@@ -347,7 +400,8 @@ ensure_volume_config() {
 }
 
 list_volumes() {
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     info "Mounted volumes for this project:"
@@ -362,11 +416,14 @@ list_volumes() {
         fi
     else
         # Fallback to grep/sed for JSON parsing
-        local volumes=$(grep -o '"[^"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//')
+        local volumes
+        volumes=$(grep -o '"[^"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//')
         if [ -n "$volumes" ]; then
             echo "$volumes" | while read -r vol_name; do
-                local host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-                local auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
+                local host_path
+                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
+                local auto_mount
+                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
                 echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
             done
         else
@@ -383,12 +440,12 @@ add_volume() {
     local mount_type="${4:-bind}"
 
     if [ -z "$volume_name" ] || [ -z "$host_path" ] || [ -z "$container_path" ]; then
-        error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" $EXIT_INVALID_ARGS
+        error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
     fi
 
     # Validate mount type
-    if [[ ! " bind volume tmpfs " =~ " $mount_type " ]]; then
-        error_exit "Invalid mount type: '$mount_type'. Use 'bind', 'volume', or 'tmpfs'." $EXIT_INVALID_ARGS
+    if [[ ! " bind volume tmpfs " =~ $mount_type ]]; then
+        error_exit "Invalid mount type: '$mount_type'. Use 'bind', 'volume', or 'tmpfs'." "$EXIT_INVALID_ARGS"
     fi
 
     # Expand tilde in paths
@@ -401,7 +458,7 @@ add_volume() {
             if [ ! -e "$host_path" ]; then
                 warning "Host path '$host_path' does not exist. Creating directory..."
                 if ! mkdir -p "$host_path" 2>/dev/null; then
-                    error_exit "Failed to create host path '$host_path'" $EXIT_PERMISSION_ERROR
+                    error_exit "Failed to create host path '$host_path'" "$EXIT_PERMISSION_ERROR"
                 fi
                 success "Created directory: $host_path"
             fi
@@ -409,7 +466,7 @@ add_volume() {
         "volume")
             # Volume names should be valid
             if ! [[ "$volume_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-                error_exit "Invalid volume name: '$volume_name'. Use alphanumeric characters, dots, hyphens, and underscores only." $EXIT_INVALID_ARGS
+                error_exit "Invalid volume name: '$volume_name'. Use alphanumeric characters, dots, hyphens, and underscores only." "$EXIT_INVALID_ARGS"
             fi
             ;;
         "tmpfs")
@@ -417,13 +474,14 @@ add_volume() {
             ;;
     esac
 
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     # Check if volume already exists
     if command -v jq &> /dev/null; then
         if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
-            error_exit "Volume '$volume_name' already exists. Use 'dcutil volumes remove $volume_name' first." $EXIT_CONFIG_ERROR
+            error_exit "Volume '$volume_name' already exists. Use 'dcutil volumes remove $volume_name' first." "$EXIT_CONFIG_ERROR"
         fi
     fi
 
@@ -475,10 +533,11 @@ remove_volume() {
     local volume_name="$1"
 
     if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes remove <name>" $EXIT_INVALID_ARGS
+        error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
     fi
 
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     # Check if volume exists
@@ -494,7 +553,7 @@ remove_volume() {
     fi
 
     if [ "$volume_exists" = false ]; then
-        error_exit "Volume '$volume_name' not found" $EXIT_CONFIG_ERROR
+        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     # Confirm removal
@@ -535,10 +594,11 @@ mount_volume() {
     local volume_name="$1"
 
     if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes mount <name>" $EXIT_INVALID_ARGS
+        error_exit "Usage: dcutil volumes mount <name>" "$EXIT_INVALID_ARGS"
     fi
 
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     # Get volume configuration
@@ -559,18 +619,18 @@ mount_volume() {
 
     # Validate volume exists
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        error_exit "Volume '$volume_name' not found" $EXIT_CONFIG_ERROR
+        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     # Check if container is running
     if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+        error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
     # Get container ID
     CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
     if [ -z "$CONTAINER_ID" ]; then
-        error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+        error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
     info "Volume '$volume_name' configuration:"
@@ -591,7 +651,7 @@ mount_volume() {
             echo ""
 
             # Offer to copy files as demonstration
-            if [ -d "$host_path" ] && [ "$(ls -A "$host_path" 2>/dev/null | wc -l)" -gt 0 ]; then
+            if [ -d "$host_path" ] && [ "$(find "$host_path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" -gt 0 ]; then
                 echo ""
                 read -r -p "Copy files from host to container as demonstration? (y/N): " copy_files
                 if [[ "$copy_files" =~ ^[Yy] ]]; then
@@ -640,25 +700,26 @@ unmount_volume() {
     local volume_name="$1"
 
     if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes unmount <name>" $EXIT_INVALID_ARGS
+        error_exit "Usage: dcutil volumes unmount <name>" "$EXIT_INVALID_ARGS"
     fi
 
     # Check if container is running
     if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        error_exit "Devcontainer is not running" $EXIT_DEVCONTAINER_ERROR
+        error_exit "Devcontainer is not running" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
     # Get container ID
     CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
     if [ -z "$CONTAINER_ID" ]; then
-        error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+        error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
     info "Unmounting volume '$volume_name'..."
 
     # Get mount point (assume it's the same as container_path)
     local container_path=""
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
 
     if command -v jq &> /dev/null; then
         container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
@@ -678,7 +739,8 @@ unmount_volume() {
 }
 
 volume_status() {
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     info "Volume status for project: $PROJECT_DIR"
@@ -712,10 +774,11 @@ backup_volume() {
     local backup_path="$2"
 
     if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes backup <name> [backup_path]" $EXIT_INVALID_ARGS
+        error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
     fi
 
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     # Get volume configuration
@@ -727,14 +790,14 @@ backup_volume() {
     fi
 
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        error_exit "Volume '$volume_name' not found" $EXIT_CONFIG_ERROR
+        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     # Expand tilde in host path
     host_path="${host_path/#\~/$HOME}"
 
     if [ ! -d "$host_path" ]; then
-        error_exit "Volume host path '$host_path' does not exist" $EXIT_CONFIG_ERROR
+        error_exit "Volume host path '$host_path' does not exist" "$EXIT_CONFIG_ERROR"
     fi
 
     # Determine backup path
@@ -758,7 +821,7 @@ backup_volume() {
         info "Backup size: $(du -h "$backup_path" | cut -f1)"
         info "Backup location: $backup_path"
     else
-        error_exit "Failed to create backup of volume '$volume_name'" $EXIT_CONFIG_ERROR
+        error_exit "Failed to create backup of volume '$volume_name'" "$EXIT_CONFIG_ERROR"
     fi
 }
 
@@ -767,10 +830,11 @@ restore_volume() {
     local backup_path="$2"
 
     if [ -z "$volume_name" ] || [ -z "$backup_path" ]; then
-        error_exit "Usage: dcutil volumes restore <name> <backup_path>" $EXIT_INVALID_ARGS
+        error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
     fi
 
-    local volume_file=$(get_volume_config_file)
+    local volume_file
+    volume_file=$(get_volume_config_file)
     ensure_volume_config
 
     # Get volume configuration
@@ -782,7 +846,7 @@ restore_volume() {
     fi
 
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        error_exit "Volume '$volume_name' not found" $EXIT_CONFIG_ERROR
+        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     # Expand tilde in paths
@@ -790,7 +854,7 @@ restore_volume() {
     backup_path="${backup_path/#\~/$HOME}"
 
     if [ ! -f "$backup_path" ]; then
-        error_exit "Backup file '$backup_path' not found" $EXIT_CONFIG_ERROR
+        error_exit "Backup file '$backup_path' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     info "Restoring volume '$volume_name' from backup..."
@@ -808,7 +872,8 @@ restore_volume() {
 
     # Create backup of current data
     if [ -d "$host_path" ]; then
-        local current_backup="./${volume_name}_pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
+        local current_backup
+        current_backup="./${volume_name}_pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
         info "Creating backup of current data..."
         if tar -czf "$current_backup" -C "$(dirname "$host_path")" "$(basename "$host_path")" 2>/dev/null; then
             info "Current data backed up to: $current_backup"
@@ -835,7 +900,7 @@ restore_volume() {
             chown -R "$(id -u):$(id -g)" "$host_path" 2>/dev/null || true
         fi
     else
-        error_exit "Failed to restore volume '$volume_name' from backup" $EXIT_CONFIG_ERROR
+        error_exit "Failed to restore volume '$volume_name' from backup" "$EXIT_CONFIG_ERROR"
     fi
 }
 
@@ -871,28 +936,13 @@ get_agent_install_command() {
             echo "pip install openai-cli"
             ;;
         *)
-            error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli" $EXIT_INVALID_ARGS
+            error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli" "$EXIT_INVALID_ARGS"
             ;;
     esac
 }
 
 # Security hardening functions
-verify_checksum() {
-    local file="$1"
-    local expected_checksum="$2"
-    local actual_checksum
 
-    if ! command -v sha256sum &> /dev/null; then
-        warning "sha256sum not available, skipping checksum verification"
-        return 0
-    fi
-
-    actual_checksum=$(sha256sum "$file" | cut -d' ' -f1)
-    if [ "$actual_checksum" != "$expected_checksum" ]; then
-        error_exit "Checksum verification failed for $file. Expected: $expected_checksum, Got: $actual_checksum" "$EXIT_CONFIG_ERROR"
-    fi
-    info "Checksum verification passed for $file"
-}
 
 check_agent_security_risk() {
     local agent="$1"
@@ -911,22 +961,7 @@ check_agent_security_risk() {
     esac
 }
 
-secure_download() {
-    local url="$1"
-    local output_file="$2"
-    local expected_checksum="$3"
 
-    info "Downloading $url with security verification..."
-    if ! curl -fsSL -o "$output_file" "$url"; then
-        error_exit "Failed to download $url" "$EXIT_CONFIG_ERROR"
-    fi
-
-    if [ -n "$expected_checksum" ]; then
-        verify_checksum "$output_file" "$expected_checksum"
-    else
-        warning "No checksum provided for $output_file - download integrity not verified"
-    fi
-}
 
 scan_vulnerabilities() {
     local agent="$1"
@@ -1059,13 +1094,13 @@ except Exception as e:
 # Dependency checking functions
 check_devcontainer_cli() {
     if ! command -v devcontainer &> /dev/null; then
-        error_exit "devcontainer CLI not found. Please install it first:\n   npm install -g @devcontainers/cli" $EXIT_DEP_NOT_FOUND
+        error_exit "devcontainer CLI not found. Please install it first:\n   npm install -g @devcontainers/cli" "$EXIT_DEP_NOT_FOUND"
     fi
 }
 
 check_docker_daemon() {
     if ! docker info &> /dev/null; then
-        error_exit "Docker daemon is not running or not accessible. Please start Docker." $EXIT_DOCKER_ERROR
+        error_exit "Docker daemon is not running or not accessible. Please start Docker." "$EXIT_DOCKER_ERROR"
     fi
 }
 
@@ -1086,7 +1121,7 @@ determine_project_dir() {
 
     # Final validation
     if [ ! -d "$PROJECT_DIR" ]; then
-        error_exit "Determined project directory '$PROJECT_DIR' is not valid." $EXIT_CONFIG_ERROR
+        error_exit "Determined project directory '$PROJECT_DIR' is not valid." "$EXIT_CONFIG_ERROR"
     fi
 }
 
@@ -1346,7 +1381,7 @@ elif [ "$COMMAND" = "rebuild" ]; then
 elif [ "$COMMAND" = "init" ]; then
     # For init, use current directory (we want to initialize here)
     if [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
-        error_exit "Devcontainer configuration already exists in current directory. Use 'dcutil clean' first to remove existing configuration" $EXIT_CONFIG_ERROR
+        error_exit "Devcontainer configuration already exists in current directory. Use 'dcutil clean' first to remove existing configuration" "$EXIT_CONFIG_ERROR"
     fi
     PROJECT_DIR="$(pwd)"
     shift 1
@@ -1545,13 +1580,13 @@ safe_devcontainer_command() {
         elif [ -f ".dcutil_temp_devcontainer_root.json" ]; then
             mv .dcutil_temp_devcontainer_root.json .devcontainer.json
         fi
-        error_exit "Devcontainer command failed: devcontainer $cmd $*" $EXIT_DEVCONTAINER_ERROR
+        error_exit "Devcontainer command failed: devcontainer $cmd $*" "$EXIT_DEVCONTAINER_ERROR"
     fi
 }
 
 # Change to project directory
 info "Using project directory: $PROJECT_DIR"
-cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" $EXIT_PERMISSION_ERROR
+cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
 
 case "$COMMAND" in
     "up")
@@ -1630,7 +1665,7 @@ case "$COMMAND" in
                     fi
                 fi
             else
-                error_exit "No devcontainer configuration found. Run 'dcutil init' first." $EXIT_CONFIG_ERROR
+                error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
             fi
 
             # Run the devcontainer up command
@@ -1681,24 +1716,24 @@ case "$COMMAND" in
                 # So we just enter the existing container if it exists
                 if [ -f ".devcontainer/devcontainer.json" ]; then
                     if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                        error_exit "Failed to start devcontainer" $EXIT_DEVCONTAINER_ERROR
+                        error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
                     fi
                 elif [ -f ".devcontainer.json" ]; then
                     if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                        error_exit "Failed to start devcontainer" $EXIT_DEVCONTAINER_ERROR
+                        error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
                     fi
                 else
-                    error_exit "No devcontainer configuration found. Run 'dcutil init' first." $EXIT_CONFIG_ERROR
+                    error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
                 fi
             else
                 if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                    error_exit "Failed to start devcontainer" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
                 fi
             fi
         fi
 
         if ! devcontainer exec --workspace-folder . /bin/bash; then
-            error_exit "Failed to enter container" $EXIT_DEVCONTAINER_ERROR
+            error_exit "Failed to enter container" "$EXIT_DEVCONTAINER_ERROR"
         fi
         ;;
 
@@ -1739,12 +1774,12 @@ case "$COMMAND" in
         # Get container ID using docker ps with devcontainer label
         CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
         if [ -z "$CONTAINER_ID" ]; then
-            error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+            error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
         fi
 
         # Show logs
         if ! docker logs "$CONTAINER_ID" 2>/dev/null; then
-            error_exit "Failed to show container logs" $EXIT_DEVCONTAINER_ERROR
+            error_exit "Failed to show container logs" "$EXIT_DEVCONTAINER_ERROR"
         fi
         ;;
 
@@ -1765,7 +1800,7 @@ case "$COMMAND" in
         check_docker_daemon
 
         if ! devcontainer exec --workspace-folder "$PROJECT_DIR" "$@"; then
-            error_exit "Failed to run command in container" $EXIT_DEVCONTAINER_ERROR
+            error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
         fi
         ;;
 
@@ -1782,7 +1817,7 @@ case "$COMMAND" in
             "start")
                 info "Starting SSH agent..."
                 if ! eval "$(ssh-agent)"; then
-                    error_exit "Failed to start SSH agent" $EXIT_CONFIG_ERROR
+                    error_exit "Failed to start SSH agent" "$EXIT_CONFIG_ERROR"
                 fi
                 success "SSH agent started"
                 ;;
@@ -1792,11 +1827,11 @@ case "$COMMAND" in
                     # Add specific key
                     key_file="$1"
                     if [ ! -f "$key_file" ]; then
-                        error_exit "SSH key file '$key_file' not found" $EXIT_INVALID_ARGS
+                        error_exit "SSH key file '$key_file' not found" "$EXIT_INVALID_ARGS"
                     fi
                     info "Adding SSH key: $key_file"
                     if ! ssh-add "$key_file" 2>/dev/null; then
-                        error_exit "Failed to add SSH key: $key_file" $EXIT_CONFIG_ERROR
+                        error_exit "Failed to add SSH key: $key_file" "$EXIT_CONFIG_ERROR"
                     fi
                 else
                     # Add default keys
@@ -1822,13 +1857,13 @@ case "$COMMAND" in
 
                 # Check if container is running
                 if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-                    error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
                 fi
 
                 # Get container ID
                 CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
                 if [ -z "$CONTAINER_ID" ]; then
-                    error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
                 fi
 
                 # Mount SSH agent socket
@@ -1841,13 +1876,13 @@ case "$COMMAND" in
                             docker exec "$CONTAINER_ID" /bin/bash -c "echo 'export SSH_AUTH_SOCK=/tmp/ssh-agent/agent.sock' >> ~/.bashrc"
                             success "SSH agent mounted successfully"
                         else
-                            error_exit "Failed to mount SSH agent socket to container" $EXIT_DOCKER_ERROR
+                            error_exit "Failed to mount SSH agent socket to container" "$EXIT_DOCKER_ERROR"
                         fi
                     else
-                        error_exit "Failed to create SSH agent directory in container" $EXIT_DOCKER_ERROR
+                        error_exit "Failed to create SSH agent directory in container" "$EXIT_DOCKER_ERROR"
                     fi
                 else
-                    error_exit "SSH agent not running or SSH_AUTH_SOCK not set. Start agent with: dcutil ssh start" $EXIT_CONFIG_ERROR
+                    error_exit "SSH agent not running or SSH_AUTH_SOCK not set. Start agent with: dcutil ssh start" "$EXIT_CONFIG_ERROR"
                 fi
                 ;;
 
@@ -1858,7 +1893,7 @@ case "$COMMAND" in
 
                 # Check if container is running
                 if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-                    error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
                 fi
 
                 # Test SSH in container
@@ -1878,13 +1913,13 @@ case "$COMMAND" in
 
                 # Check if container is running
                 if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-                    error_exit "Devcontainer is not running. Start it first with: dcutil up" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
                 fi
 
                 # Get container IP and port
                 CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
                 if [ -z "$CONTAINER_ID" ]; then
-                    error_exit "No running devcontainer found for $PROJECT_DIR" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
                 fi
 
                 # Check if SSH port is exposed
@@ -1911,7 +1946,7 @@ case "$COMMAND" in
                 ;;
 
             *)
-                error_exit "Unknown SSH subcommand: $subcommand. Use 'dcutil ssh help' for usage." $EXIT_INVALID_ARGS
+                error_exit "Unknown SSH subcommand: $subcommand. Use 'dcutil ssh help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
 ;;
@@ -1932,28 +1967,28 @@ case "$COMMAND" in
 
             "add")
                 if [ $# -lt 3 ]; then
-                    error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" $EXIT_INVALID_ARGS
+                    error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
                 fi
                 add_volume "$1" "$2" "$3" "$4"
                 ;;
 
             "remove")
                 if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes remove <name>" $EXIT_INVALID_ARGS
+                    error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
                 fi
                 remove_volume "$1"
                 ;;
 
             "mount")
                 if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes mount <name>" $EXIT_INVALID_ARGS
+                    error_exit "Usage: dcutil volumes mount <name>" "$EXIT_INVALID_ARGS"
                 fi
                 mount_volume "$1"
                 ;;
 
             "unmount")
                 if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes unmount <name>" $EXIT_INVALID_ARGS
+                    error_exit "Usage: dcutil volumes unmount <name>" "$EXIT_INVALID_ARGS"
                 fi
                 unmount_volume "$1"
                 ;;
@@ -1964,14 +1999,14 @@ case "$COMMAND" in
 
             "backup")
                 if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes backup <name> [backup_path]" $EXIT_INVALID_ARGS
+                    error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
                 fi
                 backup_volume "$1" "$2"
                 ;;
 
             "restore")
                 if [ $# -lt 1 ]; then
-                    error_exit "Usage: dcutil volumes restore <name> <backup_path>" $EXIT_INVALID_ARGS
+                    error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
                 fi
                 restore_volume "$1" "$2"
                 ;;
@@ -1981,7 +2016,7 @@ case "$COMMAND" in
                 ;;
 
             *)
-                error_exit "Unknown volumes subcommand: $subcommand. Use 'dcutil volumes help' for usage." $EXIT_INVALID_ARGS
+                error_exit "Unknown volumes subcommand: $subcommand. Use 'dcutil volumes help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
         ;;
@@ -1992,7 +2027,7 @@ case "$COMMAND" in
 
     "install-agent")
         if [ $# -eq 0 ]; then
-            error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" $EXIT_INVALID_ARGS
+            error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" "$EXIT_INVALID_ARGS"
         fi
         AGENT="$1"
         INSTALL_CMD=$(get_agent_install_command "$AGENT")
@@ -2005,7 +2040,7 @@ case "$COMMAND" in
         if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
             warning "Container is not running. Starting it first..."
             if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                error_exit "Failed to start devcontainer for $AGENT installation" $EXIT_DEVCONTAINER_ERROR
+                error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
             fi
         fi
 
@@ -2027,7 +2062,7 @@ case "$COMMAND" in
                         config_mount="--mount type=bind,source=$HOME/.opencode,target=/home/vscode/.opencode"
                         info "Will mount opencode configuration"
                     else
-                        warning "~/.opencode directory not found, skipping configuration mount"
+                        warning "$HOME/.opencode directory not found, skipping configuration mount"
                     fi
                 fi
                 ;;
@@ -2042,7 +2077,7 @@ case "$COMMAND" in
                         config_mount="--mount type=bind,source=$HOME/.aider.toml,target=/home/vscode/.aider.toml"
                         info "Will mount aider configuration"
                     else
-                        warning "~/.aider.toml file not found, skipping configuration mount"
+                        warning "$HOME/.aider.toml file not found, skipping configuration mount"
                     fi
                 fi
                 ;;
@@ -2057,7 +2092,7 @@ case "$COMMAND" in
                         config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
                         info "Will mount configuration directory"
                     else
-                        warning "~/.config directory not found, skipping configuration mount"
+                        warning "$HOME/.config directory not found, skipping configuration mount"
                     fi
                 fi
                 ;;
@@ -2083,7 +2118,7 @@ case "$COMMAND" in
                 if ! devcontainer exec --workspace-folder . /bin/bash -c "
                     curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
                 " 2>/dev/null; then
-                    error_exit "Failed to install Node.js and npm" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "Failed to install Node.js and npm" "$EXIT_DEVCONTAINER_ERROR"
                 fi
             fi
         elif [[ "$INSTALL_CMD" == pip* ]]; then
@@ -2145,7 +2180,7 @@ case "$COMMAND" in
                     mkdir -p $VENV_DIR
                     python3 -m venv $VENV_DIR
                 " 2>/dev/null; then
-                    error_exit "Failed to set up system Python venv" $EXIT_DEVCONTAINER_ERROR
+                    error_exit "Failed to set up system Python venv" "$EXIT_DEVCONTAINER_ERROR"
                 fi
                 info "Using system Python environment for $AGENT"
             fi
@@ -2198,7 +2233,7 @@ case "$COMMAND" in
                 info "To activate in container: source $VENV_DIR/bin/activate"
             fi
         else
-            error_exit "Failed to install $AGENT" $EXIT_DEVCONTAINER_ERROR
+            error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
         fi
         ;;
 
@@ -2207,7 +2242,7 @@ case "$COMMAND" in
 
         # Check if devcontainer already exists
         if [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
-            error_exit "Devcontainer configuration already exists. Use 'dcutil clean' first to remove existing configuration" $EXIT_CONFIG_ERROR
+            error_exit "Devcontainer configuration already exists. Use 'dcutil clean' first to remove existing configuration" "$EXIT_CONFIG_ERROR"
         fi
 
         # Parse init options
@@ -2220,7 +2255,25 @@ case "$COMMAND" in
 
                 # Create .devcontainer directory
                 if ! mkdir -p .devcontainer 2>/dev/null; then
-                    error_exit "Failed to create .devcontainer directory" $EXIT_PERMISSION_ERROR
+                    error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
+                fi
+
+                # Fast mode defaults (non-interactive)
+                repo_name="$(basename "$PROJECT_DIR")"
+                workspace_folder="/workspaces/$repo_name"
+                container_user="vscode"
+                remote_user="$container_user"
+                set_chown=true
+                mount_project_to_container=true
+                mounts_snippet=""
+                if [ "$mount_project_to_container" = true ]; then
+                    mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
+                fi
+
+                if [ "$set_chown" = true ]; then
+                    chown_snippet="; if id -u $container_user >/dev/null 2>&1; then if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi; else echo 'User $container_user not found in image, skipping chown'; fi"
+                else
+                    chown_snippet=""
                 fi
 
                 # Create basic devcontainer.json
@@ -2228,19 +2281,26 @@ case "$COMMAND" in
 {
     "name": "Basic Dev Container",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    $mounts_snippet
+    "workspaceFolder": "$workspace_folder",
+    "remoteUser": "$remote_user",
+    "containerUser": "$container_user",
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-vscode.vscode-json"
+                "ms-vscode.vscode-json",
+                "ms-vscode.vscode-git"
             ]
         }
     },
-    "postCreateCommand": "apt-get update && apt-get install -y curl git"
+    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git; else apt-get update && apt-get install -y --no-install-recommends curl git; fi; mkdir -p $workspace_folder${chown_snippet}'"
 }
 EOF
                 then
-                    error_exit "Failed to create devcontainer.json file" $EXIT_PERMISSION_ERROR
+                    error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
                 fi
+
+                validate_json_if_available ".devcontainer/devcontainer.json"
 
                 success "Fast devcontainer configuration created"
                 info "Run 'dcutil up' to start the container"
@@ -2262,104 +2322,163 @@ EOF
 
                 # Validate project choice
                 if [[ ! "$project_choice" =~ ^[1-5]$ ]]; then
-                    error_exit "Invalid choice. Please enter a number between 1-5." $EXIT_INVALID_ARGS
+                    error_exit "Invalid choice. Please enter a number between 1-5." "$EXIT_INVALID_ARGS"
                 fi
 
                 # Get container name
                 read -r -p "Container name [My Project]: " container_name
                 container_name=${container_name:-"My Project"}
 
+                # Prompt for workspace folder (validate)
+                while true; do
+                    read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
+                    workspace_folder=${workspace_folder:-/workspaces}
+                    validate_workspace_folder "$workspace_folder"
+                    case $? in
+                        0) break;;
+                        1) echo "Invalid input: workspace folder cannot be empty";;
+                        2) echo "Workspace folder must be an absolute path (start with /)";;
+                        3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
+                        4) echo "Workspace folder must not have leading or trailing whitespace";;
+                        *) echo "Invalid workspace folder";;
+                    esac
+                done
+
+                # Prompt for container user (supports name or numeric UID[:GID])
+                read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
+                container_user_input=${container_user_input:-vscode}
+
+                container_user_is_numeric=false
+                container_uid=""
+                container_gid=""
+                if [[ "$container_user_input" =~ ^[0-9]+(:[0-9]+)?$ ]]; then
+                    container_user_is_numeric=true
+                    container_uid="${container_user_input%%:*}"
+                    container_gid="${container_user_input##*:}"
+                    if [[ "$container_gid" == "$container_uid" ]]; then
+                        container_gid="$container_uid"
+                    fi
+                    container_user="$container_uid"
+                    remote_user="$container_uid"
+                else
+                    container_user="$container_user_input"
+                    remote_user="$container_user"
+                fi
+
+                # Ask whether to set ownership of the workspace
+                read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
+                chown_choice=${chown_choice:-Y}
+                set_chown=false
+                if [[ "$chown_choice" =~ ^[Yy] ]]; then
+                    set_chown=true
+                fi
+
+                # Ask whether to mount host project dir into container workspace
+                read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
+                mount_choice=${mount_choice:-Y}
+                mount_project_to_container=false
+                mounts_snippet=""
+                if [[ "$mount_choice" =~ ^[Yy] ]]; then
+                    mount_project_to_container=true
+                    mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
+                fi
+
+                # Default chown snippet based on numeric/user input
+                chown_snippet=""
+                if [ "$set_chown" = true ]; then
+                    if [ "$container_user_is_numeric" = true ]; then
+                        chown_snippet="; if command -v sudo >/dev/null; then sudo chown -R ${container_uid}:${container_gid} $workspace_folder || true; else chown -R ${container_uid}:${container_gid} $workspace_folder || true; fi"
+                    else
+                        guarded_chown_snippet="; if id -u $container_user >/dev/null 2>&1; then if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi; else echo 'User $container_user not found in image, skipping chown'; fi"
+                        unguarded_chown_snippet="; if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi"
+                        chown_snippet="$guarded_chown_snippet"
+                    fi
+                fi
+
                 if ! mkdir -p .devcontainer 2>/dev/null; then
-                    error_exit "Failed to create .devcontainer directory" $EXIT_PERMISSION_ERROR
+                    error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
                 fi
 
                 case "$project_choice" in
                     "1")
-                        cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.vscode-json",
-                "ms-vscode.vscode-git"
-            ]
-        }
-    },
-    "postCreateCommand": "apt-get update && apt-get install -y curl git vim nano"
-}
-EOF
+                        image="mcr.microsoft.com/devcontainers/base:ubuntu"
                         ;;
                     "2")
-                        cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "mcr.microsoft.com/devcontainers/javascript-node:18",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.vscode-json",
-                "esbenp.prettier-vscode"
-            ]
-        }
-    },
-    "postCreateCommand": "npm install"
-}
-EOF
+                        image="mcr.microsoft.com/devcontainers/javascript-node:18"
                         ;;
                     "3")
-                        cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "mcr.microsoft.com/devcontainers/python:3.10",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-python.python",
-                "ms-python.vscode-pylance"
-            ]
-        }
-    },
-    "postCreateCommand": "pip install -r requirements.txt"
-}
-EOF
+                        image="mcr.microsoft.com/devcontainers/python:3.10"
                         ;;
                     "4")
-                        cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "golang:1.21",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "golang.go"
-            ]
-        }
-    },
-    "postCreateCommand": "go mod download"
-}
-EOF
+                        image="mcr.microsoft.com/devcontainers/go:1.21"
                         ;;
                     "5")
                         read -r -p "Enter Docker image name: " custom_image
                         if [ -z "$custom_image" ]; then
-                            error_exit "Docker image name cannot be empty" $EXIT_INVALID_ARGS
+                            error_exit "Docker image name cannot be empty" "$EXIT_INVALID_ARGS"
                         fi
-                        if ! cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "$custom_image"
-}
-EOF
-                        then
-                            error_exit "Failed to create devcontainer.json file" $EXIT_PERMISSION_ERROR
-                        fi
+                        image="$custom_image"
                         ;;
                     *)
-                        error_exit "Invalid choice" $EXIT_INVALID_ARGS
+                        error_exit "Invalid choice" "$EXIT_INVALID_ARGS"
                         ;;
                 esac
+
+                # Offer to do a best-effort check whether the chosen container user exists in the image
+                user_check_skipped=true
+                if [ "$container_user_is_numeric" = false ]; then
+                    if command -v docker >/dev/null 2>&1; then
+                        read -r -p "Check whether user '$container_user' exists in the selected image before writing config? (Y/n): " check_choice
+                        check_choice=${check_choice:-Y}
+                        if [[ "$check_choice" =~ ^[Yy] ]]; then
+                            user_check_skipped=false
+                        fi
+                    fi
+                else
+                    info "Numeric UID/GID provided; skipping user existence check in image"
+                fi
+
+                if [ "$container_user_is_numeric" = false ] && [ "$user_check_skipped" = false ] && command -v docker >/dev/null 2>&1; then
+                    if check_user_in_image "$image" "$container_user"; then
+                        info "User '$container_user' found in $image"
+                        chown_snippet="$unguarded_chown_snippet"
+                    else
+                        warning "User '$container_user' not found in $image"
+                        read -r -p "Continue and write configuration anyway? (y/N): " cont_choice
+                        if [[ ! "$cont_choice" =~ ^[Yy] ]]; then
+                            info "Cancelling init"
+                            exit $EXIT_SUCCESS
+                        fi
+                    fi
+                fi
+
+                # Create devcontainer.json depending on image and selected options
+                if ! cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "$image",
+    $mounts_snippet
+    "workspaceFolder": "$workspace_folder",
+    "remoteUser": "$remote_user",
+    "containerUser": "$container_user",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.vscode-json"
+            ]
+        }
+    },
+    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git vim nano; else apt-get update && apt-get install -y --no-install-recommends curl git vim nano; fi; if command -v npm >/dev/null && [ -f package.json ]; then npm install; fi; if command -v pip >/dev/null && [ -f requirements.txt ]; then pip install -r requirements.txt; fi; if command -v go >/dev/null && [ -f go.mod ]; then go mod download; fi; mkdir -p $workspace_folder${chown_snippet}'"
+}
+EOF
+                then
+                    error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
+                fi
+
+                validate_json_if_available ".devcontainer/devcontainer.json"
+
+                success "Devcontainer configuration created"
+                info "Run 'dcutil up' to start the container"
 
                 success "Devcontainer configuration created"
                 info "Run 'dcutil up' to start the container"
@@ -2389,7 +2508,7 @@ EOF
         print_usage
         ;;
     *)
-        error_exit "Unknown command: $COMMAND" $EXIT_INVALID_ARGS
+        error_exit "Unknown command: $COMMAND" "$EXIT_INVALID_ARGS"
         ;;
 esac
 

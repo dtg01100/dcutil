@@ -75,6 +75,11 @@ The wizard supports:
 - Go development environment
 - Custom Docker images
 
+Key wizard features:
+- Numeric UID/GID support: Enter container user as a name or UID[:GID] when prompted (e.g., "vscode" or "1000:1000"). If a numeric UID is provided, the script uses numeric chown to avoid needing the username in the image.
+- Workspace folder validation: Prompts for an absolute workspaceFolder path and validates it is not root and does not contain trailing whitespace.
+- Optional project bind mount: Optionally map the host project directory to the container workspace (adds a devcontainer.json mounts entry with source=$PROJECT_DIR,target=$workspaceFolder,type=bind,consistency=cached).
+
 ### Installing AI Agents
 
 Use the `install-agent` command to install AI coding assistants inside your devcontainer. Agents are installed hermetically using portable Python binaries, ensuring no conflicts with system packages:
