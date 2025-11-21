@@ -13,9 +13,6 @@ source "$SCRIPT_DIR/lib/volumes.sh"
 source "$SCRIPT_DIR/lib/security.sh"
 source "$SCRIPT_DIR/lib/init.sh"
 
-# Source docker_native module (needed for fallback mode)
-source "$SCRIPT_DIR/lib/docker_native.sh"
-
 # Test function to verify improvements
 test_dcutil_improvements() {
     echo "Testing dcutil improvements..."
