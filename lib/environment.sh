@@ -32,7 +32,7 @@ parse_environment_config() {
             while IFS='=' read -r key val; do
                 if [ -n "$key" ] && [ -n "$val" ]; then
                     CONTAINER_ENV+=("$key=$val")
-                    debug "containerEnv: $key=$val"
+                    info "containerEnv: $key=$val"
                 fi
             done < <(jq -r '.containerEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$config_file" 2>/dev/null || echo "")
         fi
@@ -45,7 +45,7 @@ parse_environment_config() {
                     local expanded_val
                     expanded_val=$(expand_environment_variables "$val")
                     REMOTE_ENV+=("$key=$expanded_val")
-                    debug "remoteEnv: $key=$expanded_val"
+                    info "remoteEnv: $key=$expanded_val"
                 fi
             done < <(jq -r '.remoteEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$config_file" 2>/dev/null || echo "")
         fi
@@ -104,7 +104,7 @@ build_container_env_args() {
     for env_var in "${CONTAINER_ENV[@]}"; do
         if [ -n "$env_var" ]; then
             env_args+=("-e" "$env_var")
-            debug "Adding container environment: $env_var"
+            info "Adding container environment: $env_var"
         fi
     done
     
@@ -124,51 +124,32 @@ apply_remote_environment() {
     fi
     
     if [ ${#REMOTE_ENV[@]} -eq 0 ]; then
-        debug "No remote environment variables to apply"
+        info "No remote environment variables to apply"
         return 0
     fi
     
     info "Applying remote environment variables to container..."
     
-    # Create environment file for remote environment
-    local env_file
-    env_file=$(mktemp)
-    trap "rm -f '$env_file'" RETURN
-    
-    # Write remote environment variables to file
+    # Apply environment variables directly to container
     for env_var in "${REMOTE_ENV[@]}"; do
-        echo "$env_var" >> "$env_file"
-        debug "Remote environment: $env_var"
+        if [ -n "$env_var" ]; then
+            local key="${env_var%%=*}"
+            local value="${env_var#*=}"
+            
+            info "Remote environment: $env_var"
+            
+            # Add to user's bash profile for persistence
+            docker exec "$container_id" /bin/sh -c "
+                if [ -f /home/vscode/.bashrc ]; then
+                    echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
+                elif [ -f /home/developer/.bashrc ]; then
+                    echo 'export $key=\"$value\"' >> /home/developer/.bashrc
+                fi
+            " || true
+        fi
     done
     
-    # Copy environment file to container and apply it
-    if docker cp "$env_file" "$container_id:/tmp/.dcutil_remote_env"; then
-        docker exec "$container_id" /bin/sh -c "
-            if [ -f /tmp/.dcutil_remote_env ]; then
-                # Source the environment file
-                set -a
-                . /tmp/.dcutil_remote_env
-                set +a
-                
-                # Export variables for current session
-                while IFS='=' read -r key val; do
-                    if [ -n \"\$key\" ] && [ -n \"\$val\" ]; then
-                        export \"\$key=\$val\"
-                    fi
-                done < /tmp/.dcutil_remote_env
-                
-                # Clean up
-                rm -f /tmp/.dcutil_remote_env
-            fi
-        "
-        
-        success "Remote environment variables applied successfully"
-    else
-        warning "Failed to apply remote environment variables"
-        return 1
-    fi
-    
-    return 0
+    success "Remote environment variables applied successfully"
 }
 
 # Validate environment variable names and values
@@ -180,7 +161,7 @@ validate_environment_variables() {
         if [[ "$env_var" =~ ^[a-zA-Z_][a-zA-Z0-9_]*=.*$ ]]; then
             # Check for potentially dangerous values
             local value="${env_var#*=}"
-            if [[ "$value" =~ [\$`()] ]]; then
+            if [[ "$value" =~ [\$] ]] || [[ "$value" =~ [\`] ]] || [[ "$value" =~ [\(] ]] || [[ "$value" =~ [\)] ]]; then
                 warning "Environment variable contains potentially unsafe characters: $env_var"
             fi
         else
@@ -205,20 +186,26 @@ setup_user_environment() {
     
     info "Setting up user environment for $CONTAINER_USER..."
     
-    # Create user if it doesn't exist
+    # Check if user exists and set up home directory
     docker exec "$container_id" /bin/sh -c "
-        if ! id -u $CONTAINER_USER >/dev/null 2>&1; then
-            useradd -m -s /bin/bash $CONTAINER_USER || true
-        fi
-        
-        # Set up home directory permissions
-        if [ -d /home/$CONTAINER_USER ]; then
-            chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
-        fi
-        
-        # Add user to sudo group if needed
-        if command -v usermod >/dev/null 2>&1; then
-            usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
+        # Check if user exists
+        if id -u $CONTAINER_USER >/dev/null 2>&1; then
+            # Set up home directory permissions
+            if [ -d /home/$CONTAINER_USER ]; then
+                chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
+            fi
+            
+            # Add user to sudo group if needed and possible
+            if command -v usermod >/dev/null 2>&1; then
+                usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
+            fi
+        else
+            # User doesn't exist, check if we can create it
+            if [ \$(id -u) -eq 0 ]; then
+                useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
+            else
+                echo 'Cannot create user $CONTAINER_USER: not running as root'
+            fi
         fi
     " || warning "Failed to set up user environment"
     

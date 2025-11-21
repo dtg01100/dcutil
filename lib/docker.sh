@@ -70,9 +70,19 @@ parse_devcontainer_config() {
     WAIT_FOR=()
     APP_PORTS=()
     SHUTDOWN_ACTION="stopContainer"
+    
+    # Check if custom build is configured and generate image name
+    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
+        # Generate image name from project directory
+        IMAGE_NAME="dcutil-${PWD##*/}:custom"
+        info "Generated custom image name: $IMAGE_NAME"
+    fi
 
     if command -v jq &> /dev/null; then
-        IMAGE_NAME=$(jq -r '.image // env.IMAGE_NAME' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$IMAGE_NAME")
+        # Only parse image if not using custom build
+        if ! command -v is_custom_build >/dev/null 2>&1 || ! is_custom_build; then
+            IMAGE_NAME=$(jq -r '.image // env.IMAGE_NAME' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$IMAGE_NAME")
+        fi
         # Only update WORKSPACE_FOLDER if it's not null
         local workspace_from_config
         workspace_from_config=$(jq -r '.workspaceFolder // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
@@ -202,6 +212,13 @@ docker_up() {
     fi
 
     parse_devcontainer_config
+    
+    # Override image name for custom builds
+    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
+        # Generate image name from project directory
+        IMAGE_NAME="dcutil-${PWD##*/}:custom"
+        info "Using custom build image: $IMAGE_NAME"
+    fi
 
     # Build custom image if needed
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then

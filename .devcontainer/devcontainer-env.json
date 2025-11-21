@@ -1,0 +1,20 @@
+{
+    "name": "Environment Test",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "containerUser": "developer",
+    "remoteUser": "developer",
+    "containerEnv": {
+        "NODE_ENV": "development",
+        "DEBUG": "true",
+        "PROJECT_NAME": "dcutil-test",
+        "API_ENDPOINT": "http://localhost:3000"
+    },
+    "remoteEnv": {
+        "PATH": "${localEnv:/usr/local/bin}:/usr/bin:/bin",
+        "HOME": "/home/developer",
+        "WORKSPACE": "${localEnv:/workspaces}/dcutil",
+        "GIT_AUTHOR_NAME": "${localEnv:DCUTIL_USER}",
+        "GIT_AUTHOR_EMAIL": "${localEnv:DCUTIL_EMAIL}@example.com"
+    },
+    "postStartCommand": "echo 'Environment test container started'"
+}
