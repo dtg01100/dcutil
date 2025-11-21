@@ -404,6 +404,9 @@ fi
 
 # Change to project directory
 info "Using project directory: $PROJECT_DIR"
+info "PROJECT_DIR before cd: '$PROJECT_DIR'"
+# Export PROJECT_DIR for all modules
+export PROJECT_DIR
 cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
 
 # Command routing
@@ -466,7 +469,7 @@ case "$COMMAND" in
                 if [ $# -lt 3 ]; then
                     error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
                 fi
-                add_volume "$1" "$2" "$3" "$4"
+                add_volume "$1" "$2" "$3" "${4:-}"
                 ;;
             "remove")
                 if [ $# -eq 0 ]; then
