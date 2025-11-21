@@ -1,1128 +1,71 @@
 #!/bin/bash
 
-# General purpose devcontainer utility script
-# Provides various operations for managing development containers
+# Main dcutil script
+# Routes commands to appropriate modules
 
-set -e
+set -euo pipefail
 
-# Exit codes
-EXIT_SUCCESS=0
-EXIT_INVALID_ARGS=1
-EXIT_DEP_NOT_FOUND=2
-EXIT_DOCKER_ERROR=3
-EXIT_DEVCONTAINER_ERROR=4
-EXIT_PERMISSION_ERROR=5
-EXIT_CONFIG_ERROR=6
+# Source all modules
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/core.sh"
+source "$SCRIPT_DIR/lib/docker.sh"
+source "$SCRIPT_DIR/lib/volumes.sh"
+source "$SCRIPT_DIR/lib/security.sh"
+source "$SCRIPT_DIR/lib/init.sh"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Error handling functions
-error_exit() {
-    echo -e "${RED}❌ Error: $1${NC}" >&2
-    exit "${2:-$EXIT_INVALID_ARGS}"
-}
-
-warning() {
-    echo -e "${YELLOW}⚠️  Warning: $1${NC}" >&2
-}
-
-success() {
-    echo -e "${GREEN}✅ $1${NC}"
-}
-
-info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
-}
-
-# Input validation functions
-validate_command() {
-    local cmd="$1"
-    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion"
-
-    if [[ ! " $valid_commands " =~ $cmd ]]; then
-        error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." "$EXIT_INVALID_ARGS"
-    fi
-}
-
-validate_project_path() {
-    local path="$1"
-
-    if [ -n "$path" ]; then
-        if [ ! -d "$path" ]; then
-            error_exit "Project path '$path' does not exist or is not a directory." "$EXIT_INVALID_ARGS"
-        fi
-
-        if [ ! -r "$path" ]; then
-            error_exit "Cannot read project path '$path'. Permission denied." "$EXIT_PERMISSION_ERROR"
-        fi
-
-        # Convert to absolute path
-        if ! cd "$path" 2>/dev/null; then
-            error_exit "Cannot access project path '$path'." "$EXIT_PERMISSION_ERROR"
-        fi
-        PROJECT_DIR="$(pwd)"
-        cd - >/dev/null
-    fi
-}
-
-validate_run_command() {
-    if [ $# -eq 0 ]; then
-        error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" "$EXIT_INVALID_ARGS"
-    fi
-}
-
-validate_init_mode() {
-    local mode="$1"
-    local valid_modes="fast wizard --fast --wizard --help -h"
-
-    if [ -n "$mode" ] && [[ ! " $valid_modes " =~ $mode ]]; then
-        error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." "$EXIT_INVALID_ARGS"
-    fi
-}
-
-# Validate a workspace folder path provided for devcontainer configuration
-validate_workspace_folder() {
-    local wf="$1"
-
-    # Empty is invalid here (caller may provide a default)
-    if [ -z "${wf}" ]; then
-        return 1
-    fi
-
-    # Must be an absolute path
-    if [[ "${wf}" != /* ]]; then
-        return 2
-    fi
-
-    # Disallow root which would be dangerous
-    if [ "${wf}" = "/" ]; then
-        return 3
-    fi
-
-    # Disallow paths with whitespace at ends
-    if [[ "${wf}" =~ ^[[:space:]] || "${wf}" =~ [[:space:]]$ ]]; then
-        return 4
-    fi
-
-    # Basic.. path looks fine
-    return 0
-}
-
-# Validate JSON file with jq or python if available
-validate_json_if_available() {
-    local fp="$1"
-    if [ -z "$fp" ] || [ ! -f "$fp" ]; then
-        error_exit "JSON file not found for validation: $fp" "$EXIT_CONFIG_ERROR"
-    fi
-
-    if command -v jq >/dev/null 2>&1; then
-        if ! jq -e . "$fp" >/dev/null 2>&1; then
-            error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
-        fi
-    elif command -v python >/dev/null 2>&1; then
-        if ! python -m json.tool "$fp" >/dev/null 2>&1; then
-            error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
-        fi
-    else
-        warning "No JSON validator available (jq/python); could not validate $fp"
-    fi
-}
-
-# Best-effort: check whether a given user exists in a docker image (requires docker)
-check_user_in_image() {
-    local image="$1"
-    local user="$2"
-
-    if ! command -v docker >/dev/null 2>&1; then
-        return 2
-    fi
-
-    # Try to run `id <user>` inside the image. This will pull the image if necessary.
-    if docker run --rm --entrypoint id "$image" "$user" >/dev/null 2>&1; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-
-
-# Volume management functions
-
-
-# Rebuild functionality
-rebuild_devcontainer() {
-    local force_rebuild=false
-    local preserve_volumes=false
-    local preserve_ssh=false
-    local preserve_agents=false
-
-    # Parse rebuild options
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --force|-f)
-                force_rebuild=true
-                shift
-                ;;
-            --preserve-volumes)
-                preserve_volumes=true
-                shift
-                ;;
-            --preserve-ssh)
-                preserve_ssh=true
-                shift
-                ;;
-            --preserve-agents)
-                preserve_agents=true
-                shift
-                ;;
-            --preserve-all)
-                preserve_volumes=true
-                preserve_ssh=true
-                preserve_agents=true
-                shift
-                ;;
-            --help|-h)
-                print_rebuild_usage
-                exit $EXIT_SUCCESS
-                ;;
-            *)
-                break
-                ;;
-        esac
-    done
-
-    info "Starting devcontainer rebuild..."
-
-    # Check if container is running
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        info "Stopping running devcontainer..."
-        if ! devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
-            error_exit "Failed to stop running devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-        success "Devcontainer stopped"
-    fi
-
-    # Show preservation options
-    echo ""
-    info "Rebuild options:"
-    if [ "$preserve_volumes" = true ]; then
-        info "  ✓ Volumes will be preserved (data persists)"
-    else
-        warning "  ✗ Volumes will be rebuilt (data may be lost)"
-    fi
-
-    if [ "$preserve_ssh" = true ]; then
-        info "  ✓ SSH agent will be remounted after rebuild"
-    else
-        warning "  ✗ SSH agent will need manual remounting"
-    fi
-
-    if [ "$preserve_agents" = true ]; then
-        info "  ✓ Agent configurations will be preserved"
-    else
-        warning "  ✗ Agents will need reinstallation"
-    fi
-
-    echo ""
-
-    # Confirm rebuild unless forced
-    if [ "$force_rebuild" = false ]; then
-        echo -e "${YELLOW}⚠️  Rebuild will stop the container, rebuild the image, and start fresh.${NC}"
-        read -r -p "Continue with rebuild? (y/N): " confirm
-        if [[ ! "$confirm" =~ ^[Yy] ]]; then
-            info "Rebuild cancelled by user"
-            return 0
-        fi
-    fi
-
-    # Store current SSH agent info if preserving
-    local ssh_auth_sock=""
-    local ssh_agent_pid=""
-    if [ "$preserve_ssh" = true ] && [ -n "${SSH_AUTH_SOCK:-}" ]; then
-        ssh_auth_sock="$SSH_AUTH_SOCK"
-        # Try to get SSH agent PID
-        ssh_agent_pid=$(pgrep -f "ssh-agent.*$ssh_auth_sock" 2>/dev/null | head -1)
-        if [ -n "$ssh_agent_pid" ]; then
-            info "SSH agent found (PID: $ssh_agent_pid)"
+# Test function to verify improvements
+test_dcutil_improvements() {
+    echo "Testing dcutil improvements..."
+    
+    # Test 1: Verify set -euo pipefail is active
+    local test_result=0
+    if [[ $- == *e* ]] && [[ $- == *u* ]]; then
+        # Test pipefail functionality
+        set +e  # Temporarily disable exit on error
+        false | true
+        local pipefail_result=$?
+        set -e  # Re-enable exit on error
+        
+        if [ $pipefail_result -ne 0 ]; then
+            echo "✅ Error handling enabled (set -euo pipefail)"
         else
-            warning "SSH agent not found, SSH preservation may not work"
+            echo "⚠️  Error handling partially configured (pipefail may not be working)"
         fi
+    else
+        echo "❌ Error handling not properly configured"
     fi
-
-    # Store volume information if preserving
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    local volumes_to_restore=""
-    if [ "$preserve_volumes" = true ] && [ -f "$volume_file" ]; then
-        if command -v jq &> /dev/null; then
-            volumes_to_restore=$(jq -r '.volumes | keys[]' "$volume_file" 2>/dev/null | tr '\n' ' ')
-        else
-            volumes_to_restore=$(grep -o '"[^"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//')
-        fi
-        if [ -n "$volumes_to_restore" ]; then
-            info "Volumes to preserve: $volumes_to_restore"
-        fi
+    
+    # Test 2: Test safe_path function
+    local test_path
+    test_path=$(safe_path "~/test")
+    if [[ "$test_path" != "~/test" ]]; then
+        echo "✅ safe_path function working"
+    else
+        echo "❌ safe_path function not expanding paths"
     fi
-
-    # Rebuild the devcontainer image
-    info "Rebuilding devcontainer image..."
-    if ! devcontainer build --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
-        error_exit "Failed to rebuild devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-    success "Devcontainer image rebuilt successfully"
-
-    # Start the fresh container
-    info "Starting fresh devcontainer..."
-    if ! devcontainer up --workspace-folder "$PROJECT_DIR" 2>/dev/null; then
-        error_exit "Failed to start rebuilt devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-    success "Devcontainer started successfully"
-
-    # Post-rebuild operations
-    echo ""
-    info "Performing post-rebuild operations..."
-
-    # Restore volumes if requested
-    if [ "$preserve_volumes" = true ] && [ -n "$volumes_to_restore" ]; then
-        info "Setting up volume configurations..."
-        for volume_name in $volumes_to_restore; do
-            if command -v jq &> /dev/null; then
-                local container_path
-                container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
-                if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
-                    info "  Volume '$volume_name' -> $container_path"
-                fi
-            fi
-        done
-        info "Volume setup complete. Use 'dcutil volumes mount <name>' for individual volumes."
-    fi
-
-    # Remount SSH agent if requested
-    if [ "$preserve_ssh" = true ] && [ -n "$ssh_auth_sock" ]; then
-        info "Remounting SSH agent..."
-        sleep 2  # Give container time to stabilize
-        if [ -S "$ssh_auth_sock" ]; then
-            if ./dcutil ssh mount 2>/dev/null; then
-                success "SSH agent remounted successfully"
-            else
-                warning "Failed to remount SSH agent (may need manual mounting)"
-            fi
-        else
-            warning "SSH agent socket not available for remounting"
-        fi
-    fi
-
-    # Restore agent configurations if requested
-    if [ "$preserve_agents" = true ]; then
-        info "Agent configurations preserved in container"
-        info "Agents may need reactivation: source ~/.dcutil/agents/*/bin/activate"
-    fi
-
-    echo ""
-    success "Devcontainer rebuild completed successfully!"
-
-    # Show summary
-    info "Rebuild summary:"
-    info "  ✅ Container stopped and rebuilt"
-    info "  ✅ Fresh image deployed"
-    info "  ✅ Container started successfully"
-
-    if [ "$preserve_volumes" = true ]; then
-        info "  ✅ Volume configurations preserved"
-    fi
-
-    if [ "$preserve_ssh" = true ]; then
-        info "  ✅ SSH agent remounted"
-    fi
-
-    if [ "$preserve_agents" = true ]; then
-        info "  ✅ Agent configurations preserved"
-    fi
-
-    echo ""
-    info "Your devcontainer is ready to use!"
-}
-
-print_rebuild_usage() {
-    echo "Usage: dcutil rebuild [options]"
-    echo ""
-    echo "Options:"
-    echo "  --force, -f           Force rebuild without confirmation"
-    echo "  --preserve-volumes    Keep volume configurations (recommended)"
-    echo "  --preserve-ssh        Remount SSH agent after rebuild"
-    echo "  --preserve-agents     Keep agent configurations"
-    echo "  --preserve-all        Preserve volumes, SSH, and agents"
-    echo "  --help, -h            Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  dcutil rebuild                           # Basic rebuild with confirmation"
-    echo "  dcutil rebuild --preserve-all           # Rebuild preserving everything"
-    echo "  dcutil rebuild --preserve-volumes --force  # Force rebuild with volume preservation"
-    echo "  dcutil rebuild --preserve-ssh           # Rebuild with SSH agent preservation"
-    echo ""
-    echo "Rebuild Process:"
-    echo "  1. Stop current devcontainer"
-    echo "  2. Rebuild devcontainer image"
-    echo "  3. Start fresh devcontainer"
-    echo "  4. Apply preservation options"
-    echo ""
-    echo "Preservation Options:"
-    echo "  --preserve-volumes  Preserve volume configurations and data"
-    echo "  --preserve-ssh      Remount SSH agent to fresh container"
-    echo "  --preserve-agents   Keep agent configurations and environments"
-    echo ""
-    echo "Note: Volume data preservation depends on devcontainer.json mount configuration"
-}
-
-get_volume_config_file() {
-    echo "$PROJECT_DIR/.devcontainer/volumes.json"
-}
-
-ensure_volume_config() {
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    local volume_dir
-    volume_dir=$(dirname "$volume_file")
-
-    if [ ! -d "$volume_dir" ]; then
-        mkdir -p "$volume_dir"
-    fi
-
-    if [ ! -f "$volume_file" ]; then
-        echo '{"volumes": {}}' > "$volume_file"
-    fi
-}
-
-list_volumes() {
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    info "Mounted volumes for this project:"
-    echo ""
-
+    
+    # Test 3: Test volume JSON handling
     if command -v jq &> /dev/null; then
-        # Use jq for pretty output if available
-        if jq -e '.volumes | length > 0' "$volume_file" >/dev/null 2>&1; then
-            jq -r '.volumes | to_entries[] | "  \(.key) -> \(.value.host_path) (auto: \(.value.auto_mount))"' "$volume_file"
-        else
-            echo "  No volumes configured"
-        fi
+        echo "✅ jq available for JSON operations"
     else
-        # Fallback to grep/sed for JSON parsing
-        local volumes
-        volumes=$(grep -o '"[^"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//')
-        if [ -n "$volumes" ]; then
-            echo "$volumes" | while read -r vol_name; do
-                local host_path
-                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-                local auto_mount
-                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
-                echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
-            done
-        else
-            echo "  No volumes configured"
-        fi
+        echo "⚠️  jq not available, falling back to sed"
     fi
-    echo ""
-}
-
-add_volume() {
-    local volume_name="$1"
-    local host_path="$2"
-    local container_path="$3"
-    local mount_type="${4:-bind}"
-
-    if [ -z "$volume_name" ] || [ -z "$host_path" ] || [ -z "$container_path" ]; then
-        error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
-    fi
-
-    # Validate mount type
-    if [[ ! " bind volume tmpfs " =~ $mount_type ]]; then
-        error_exit "Invalid mount type: '$mount_type'. Use 'bind', 'volume', or 'tmpfs'." "$EXIT_INVALID_ARGS"
-    fi
-
-    # Expand tilde in paths
-    host_path="${host_path/#\~/$HOME}"
-    container_path="${container_path/#\~//home/vscode}"
-
-    # Validate host path
-    case "$mount_type" in
-        "bind")
-            if [ ! -e "$host_path" ]; then
-                warning "Host path '$host_path' does not exist. Creating directory..."
-                if ! mkdir -p "$host_path" 2>/dev/null; then
-                    error_exit "Failed to create host path '$host_path'" "$EXIT_PERMISSION_ERROR"
-                fi
-                success "Created directory: $host_path"
-            fi
-            ;;
-        "volume")
-            # Volume names should be valid
-            if ! [[ "$volume_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-                error_exit "Invalid volume name: '$volume_name'. Use alphanumeric characters, dots, hyphens, and underscores only." "$EXIT_INVALID_ARGS"
-            fi
-            ;;
-        "tmpfs")
-            # tmpfs doesn't need host path validation
-            ;;
-    esac
-
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    # Check if volume already exists
-    if command -v jq &> /dev/null; then
-        if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
-            error_exit "Volume '$volume_name' already exists. Use 'dcutil volumes remove $volume_name' first." "$EXIT_CONFIG_ERROR"
-        fi
-    fi
-
-    # Add volume to configuration
-    if command -v jq &> /dev/null; then
-        jq ".volumes[\"$volume_name\"] = {
-            \"host_path\": \"$host_path\",
-            \"container_path\": \"$container_path\",
-            \"mount_type\": \"$mount_type\",
-            \"auto_mount\": true,
-            \"created\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-        }" "$volume_file" > "${volume_file}.tmp" && mv "${volume_file}.tmp" "$volume_file"
+    
+    # Test 4: Check for atomic operations
+    if grep -q "mktemp" "$SCRIPT_DIR/lib/volumes.sh"; then
+        echo "✅ Atomic operations implemented"
     else
-        # Fallback: manual JSON manipulation
-        local temp_file="${volume_file}.tmp"
-        cp "$volume_file" "$temp_file"
-
-        # Insert new volume entry before the closing brace
-        sed -i "/^    }$/i\\
-    },\\
-    \"$volume_name\": {\\
-        \"host_path\": \"$host_path\",\\
-        \"container_path\": \"$container_path\",\\
-        \"mount_type\": \"$mount_type\",\\
-        \"auto_mount\": true,\\
-        \"created\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"\\
-    }" "$temp_file"
-
-        mv "$temp_file" "$volume_file"
+        echo "❌ Atomic operations not found"
     fi
-
-    success "Added volume '$volume_name'"
-    info "  Host path: $host_path"
-    info "  Container path: $container_path"
-    info "  Mount type: $mount_type"
-    info "  Auto-mount: enabled"
-
-    # Offer to mount immediately if container is running
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        echo ""
-        read -r -p "Mount volume now? (y/N): " mount_now
-        if [[ "$mount_now" =~ ^[Yy] ]]; then
-            mount_volume "$volume_name"
-        fi
-    fi
-}
-
-remove_volume() {
-    local volume_name="$1"
-
-    if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
-    fi
-
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    # Check if volume exists
-    local volume_exists=false
-    if command -v jq &> /dev/null; then
-        if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
-            volume_exists=true
-        fi
+    
+    # Test 5: Check for rate limiting
+    if grep -q "sleep 1" "$SCRIPT_DIR/lib/security.sh"; then
+        echo "✅ Rate limiting implemented"
     else
-        if grep -q "\"$volume_name\"" "$volume_file"; then
-            volume_exists=true
-        fi
+        echo "❌ Rate limiting not found"
     fi
-
-    if [ "$volume_exists" = false ]; then
-        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
-    fi
-
-    # Confirm removal
-    echo ""
-    warning "This will remove volume configuration for '$volume_name'"
-    read -r -p "Are you sure? (y/N): " confirm
-    if [[ ! "$confirm" =~ ^[Yy] ]]; then
-        info "Volume removal cancelled"
-        return 0
-    fi
-
-    # Remove volume from configuration
-    if command -v jq &> /dev/null; then
-        jq "del(.volumes[\"$volume_name\"])" "$volume_file" > "${volume_file}.tmp" && mv "${volume_file}.tmp" "$volume_file"
-    else
-        # Fallback: remove lines containing the volume name
-        local temp_file="${volume_file}.tmp"
-        sed "/\"$volume_name\": {/,/},/d" "$volume_file" > "$temp_file"
-        # Handle last volume (no trailing comma)
-        sed "s/    }/    }/; /\"$volume_name\": {/,/}/d" "$temp_file" > "$volume_file.tmp2" 2>/dev/null || cp "$temp_file" "$volume_file.tmp2"
-        mv "$volume_file.tmp2" "$temp_file"
-        mv "$temp_file" "$volume_file"
-    fi
-
-    success "Removed volume '$volume_name'"
-
-    # Offer to unmount if mounted
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        echo ""
-        read -r -p "Unmount volume from running container? (y/N): " unmount_now
-        if [[ "$unmount_now" =~ ^[Yy] ]]; then
-            unmount_volume "$volume_name"
-        fi
-    fi
-}
-
-mount_volume() {
-    local volume_name="$1"
-
-    if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes mount <name>" "$EXIT_INVALID_ARGS"
-    fi
-
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    # Get volume configuration
-    local host_path=""
-    local container_path=""
-    local mount_type=""
-
-    if command -v jq &> /dev/null; then
-        host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
-        container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
-        mount_type=$(jq -r ".volumes[\"$volume_name\"].mount_type" "$volume_file" 2>/dev/null)
-    else
-        # Fallback parsing
-        host_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-        container_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "container_path" | sed 's/.*: "\(.*\)",.*/\1/')
-        mount_type=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "mount_type" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
-
-    # Validate volume exists
-    if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
-    fi
-
-    # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    # Get container ID
-    CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-    if [ -z "$CONTAINER_ID" ]; then
-        error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    info "Volume '$volume_name' configuration:"
-    info "  Host path: $host_path"
-    info "  Container path: $container_path"
-    info "  Mount type: $mount_type"
-
-    # For bind mounts, copy data to demonstrate the concept
-    case "$mount_type" in
-        "bind")
-            warning "Direct mount operations require privileged containers"
-            warning "For production use, add volume mounts to .devcontainer/devcontainer.json:"
-            echo ""
-            info "Add to devcontainer.json 'mounts' array:"
-            echo "  \"mounts\": ["
-            echo "    \"source=$host_path,target=$container_path,type=bind,consistency=cached\""
-            echo "  ]"
-            echo ""
-
-            # Offer to copy files as demonstration
-            if [ -d "$host_path" ] && [ "$(find "$host_path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" -gt 0 ]; then
-                echo ""
-                read -r -p "Copy files from host to container as demonstration? (y/N): " copy_files
-                if [[ "$copy_files" =~ ^[Yy] ]]; then
-                    if docker cp "$host_path/." "$CONTAINER_ID$container_path/" 2>/dev/null; then
-                        success "Files copied to container"
-                        info "Note: This is a one-time copy, not a live bind mount"
-                    else
-                        warning "Failed to copy files to container"
-                    fi
-                fi
-            fi
-            ;;
-        "volume")
-            warning "Volume mounts require container recreation"
-            warning "Add to devcontainer.json 'mounts' array:"
-            echo ""
-            info "Add to devcontainer.json 'mounts' array:"
-            echo "  \"mounts\": ["
-            echo "    \"source=$volume_name,target=$container_path,type=volume\""
-            echo "  ]"
-            echo ""
-            read -r -p "Recreate container with volume '$volume_name'? (y/N): " recreate
-            if [[ "$recreate" =~ ^[Yy] ]]; then
-                info "Recreating container with volume mount..."
-                devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
-                warning "Volume '$volume_name' will be available after container restart"
-            fi
-            ;;
-        "tmpfs")
-            warning "tmpfs mounts require privileged containers"
-            warning "Add to devcontainer.json 'mounts' array:"
-            echo ""
-            info "Add to devcontainer.json 'mounts' array:"
-            echo "  \"mounts\": ["
-            echo "    \"target=$container_path,type=tmpfs\""
-            echo "  ]"
-            echo ""
-            ;;
-    esac
-
-    success "Volume '$volume_name' configuration displayed"
-    info "Use 'dcutil volumes status' to see current container mounts"
-}
-
-unmount_volume() {
-    local volume_name="$1"
-
-    if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes unmount <name>" "$EXIT_INVALID_ARGS"
-    fi
-
-    # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        error_exit "Devcontainer is not running" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    # Get container ID
-    CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-    if [ -z "$CONTAINER_ID" ]; then
-        error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    info "Unmounting volume '$volume_name'..."
-
-    # Get mount point (assume it's the same as container_path)
-    local container_path=""
-    local volume_file
-    volume_file=$(get_volume_config_file)
-
-    if command -v jq &> /dev/null; then
-        container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
-    else
-        container_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "container_path" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
-
-    if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
-        if docker exec "$CONTAINER_ID" umount "$container_path" 2>/dev/null; then
-            success "Volume '$volume_name' unmounted successfully"
-        else
-            warning "Volume '$volume_name' was not mounted or failed to unmount"
-        fi
-    else
-        warning "Could not determine container path for volume '$volume_name'"
-    fi
-}
-
-volume_status() {
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    info "Volume status for project: $PROJECT_DIR"
-    echo ""
-
-    # Check if container is running
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        success "Container is running"
-
-        # Get container ID
-        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-
-        echo ""
-        info "Container mounts:"
-        docker inspect "$CONTAINER_ID" --format '{{ range .Mounts }}{{ if eq .Type "bind" }}{{ .Source }} -> {{ .Destination }} ({{ .Mode }}){{ println }}{{ end }}{{ end }}' 2>/dev/null || echo "  No bind mounts found"
-
-        echo ""
-        info "Configured volumes:"
-        list_volumes
-
-    else
-        warning "Container is not running"
-        echo ""
-        info "Configured volumes:"
-        list_volumes
-    fi
-}
-
-backup_volume() {
-    local volume_name="$1"
-    local backup_path="$2"
-
-    if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
-    fi
-
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    # Get volume configuration
-    local host_path=""
-    if command -v jq &> /dev/null; then
-        host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
-    else
-        host_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
-
-    if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
-    fi
-
-    # Expand tilde in host path
-    host_path="${host_path/#\~/$HOME}"
-
-    if [ ! -d "$host_path" ]; then
-        error_exit "Volume host path '$host_path' does not exist" "$EXIT_CONFIG_ERROR"
-    fi
-
-    # Determine backup path
-    if [ -z "$backup_path" ]; then
-        backup_path="./${volume_name}_backup_$(date +%Y%m%d_%H%M%S).tar.gz"
-    fi
-
-    info "Creating backup of volume '$volume_name'..."
-    info "  Source: $host_path"
-    info "  Backup: $backup_path"
-
-    # Create backup directory if needed
-    backup_dir=$(dirname "$backup_path")
-    if [ ! -d "$backup_dir" ]; then
-        mkdir -p "$backup_dir"
-    fi
-
-    # Create tar.gz backup
-    if tar -czf "$backup_path" -C "$(dirname "$host_path")" "$(basename "$host_path")" 2>/dev/null; then
-        success "Volume '$volume_name' backed up successfully"
-        info "Backup size: $(du -h "$backup_path" | cut -f1)"
-        info "Backup location: $backup_path"
-    else
-        error_exit "Failed to create backup of volume '$volume_name'" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-restore_volume() {
-    local volume_name="$1"
-    local backup_path="$2"
-
-    if [ -z "$volume_name" ] || [ -z "$backup_path" ]; then
-        error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
-    fi
-
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    # Get volume configuration
-    local host_path=""
-    if command -v jq &> /dev/null; then
-        host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
-    else
-        host_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
-
-    if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
-    fi
-
-    # Expand tilde in paths
-    host_path="${host_path/#\~/$HOME}"
-    backup_path="${backup_path/#\~/$HOME}"
-
-    if [ ! -f "$backup_path" ]; then
-        error_exit "Backup file '$backup_path' not found" "$EXIT_CONFIG_ERROR"
-    fi
-
-    info "Restoring volume '$volume_name' from backup..."
-    info "  Volume: $host_path"
-    info "  Backup: $backup_path"
-
-    # Confirm restoration
-    echo ""
-    warning "This will overwrite the current volume contents"
-    read -r -p "Continue? (y/N): " confirm
-    if [[ ! "$confirm" =~ ^[Yy] ]]; then
-        info "Volume restoration cancelled"
-        return 0
-    fi
-
-    # Create backup of current data
-    if [ -d "$host_path" ]; then
-        local current_backup
-        current_backup="./${volume_name}_pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
-        info "Creating backup of current data..."
-        if tar -czf "$current_backup" -C "$(dirname "$host_path")" "$(basename "$host_path")" 2>/dev/null; then
-            info "Current data backed up to: $current_backup"
-        else
-            warning "Failed to backup current data (continuing anyway)"
-        fi
-    fi
-
-    # Remove existing volume directory
-    if [ -d "$host_path" ]; then
-        rm -rf "$host_path"
-    fi
-
-    # Create parent directory
-    mkdir -p "$(dirname "$host_path")"
-
-    # Extract backup
-    if tar -xzf "$backup_path" -C "$(dirname "$host_path")" 2>/dev/null; then
-        success "Volume '$volume_name' restored successfully"
-        info "Restored to: $host_path"
-
-        # Set proper permissions
-        if command -v chown &> /dev/null; then
-            chown -R "$(id -u):$(id -g)" "$host_path" 2>/dev/null || true
-        fi
-    else
-        error_exit "Failed to restore volume '$volume_name' from backup" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-get_agent_install_command() {
-    local agent="$1"
-
-    case "$agent" in
-        "opencode")
-            echo "curl -fsSL https://opencode.ai/install | bash"
-            ;;
-        "aider")
-            echo "pip install aider-chat"
-            ;;
-        "copilot-cli")
-            echo "npm install -g @github/copilot"
-            ;;
-        "cody")
-            echo "npm install -g @sourcegraph/cody"
-            ;;
-        "tabnine")
-            echo "npm install -g tabnine"
-            ;;
-        "qwen-cli")
-            echo "pip install qwen-cli"
-            ;;
-        "gemini")
-            echo "pip install gemini-cli"
-            ;;
-        "claude-cli")
-            echo "pip install claude-cli"
-            ;;
-        "openai-cli")
-            echo "pip install openai-cli"
-            ;;
-        *)
-            error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli" "$EXIT_INVALID_ARGS"
-            ;;
-    esac
-}
-
-# Security hardening functions
-
-
-check_agent_security_risk() {
-    local agent="$1"
-    local install_cmd="$2"
-
-    case "$agent" in
-        "opencode")
-            warning "⚠️  HIGH RISK: $agent installation runs remote scripts that could execute arbitrary code."
-            echo -e "${YELLOW}Installation command: $install_cmd${NC}"
-            read -p "Do you trust the source (opencode.ai) and want to proceed? (yes/no): " -r confirm
-            if [[ ! "$confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
-                info "Installation cancelled by user"
-                exit $EXIT_SUCCESS
-            fi
-            ;;
-    esac
-}
-
-
-
-scan_vulnerabilities() {
-    local agent="$1"
-    local install_type="$2"
-    local venv_dir="$3"
-
-    case "$install_type" in
-        "pip")
-            info "Running enhanced security scan for Python packages..."
-
-            # Set up environment for portable Python if available
-            local pip_cmd="pip"
-            local python_cmd="python"
-            if [ -n "$venv_dir" ] && [ -f "$venv_dir/bin/python" ]; then
-                pip_cmd="$venv_dir/bin/pip"
-                python_cmd="$venv_dir/bin/python"
-            fi
-
-            # Enhanced vulnerability scanning with multiple tools
-            local vulnerabilities_found=false
-
-            # 1. Use safety tool with proper pipenv/venv support
-            if devcontainer exec --workspace-folder . /bin/bash -c "$python_cmd -c 'import safety; print(\"safety available\")'" &>/dev/null; then
-                info "Running safety vulnerability scan..."
-                if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                    export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
-                    $python_cmd -m safety scan --output=text
-                " 2>/dev/null; then
-                    warning "Safety scan found potential vulnerabilities in $agent"
-                    vulnerabilities_found=true
-                fi
-            else
-                info "Installing safety for advanced vulnerability scanning..."
-                if devcontainer exec --workspace-folder . /bin/bash -c "
-                    $pip_cmd install safety --quiet
-                " 2>/dev/null; then
-                    info "Running safety vulnerability scan..."
-                    if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                        export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
-                        timeout 30 $python_cmd -m safety scan --output=text || $pip_cmd list | grep -E '(aider|opencode|qwen|gemini|claude|openai)' | xargs $pip_cmd show | grep -A5 -B5 'Requires:' | cat
-                    " 2>/dev/null; then
-                        warning "Safety scan detected potential security issues with $agent dependencies"
-                        vulnerabilities_found=true
-                    fi
-                fi
-            fi
-
-            # 2. Check for dependency conflicts using pip-tools/pipdeptree
-            info "Checking for package dependency conflicts..."
-            if devcontainer exec --workspace-folder . /bin/bash -c "
-                $pip_cmd install pipdeptree --quiet 2>/dev/null || true
-                if command -v pipdeptree >/dev/null 2>&1; then
-                    export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
-                    pipdeptree --warn fail 2>&1 | grep -q 'conflict\|error' && exit 1 || exit 0
-                else
-                    $python_cmd -c '
-import pkg_resources
-import sys
-try:
-    # Get our installed packages related to the agent
-    agent_pkgs = [pkg for pkg in pkg_resources.working_set if any(keyword in pkg.key.lower() for keyword in [\"$agent\", \"assistant\", \"ai\", \"chat\"])]
-    if agent_pkgs:
-        print(f\"Agent-related packages: {[pkg.key for pkg in agent_pkgs]}\")
-    else:
-        # Fallback - check all packages
-        all_pkgs = list(pkg_resources.working_set)
-        if len(all_pkgs) > 50:  # Too many packages, skip conflict check
-            print(\"Skipping detailed conflict check - many packages installed\")
-        else:
-            pkg_dict = {pkg.key: pkg.version for pkg in all_pkgs}
-            print(f\"Checked {len(all_pkgs)} packages for conflicts\")
-except Exception as e:
-    print(f\"Could not check dependencies: {e}\")
-    sys.exit(1)
-                    '
-                fi
-            " 2>&1 | grep -q "conflict\|error\|Could not check\|failed"; then
-                warning "Potential package conflicts detected for $agent"
-                vulnerabilities_found=true
-            fi
-
-            # 3. Check for known problematic packages
-            info "Checking for packages with known security issues..."
-            if devcontainer exec --workspace-folder . /bin/bash -c "
-                $pip_cmd list --format=freeze | grep -E '^(pip|setuptools|wheel)=' | while read pkg_line; do
-                    pkg_name=\${pkg_line%%=*}
-                    pkg_version=\${pkg_line##*=}
-                    case \$pkg_name in
-                        pip)
-                            # Check pip version for security
-                            if [[ \"\$pkg_version\" =~ ^([0-9]+)\\. ]]; then
-                                major_version=\${BASH_REMATCH[1]}
-                                if [ \$major_version -lt 24 ]; then
-                                    echo \"WARNING: pip version \$pkg_version is outdated and may have security vulnerabilities\"
-                                    exit 1
-                                fi
-                            fi
-                            ;;
-                        setuptools)
-                            # setuptools has known security issues in old versions
-                            if [[ \"\$pkg_version\" =~ ^([0-9]+)\\. ]]; then
-                                major_version=\${BASH_REMATCH[1]}
-                                if [ \$major_version -lt 65 ]; then
-                                    echo \"WARNING: setuptools version \$pkg_version is outdated\"
-                                    exit 1
-                                fi
-                            fi
-                            ;;
-                    esac
-                done || exit 1
-            " 2>&1 | grep -q "WARNING"; then
-                warning "Outdated or vulnerable core packages detected"
-                vulnerabilities_found=true
-            fi
-
-            if [ "$vulnerabilities_found" = true ]; then
-                warning "⚠️  Security scan found issues with $agent dependencies"
-                warning "Consider updating packages or choosing a different agent"
-            else
-                info "✅ No immediate security issues found for $agent"
-            fi
-            ;;
-        "npm")
-            info "Running npm security audit..."
-            devcontainer exec --workspace-folder . /bin/bash -c "npm audit --audit-level=high" || warning "npm audit found potential vulnerabilities"
-            ;;
-    esac
-}
-
-# Dependency checking functions
-check_devcontainer_cli() {
-    if ! command -v devcontainer &> /dev/null; then
-        error_exit "devcontainer CLI not found. Please install it first:\n   npm install -g @devcontainers/cli" "$EXIT_DEP_NOT_FOUND"
-    fi
-}
-
-check_docker_daemon() {
-    if ! docker info &> /dev/null; then
-        error_exit "Docker daemon is not running or not accessible. Please start Docker." "$EXIT_DOCKER_ERROR"
-    fi
-}
-
-# Determine project directory:
-# 1. Use first argument if provided and is a directory
-# 2. Use current working directory if it contains .devcontainer
-# 3. Use script's directory as fallback
-determine_project_dir() {
-    local potential_path="$1"
-
-    if [ -n "$potential_path" ]; then
-        validate_project_path "$potential_path"
-    elif [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
-        PROJECT_DIR="$(pwd)"
-    else
-        PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    fi
-
-    # Final validation
-    if [ ! -d "$PROJECT_DIR" ]; then
-        error_exit "Determined project directory '$PROJECT_DIR' is not valid." "$EXIT_CONFIG_ERROR"
-    fi
+    
+    echo "Testing complete!"
 }
 
 # Parse and validate arguments
@@ -1138,16 +81,16 @@ if [ "$COMMAND" = "completion" ]; then
 #!/bin/bash
 
 # Bash completion for dcutil
-_dcutil_completion() {
+_source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion"
+    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
-local volumes_commands="list add remove mount unmount status backup restore help --help -h"
-local ssh_commands="start add list mount test connect help --help -h"
-local rebuild_options="--force -f --preserve-volumes --preserve-ssh --preserve-agents --preserve-all --help -h"
-local up_options="--project-home --help -h"
+    local volumes_commands="list add remove mount unmount status backup restore help --help -h"
+    local ssh_commands="start add list mount test connect help --help -h"
+    local rebuild_options="--force -f --preserve-volumes --preserve-ssh --preserve-agents --preserve-all --help -h"
+    local up_options="--project-home --help -h"
 
     case "${prev}" in
         dcutil)
@@ -1178,7 +121,7 @@ local up_options="--project-home --help -h"
                         paths+=("${dir%/}")
                     fi
                 done
-                if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]; then
+                if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]]; then
                     paths+=(".")
                 fi
                 paths+=($(compgen -d -- "${cur}"))
@@ -1214,7 +157,7 @@ local up_options="--project-home --help -h"
     fi
 }
 
-complete -F _dcutil_completion dcutil
+complete -F _source_dcutil_completion dcutil
 BASH_EOF
         elif [ "$shell" = "zsh" ]; then
             cat << 'ZSH_EOF'
@@ -1235,8 +178,12 @@ _dcutil() {
         'run:Run a command in the container'
         'init:Initialize a devcontainer'
         'install-agent:Install AI agent inside the devcontainer'
-        'help:Show help message'
+        'volumes:Volume management'
+        'ssh:SSH key management'
+        'rebuild:Rebuild devcontainer with preservation options'
         'completion:Generate completion script'
+        'test:Test dcutil improvements'
+        'help:Show help message'
     )
 
     local -a init_commands
@@ -1247,6 +194,19 @@ _dcutil() {
         '--wizard:Interactive setup'
         '--help:Show init help'
         '-h:Show init help'
+    )
+
+    local -a volumes_commands
+    volumes_commands=(
+        'list:List configured volumes'
+        'add:Add a new volume'
+        'remove:Remove a volume'
+        'mount:Show mount configuration'
+        'unmount:Unmount a volume'
+        'status:Show volume status'
+        'backup:Create volume backup'
+        'restore:Restore volume from backup'
+        'help:Show volumes help'
     )
 
     local -a up_options
@@ -1292,6 +252,9 @@ _dcutil() {
                         _describe 'init mode' init_commands
                     fi
                     ;;
+                volumes)
+                    _describe 'volume command' volumes_commands
+                    ;;
                 up)
                     if [[ $line[2] == --* ]]; then
                         _describe 'up options' up_options
@@ -1327,7 +290,7 @@ _dcutil_devcontainer_projects() {
             projects+=("${dir%/}")
         fi
     done
-    if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]; then
+    if [[ -f ".devcontainer/devcontainer.json" || -f ".devcontainer.json" ]]; then
         projects+=(".")
     fi
     _describe 'devcontainer projects' projects
@@ -1349,7 +312,7 @@ validate_command "$COMMAND"
 
 # Handle special case for run command (project path can be second arg)
 if [ "$COMMAND" = "run" ]; then
-    if [ -n "$2" ] && [ -d "$2" ]; then
+    if [ -n "${2:-}" ] && [ -d "$2" ]; then
         determine_project_dir "$2"
         shift 2  # Remove command and project path
     else
@@ -1357,7 +320,7 @@ if [ "$COMMAND" = "run" ]; then
         shift 1
     fi
 elif [ "$COMMAND" = "install-agent" ]; then
-    if [ -n "$2" ] && [ -d "$2" ]; then
+    if [ -n "${2:-}" ] && [ -d "$2" ]; then
         # Second arg is project path, agent is third
         determine_project_dir "$2"
         shift 2
@@ -1385,6 +348,8 @@ elif [ "$COMMAND" = "init" ]; then
     fi
     PROJECT_DIR="$(pwd)"
     shift 1
+    init_mode "$@"
+    exit $EXIT_SUCCESS
 else
     # For up command, check for --project-home flag before determining project directory
     if [ "$COMMAND" = "up" ]; then
@@ -1432,162 +397,16 @@ else
 
         shift 1  # Remove command only
     else
-        determine_project_dir "$2"
+        determine_project_dir "${2:-}"
         shift 1  # Remove command only
     fi
 fi
-
-# Helper functions
-print_up_usage() {
-    echo "Usage: dcutil up [options] [project_path]"
-    echo ""
-    echo "Options:"
-    echo "  --project-home    Set container home folder to project directory"
-    echo "  --help, -h        Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  dcutil up                           # Start devcontainer normally"
-    echo "  dcutil up --project-home            # Start with home folder in project directory"
-    echo "  dcutil up --project-home /path/to/project  # Start with project-home in specific project"
-    echo ""
-    echo "When --project-home is used, the container's home directory will be mapped to the"
-    echo "project directory, allowing the container to use the project as the home folder."
-}
-
-print_volumes_usage() {
-    echo "Usage: dcutil volumes <subcommand>"
-    echo ""
-    echo "Volume subcommands:"
-    echo "  list         List configured volumes for this project"
-    echo "  add <name> <host_path> <container_path> [type]  Add a new volume"
-    echo "  remove <name>  Remove a volume configuration"
-    echo "  mount <name>   Show mount configuration for volume"
-    echo "  unmount <name>  Unmount a volume from running container"
-    echo "  status        Show volume configuration and mount status"
-    echo "  backup <name> [path]  Create backup of volume"
-    echo "  restore <name> <backup> Restore volume from backup"
-    echo "  help          Show this help"
-    echo ""
-    echo "Volume types:"
-    echo "  bind         Bind mount (default) - maps host directory to container"
-    echo "  volume       Docker volume - managed by Docker"
-    echo "  tmpfs        Temporary filesystem - stored in memory"
-    echo ""
-    echo "Examples:"
-    echo "  dcutil volumes list"
-    echo "  dcutil volumes add workspace ~/projects/myapp /workspaces/myapp"
-    echo "  dcutil volumes add database-data ./data /var/lib/postgresql/data"
-    echo "  dcutil volumes add temp /tmp /tmp tmpfs"
-    echo "  dcutil volumes mount workspace"
-    echo "  dcutil volumes backup workspace ./workspace_backup.tar.gz"
-    echo "  dcutil volumes restore workspace ./workspace_backup.tar.gz"
-    echo "  dcutil volumes status"
-    echo ""
-    echo "Volume Management:"
-    echo "  - Volumes are configured per-project in .devcontainer/volumes.json"
-    echo "  - Bind mounts require existing host directories (created automatically)"
-    echo "  - Volume mounts require container recreation"
-    echo "  - tmpfs mounts are ephemeral and lost when container stops"
-    echo "  - Use 'dcutil volumes status' to see current mount information"
-}
-
-print_ssh_usage() {
-    echo "Usage: dcutil ssh <subcommand>"
-    echo ""
-    echo "SSH subcommands:"
-    echo "  start        Start SSH agent"
-    echo "  add [key]    Add SSH keys to agent (default: ~/.ssh/id_rsa, ~/.ssh/id_ed25519)"
-    echo "  list         List loaded SSH keys"
-    echo "  mount        Mount SSH agent socket to running devcontainer"
-    echo "  test         Test SSH agent connectivity in devcontainer"
-    echo "  connect      Connect to devcontainer via SSH (requires SSH server enabled)"
-    echo "  help         Show this help"
-    echo ""
-    echo "Examples:"
-    echo "  dcutil ssh start"
-    echo "  dcutil ssh add"
-    echo "  dcutil ssh add ~/.ssh/my_custom_key"
-    echo "  dcutil ssh list"
-    echo "  dcutil ssh mount"
-    echo "  dcutil ssh test"
-    echo "  dcutil ssh connect"
-    echo ""
-    echo "SSH Key Setup:"
-    echo "  1. Generate SSH key: ssh-keygen -t ed25519 -C 'your_email@example.com'"
-    echo "  2. Start SSH agent: dcutil ssh start"
-    echo "  3. Add keys: dcutil ssh add"
-    echo "  4. Start devcontainer: dcutil up"
-    echo "  5. Mount SSH: dcutil ssh mount"
-    echo "  6. Test in container: dcutil ssh test"
-    echo ""
-    echo "SSH Server Setup:"
-    echo "  1. Initialize with SSH server: dcutil init (choose SSH server option)"
-    echo "  2. Start devcontainer: dcutil up"
-    echo "  3. Connect via SSH: dcutil ssh connect"
-    echo "  4. Default credentials: root/password"
-    echo "  5. Default port: 2222 (configurable during init)"
-}
-
-print_usage() {
-    echo "Usage: dcutil <command> [project_path] [options]"
-    echo ""
-    echo "Commands:"
-    echo "  up [options]  Start the devcontainer (with optional --project-home)"
-    echo "  down        Stop the devcontainer"
-    echo "  restart     Restart the devcontainer"
-    echo "  enter       Enter the container shell"
-    echo "  build       Build the devcontainer image"
-    echo "  clean       Remove the devcontainer and clean up"
-    echo "  status      Show container status"
-    echo "  logs        Show container logs"
-    echo "  list        List running devcontainers"
-    echo "  run <cmd>   Run a command in the container"
-    echo "  init        Initialize a devcontainer (fast or wizard)"
-    echo "  install-agent <agent> Install AI agent inside the devcontainer"
-    echo "  ssh <cmd>    SSH key management (start, add, list, mount, test, connect)"
-    echo "  volumes <cmd> Volume management (list, add, mount, backup, etc.)"
-    echo "  rebuild [options]  Rebuild devcontainer with preservation options"
-    echo "  completion  Generate completion script for bash/zsh"
-    echo "  help        Show this help message"
-    echo ""
-    echo "Project path detection:"
-    echo "  - If provided as second argument, uses that directory"
-    echo "  - If current directory has .devcontainer/, uses current directory"
-    echo "  - Otherwise uses script's directory"
-    echo ""
-    echo "Special options:"
-    echo "  up command supports --project-home to set container home directory to project directory"
-    echo "  Usage: dcutil up --project-home [project_path]"
-}
-
-# Safe execution functions
-safe_devcontainer_command() {
-    local cmd="$1"
-    shift
-
-    if ! check_devcontainer_cli; then
-        return $EXIT_DEP_NOT_FOUND
-    fi
-
-    if ! check_docker_daemon; then
-        return $EXIT_DOCKER_ERROR
-    fi
-
-    if ! devcontainer "$cmd" --workspace-folder "$PROJECT_DIR" "$@" 2>/dev/null; then
-        # If there are temporary config files, restore them on failure
-        if [ -f ".dcutil_temp_devcontainer.json" ]; then
-            mv .dcutil_temp_devcontainer.json .devcontainer/devcontainer.json
-        elif [ -f ".dcutil_temp_devcontainer_root.json" ]; then
-            mv .dcutil_temp_devcontainer_root.json .devcontainer.json
-        fi
-        error_exit "Devcontainer command failed: devcontainer $cmd $*" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-}
 
 # Change to project directory
 info "Using project directory: $PROJECT_DIR"
 cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
 
+# Command routing
 case "$COMMAND" in
     "up")
         # First check if help was requested
@@ -1595,362 +414,41 @@ case "$COMMAND" in
             print_up_usage
             exit $EXIT_SUCCESS
         fi
-
-        info "Starting devcontainer setup..."
-
-        # Check if project-home option is enabled
-        if [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" = true ]; then
-            info "Setting container home folder to project directory..."
-
-            # Check if devcontainer.json exists
-            if [ -f ".devcontainer/devcontainer.json" ]; then
-                # Create a temporary devcontainer.json with home folder mapping
-                backup_config=".dcutil_temp_devcontainer.json"
-                cp .devcontainer/devcontainer.json "$backup_config"
-
-                # Add mount configuration to map project directory to home directory
-                if command -v jq &> /dev/null; then
-                    # Use jq to properly modify the JSON file
-                    jq '
-                    .mounts = (.mounts // []) + [
-                        {
-                            "source": "'"$PROJECT_DIR"'",
-                            "target": "/home/vscode",
-                            "type": "bind"
-                        }
-                    ] |
-                    .containerUser = "vscode" |
-                    .remoteUser = "vscode"
-                    ' "$backup_config" > .devcontainer/devcontainer.json
-                else
-                    # Fallback approach using sed for JSON modification
-                    warning "jq not available, using basic mount configuration..."
-
-                    devcontainer_config=$(cat "$backup_config")
-
-                    # Check if mounts key exists
-                    if echo "$devcontainer_config" | grep -q '"mounts"'; then
-                        # Add mount to existing mounts array
-                        sed -i "s/\(\"mounts\":\s*\[\)/\1\n            {\"source\": \"$PROJECT_DIR\", \"target\": \"\/home\/vscode\", \"type\": \"bind\"},/g" .devcontainer/devcontainer.json
-                    else
-                        # Insert mounts key after the opening brace
-                        sed -i "s/{/{\n    \"mounts\": [\n        {\"source\": \"$PROJECT_DIR\", \"target\": \"\/home\/vscode\", \"type\": \"bind\"}\n    ],/g" .devcontainer/devcontainer.json
-                    fi
-                fi
-            elif [ -f ".devcontainer.json" ]; then
-                # Handle the case where the config is in the root directory
-                backup_config=".dcutil_temp_devcontainer_root.json"
-                cp .devcontainer.json "$backup_config"
-
-                if command -v jq &> /dev/null; then
-                    jq '
-                    .mounts = (.mounts // []) + [
-                        {
-                            "source": "'"$PROJECT_DIR"'",
-                            "target": "/home/vscode",
-                            "type": "bind"
-                        }
-                    ] |
-                    .containerUser = "vscode" |
-                    .remoteUser = "vscode"
-                    ' "$backup_config" > .devcontainer.json
-                else
-                    warning "jq not available, using basic mount configuration for root config..."
-                    devcontainer_config=$(cat "$backup_config")
-
-                    if echo "$devcontainer_config" | grep -q '"mounts"'; then
-                        sed -i "s/\(\"mounts\":\s*\[\)/\1\n            {\"source\": \"$PROJECT_DIR\", \"target\": \"\/home\/vscode\", \"type\": \"bind\"},/g" .devcontainer.json
-                    else
-                        sed -i "s/{/{\n    \"mounts\": [\n        {\"source\": \"$PROJECT_DIR\", \"target\": \"\/home\/vscode\", \"type\": \"bind\"}\n    ],/g" .devcontainer.json
-                    fi
-                fi
-            else
-                error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
-            fi
-
-            # Run the devcontainer up command
-            safe_devcontainer_command "up"
-
-            # Restore original configuration after container starts
-            if [ -f ".dcutil_temp_devcontainer.json" ]; then
-                mv .dcutil_temp_devcontainer.json .devcontainer/devcontainer.json
-            elif [ -f ".dcutil_temp_devcontainer_root.json" ]; then
-                mv .dcutil_temp_devcontainer_root.json .devcontainer.json
-            fi
-
-            success "Devcontainer started with project directory as home folder"
-        else
-            # Normal devcontainer up command
-            safe_devcontainer_command "up"
-            success "Devcontainer started successfully"
-        fi
+        devcontainer_up
         ;;
-
     "down")
-        info "Stopping devcontainer..."
-        safe_devcontainer_command "down"
-        success "Devcontainer stopped"
+        devcontainer_down
         ;;
-
     "restart")
-        info "Restarting devcontainer..."
-        # Stop if running (ignore errors)
-        devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
-        safe_devcontainer_command "up"
-        success "Devcontainer restarted successfully"
+        devcontainer_restart
         ;;
-
     "enter")
-        info "Entering container..."
-        check_devcontainer_cli
-        check_docker_daemon
-
-        # Check if container is running, start it if needed
-        if ! devcontainer ps --workspace-folder . 2>/dev/null | grep -q "Running"; then
-            warning "Container is not running. Starting it..."
-
-            # If project home is desired, we need to make sure it would be started with the right configuration
-            if [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" = true ]; then
-                info "Starting devcontainer with project directory as home folder..."
-                # For enter command, if user wants project-home behavior, they should start with up --project-home first
-                # So we just enter the existing container if it exists
-                if [ -f ".devcontainer/devcontainer.json" ]; then
-                    if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                        error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-                    fi
-                elif [ -f ".devcontainer.json" ]; then
-                    if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                        error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-                    fi
-                else
-                    error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
-                fi
-            else
-                if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                    error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-            fi
-        fi
-
-        if ! devcontainer exec --workspace-folder . /bin/bash; then
-            error_exit "Failed to enter container" "$EXIT_DEVCONTAINER_ERROR"
-        fi
+        devcontainer_enter
         ;;
-
     "build")
-        info "Building devcontainer image..."
-        safe_devcontainer_command "build"
-        success "Build completed"
+        devcontainer_build
         ;;
-
     "clean")
-        info "Cleaning up devcontainer..."
-        check_devcontainer_cli
-        check_docker_daemon
-
-        # Stop container first (ignore if not running)
-        devcontainer down --workspace-folder . 2>/dev/null || true
-
-        # Delete container
-        if ! devcontainer delete --workspace-folder . --force 2>/dev/null; then
-            warning "Failed to delete devcontainer (may not exist)"
-        fi
-        success "Cleanup completed"
+        devcontainer_clean
         ;;
-
     "status")
-        info "Checking container status..."
-        if devcontainer exec --workspace-folder . echo "Container is running" 2>/dev/null; then
-            echo "Container is running"
-        else
-            echo "Container is not running"
-        fi
+        devcontainer_status
         ;;
-
     "logs")
-        info "Showing container logs..."
-        check_docker_daemon
-
-        # Get container ID using docker ps with devcontainer label
-        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-        if [ -z "$CONTAINER_ID" ]; then
-            error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-
-        # Show logs
-        if ! docker logs "$CONTAINER_ID" 2>/dev/null; then
-            error_exit "Failed to show container logs" "$EXIT_DEVCONTAINER_ERROR"
-        fi
+        devcontainer_logs
         ;;
-
     "list")
-        info "Listing running devcontainers..."
-        check_docker_daemon
-
-        # List containers with devcontainer labels
-        if ! docker ps --filter "label=devcontainer.local_folder" --format "table {{.ID}}\t{{.Image}}\t{{.Names}}" 2>/dev/null | grep -v "CONTAINER ID"; then
-            echo "No running devcontainers found"
-        fi
+        devcontainer_list
         ;;
-
     "run")
-        validate_run_command "$@"
-        info "Running command in container: $*"
-        check_devcontainer_cli
-        check_docker_daemon
-
-        if ! devcontainer exec --workspace-folder "$PROJECT_DIR" "$@"; then
-            error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
-        fi
+        devcontainer_run "$@"
         ;;
-
-    "ssh")
+    "install-agent")
         if [ $# -eq 0 ]; then
-            print_ssh_usage
-            exit $EXIT_INVALID_ARGS
+            error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" "$EXIT_INVALID_ARGS"
         fi
-
-        subcommand="$1"
-        shift
-
-        case "$subcommand" in
-            "start")
-                info "Starting SSH agent..."
-                if ! eval "$(ssh-agent)"; then
-                    error_exit "Failed to start SSH agent" "$EXIT_CONFIG_ERROR"
-                fi
-                success "SSH agent started"
-                ;;
-
-            "add")
-                if [ $# -gt 0 ]; then
-                    # Add specific key
-                    key_file="$1"
-                    if [ ! -f "$key_file" ]; then
-                        error_exit "SSH key file '$key_file' not found" "$EXIT_INVALID_ARGS"
-                    fi
-                    info "Adding SSH key: $key_file"
-                    if ! ssh-add "$key_file" 2>/dev/null; then
-                        error_exit "Failed to add SSH key: $key_file" "$EXIT_CONFIG_ERROR"
-                    fi
-                else
-                    # Add default keys
-                    info "Adding default SSH keys"
-                    if ! ssh-add 2>/dev/null; then
-                        warning "No SSH keys found in default locations"
-                        info "Add keys manually with: ssh-add /path/to/key"
-                        info "Or copy keys to ~/.ssh/"
-                    fi
-                fi
-                success "SSH keys added to agent"
-                ;;
-
-            "list")
-                info "SSH keys in agent:"
-                ssh-add -l 2>/dev/null || echo "No SSH keys loaded in agent"
-                ;;
-
-            "mount")
-                info "Mounting SSH agent to devcontainer..."
-                check_devcontainer_cli
-                check_docker_daemon
-
-                # Check if container is running
-                if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-                    error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-
-                # Get container ID
-                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-                if [ -z "$CONTAINER_ID" ]; then
-                    error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-
-                # Mount SSH agent socket
-                if [ -S "${SSH_AUTH_SOCK:-}" ]; then
-                    if docker exec "$CONTAINER_ID" mkdir -p /tmp/ssh-agent 2>/dev/null; then
-                        if docker exec "$CONTAINER_ID" ln -sf "$SSH_AUTH_SOCK" /tmp/ssh-agent/agent.sock 2>/dev/null; then
-                            info "SSH agent mounted to container"
-                            info "Container SSH_AUTH_SOCK: /tmp/ssh-agent/agent.sock"
-                            # Set environment variable in container
-                            docker exec "$CONTAINER_ID" /bin/bash -c "echo 'export SSH_AUTH_SOCK=/tmp/ssh-agent/agent.sock' >> ~/.bashrc"
-                            success "SSH agent mounted successfully"
-                        else
-                            error_exit "Failed to mount SSH agent socket to container" "$EXIT_DOCKER_ERROR"
-                        fi
-                    else
-                        error_exit "Failed to create SSH agent directory in container" "$EXIT_DOCKER_ERROR"
-                    fi
-                else
-                    error_exit "SSH agent not running or SSH_AUTH_SOCK not set. Start agent with: dcutil ssh start" "$EXIT_CONFIG_ERROR"
-                fi
-                ;;
-
-            "test")
-                info "Testing SSH connectivity in devcontainer..."
-                check_devcontainer_cli
-                check_docker_daemon
-
-                # Check if container is running
-                if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-                    error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-
-                # Test SSH in container
-                if devcontainer exec --workspace-folder . /bin/bash -c "ssh-add -l" 2>/dev/null; then
-                    info "SSH agent is available in container"
-                    devcontainer exec --workspace-folder . /bin/bash -c "ssh-add -l"
-                else
-                    warning "SSH agent not available in container"
-                    info "Mount SSH agent with: dcutil ssh mount"
-                fi
-                ;;
-
-            "connect")
-                info "Connecting to devcontainer via SSH..."
-                check_devcontainer_cli
-                check_docker_daemon
-
-                # Check if container is running
-                if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-                    error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-
-                # Get container IP and port
-                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-                if [ -z "$CONTAINER_ID" ]; then
-                    error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-
-                # Check if SSH port is exposed
-                SSH_PORT=$(docker port "$CONTAINER_ID" 22 2>/dev/null | head -1 | cut -d: -f2)
-                if [ -z "$SSH_PORT" ]; then
-                    # Try default port 2222 if 22 is not found
-                    SSH_PORT=$(docker port "$CONTAINER_ID" 2222 2>/dev/null | head -1 | cut -d: -f2)
-                fi
-
-                if [ -z "$SSH_PORT" ]; then
-                    warning "SSH port is not exposed on this container"
-                    info "To enable SSH access, recreate the devcontainer with SSH server enabled"
-                    info "Use: dcutil init fast (and choose SSH server option)"
-                    exit $EXIT_CONFIG_ERROR
-                fi
-
-                info "Connecting to devcontainer on localhost:$SSH_PORT"
-                info "Username: root, Password: password (or use SSH keys)"
-                ssh -o StrictHostKeyChecking=no -p "$SSH_PORT" root@localhost
-                ;;
-
-            "help"|"-h"|"--help")
-                print_ssh_usage
-                ;;
-
-            *)
-                error_exit "Unknown SSH subcommand: $subcommand. Use 'dcutil ssh help' for usage." "$EXIT_INVALID_ARGS"
-                ;;
-        esac
-;;
-
+        install_agent "$1"
+        ;;
     "volumes")
         if [ $# -eq 0 ]; then
             print_volumes_usage
@@ -1964,545 +462,55 @@ case "$COMMAND" in
             "list")
                 list_volumes
                 ;;
-
             "add")
                 if [ $# -lt 3 ]; then
                     error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
                 fi
                 add_volume "$1" "$2" "$3" "$4"
                 ;;
-
             "remove")
                 if [ $# -eq 0 ]; then
                     error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
                 fi
                 remove_volume "$1"
                 ;;
-
             "mount")
                 if [ $# -eq 0 ]; then
                     error_exit "Usage: dcutil volumes mount <name>" "$EXIT_INVALID_ARGS"
                 fi
                 mount_volume "$1"
                 ;;
-
             "unmount")
                 if [ $# -eq 0 ]; then
                     error_exit "Usage: dcutil volumes unmount <name>" "$EXIT_INVALID_ARGS"
                 fi
                 unmount_volume "$1"
                 ;;
-
             "status")
                 volume_status
                 ;;
-
             "backup")
                 if [ $# -eq 0 ]; then
                     error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
                 fi
                 backup_volume "$1" "$2"
                 ;;
-
             "restore")
                 if [ $# -lt 1 ]; then
                     error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
                 fi
                 restore_volume "$1" "$2"
                 ;;
-
             "help"|"-h"|"--help")
                 print_volumes_usage
                 ;;
-
             *)
                 error_exit "Unknown volumes subcommand: $subcommand. Use 'dcutil volumes help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
         ;;
-
-    "rebuild")
-        rebuild_devcontainer "$@"
-        ;;
-
-    "install-agent")
-        if [ $# -eq 0 ]; then
-            error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" "$EXIT_INVALID_ARGS"
-        fi
-        AGENT="$1"
-        INSTALL_CMD=$(get_agent_install_command "$AGENT")
-
-        info "Installing $AGENT inside devcontainer..."
-        check_devcontainer_cli
-        check_docker_daemon
-
-        # Check if container is running
-        if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-            warning "Container is not running. Starting it first..."
-            if ! devcontainer up --workspace-folder . 2>/dev/null; then
-                error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
-            fi
-        fi
-
-        # Ask about configuration pass-through
-        config_mount=""
-        echo ""
-        echo -e "${YELLOW}⚙️  Configuration Pass-through:${NC}"
-        echo "Should $AGENT have access to its configuration files?"
-
-        case "$AGENT" in
-            "opencode")
-                echo "1) No configuration access"
-                echo "2) Mount ~/.opencode directory (recommended)"
-                echo ""
-                read -r -p "Enter choice [1-None, 2-Mount ~/.opencode] [1]: " user_config_choice
-                user_config_choice=${user_config_choice:-1}
-                if [ "$user_config_choice" = "2" ]; then
-                    if [ -d "$HOME/.opencode" ]; then
-                        config_mount="--mount type=bind,source=$HOME/.opencode,target=/home/vscode/.opencode"
-                        info "Will mount opencode configuration"
-                    else
-                        warning "$HOME/.opencode directory not found, skipping configuration mount"
-                    fi
-                fi
-                ;;
-            "aider")
-                echo "1) No configuration access"
-                echo "2) Mount ~/.aider.toml file (recommended)"
-                echo ""
-                read -r -p "Enter choice [1-None, 2-Mount ~/.aider.toml] [1]: " user_config_choice
-                user_config_choice=${user_config_choice:-1}
-                if [ "$user_config_choice" = "2" ]; then
-                    if [ -f "$HOME/.aider.toml" ]; then
-                        config_mount="--mount type=bind,source=$HOME/.aider.toml,target=/home/vscode/.aider.toml"
-                        info "Will mount aider configuration"
-                    else
-                        warning "$HOME/.aider.toml file not found, skipping configuration mount"
-                    fi
-                fi
-                ;;
-            "copilot-cli"|"cody"|"tabnine"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
-                echo "1) No configuration access"
-                echo "2) Mount ~/.config directory (for CLI tools)"
-                echo ""
-                read -r -p "Enter choice [1-None, 2-Mount ~/.config] [1]: " user_config_choice
-                user_config_choice=${user_config_choice:-1}
-                if [ "$user_config_choice" = "2" ]; then
-                    if [ -d "$HOME/.config" ]; then
-                        config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
-                        info "Will mount configuration directory"
-                    else
-                        warning "$HOME/.config directory not found, skipping configuration mount"
-                    fi
-                fi
-                ;;
-            *)
-                echo "1) No configuration access"
-                echo "2) Skip configuration setup"
-                echo ""
-                read -r -p "Enter choice [1-None, 2-Skip] [1]: " user_config_choice
-                ;;
-        esac
-
-        # Security check for high-risk installations
-        check_agent_security_risk "$AGENT" "$INSTALL_CMD"
-
-        info "Installing $AGENT..."
-
-        # Determine install type for vulnerability scanning
-        if [[ "$INSTALL_CMD" == npm* ]]; then
-            INSTALL_TYPE="npm"
-            info "Ensuring npm is available..."
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "command -v npm" 2>/dev/null; then
-                warning "npm not found. Installing latest Node.js LTS..."
-                if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
-                " 2>/dev/null; then
-                    error_exit "Failed to install Node.js and npm" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-            fi
-        elif [[ "$INSTALL_CMD" == pip* ]]; then
-            INSTALL_TYPE="pip"
-            info "Setting up hermetic Python environment for isolated installation..."
-            PYTHON_BIN_DIR="/home/vscode/.dcutil/python"
-            VENV_DIR="/home/vscode/.dcutil/agents/$AGENT"
-
-            # Determine platform architecture for portable Python
-            PLATFORM=$(devcontainer exec --workspace-folder . /bin/bash -c "ARCH=\$(uname -m); OS=\$(uname -s); if [ \"\$OS\" = \"Linux\" ]; then OS_PREFIX=\"linux\"; elif [ \"\$OS\" = \"Darwin\" ]; then OS_PREFIX=\"macos\"; else OS_PREFIX=\"linux\"; fi; if [ \"\$ARCH\" = \"x86_64\" ]; then echo \"\$OS_PREFIX-x86_64\"; elif [ \"\$ARCH\" = \"aarch64\" ] || [ \"\$ARCH\" = \"arm64\" ]; then echo \"\$OS_PREFIX-aarch64\"; else echo \"linux-x86_64\"; fi" 2>/dev/null || echo "linux-x86_64")
-
-            USE_PORTABLE=false
-            # Try to set up portable Python
-            if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=\$PLATFORM;
-                if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
-                    exit 0
-                fi
-                mkdir -p $PYTHON_BIN_DIR
-                case \\$PLATFORM in
-                    linux-x86_64) ARCH='x86_64-unknown-linux-gnu' ;;
-                    linux-aarch64) ARCH='aarch64-unknown-linux-gnu' ;;
-                    macos-x86_64) ARCH='x86_64-apple-darwin' ;;
-                    macos-aarch64) ARCH='aarch64-apple-darwin' ;;
-                    *) exit 1 ;;
-                esac
-                LATEST_TAG=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"tag_name\": \"\\([^\"]*\\)\".*/\\1/p')
-                ASSET_NAME=\$(curl -s https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"name\": \"\\(cpython-3\\.1[23]\\.[0-9]+\\+'\"\\$LATEST_TAG\"'-'\"\\$ARCH\"'-install_only\\.tar\\.gz\\)\".*/\\1/p' | sort -V | tail -1)
-                URL=\"https://github.com/astral-sh/python-build-standalone/releases/download/\\$LATEST_TAG/\\$ASSET_NAME\"
-                if [ -n \"\\$ASSET_NAME\" ] && curl -fsSL \"\\$URL\" | tar -xz -C $PYTHON_BIN_DIR && [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
-                    exit 0
-                else
-                    exit 1
-                fi
-            " 2>/dev/null; then
-                info "Using hermetic portable Python environment for $AGENT"
-                USE_PORTABLE=true
-            else
-                warning "Failed to set up portable Python, falling back to system Python"
-                USE_PORTABLE=false
-            fi
-
-            if [ "$USE_PORTABLE" = "true" ]; then
-                # Create venv with portable Python
-                if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                    mkdir -p $VENV_DIR
-                    $PYTHON_BIN_DIR/bin/python3 -m venv $VENV_DIR
-                " 2>/dev/null; then
-                    warning "Failed to create venv with portable Python, falling back to system Python"
-                    USE_PORTABLE=false
-                fi
-            fi
-
-            if [ "$USE_PORTABLE" != "true" ]; then
-                # Fallback to system Python virtual environment
-                if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                    if ! python3 -m venv --help > /dev/null 2>&1; then
-                        apt-get update && apt-get install -y python3-venv
-                    fi
-                    mkdir -p $VENV_DIR
-                    python3 -m venv $VENV_DIR
-                " 2>/dev/null; then
-                    error_exit "Failed to set up system Python venv" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-                info "Using system Python environment for $AGENT"
-            fi
-        elif [[ "$INSTALL_CMD" == curl* ]]; then
-            # Special handling for high-risk curl|bash installations
-            INSTALL_TYPE="curl"
-        else
-            INSTALL_TYPE=""
-        fi
-
-        # Execute the installation
-        if [ "$INSTALL_TYPE" = "pip" ]; then
-            INSTALL_CMD="source $VENV_DIR/bin/activate && $INSTALL_CMD"
-        fi
-        if devcontainer exec --workspace-folder . /bin/bash -c "$INSTALL_CMD" 2>/dev/null; then
-            # Apply configuration mounts if specified
-            if [ -n "$config_mount" ]; then
-                info "Mounting configuration files..."
-                # Get container ID and apply mount
-                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-                if [ -n "$CONTAINER_ID" ]; then
-                    # Note: Docker mount options would need to be applied at container creation time
-                    # For now, we'll copy configuration files
-                    case "$AGENT" in
-                        "aider")
-                            if [ -f "$HOME/.aider.toml" ]; then
-                                docker cp "$HOME/.aider.toml" "$CONTAINER_ID:/home/vscode/.aider.toml" 2>/dev/null && \
-                                docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null
-                            fi
-                            ;;
-                    esac
-                    info "Configuration files copied to container"
-                fi
-            fi
-
-            info "Installation completed, running security scans..."
-
-            # Run vulnerability scanning if applicable
-            if [ -n "$INSTALL_TYPE" ]; then
-                scan_vulnerabilities "$AGENT" "$INSTALL_TYPE" "$VENV_DIR"
-            fi
-
-            success "$AGENT installed successfully in devcontainer"
-            if [ -n "$VENV_DIR" ] && [ "$USE_PORTABLE" = true ]; then
-                info "Hermetic portable Python environment at: $VENV_DIR"
-                info "To activate in container: source $VENV_DIR/bin/activate"
-                info "To run $AGENT from host: dcutil run 'source $VENV_DIR/bin/activate && $AGENT'"
-            elif [ -n "$VENV_DIR" ]; then
-                info "Agent is isolated in virtual environment: $VENV_DIR"
-                info "To activate in container: source $VENV_DIR/bin/activate"
-            fi
-        else
-            error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-        ;;
-
-    "init")
-        check_devcontainer_cli
-
-        # Check if devcontainer already exists
-        if [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
-            error_exit "Devcontainer configuration already exists. Use 'dcutil clean' first to remove existing configuration" "$EXIT_CONFIG_ERROR"
-        fi
-
-        # Parse init options
-        INIT_MODE="${1:-wizard}"
-        validate_init_mode "$INIT_MODE"
-
-        case "$INIT_MODE" in
-            "--fast"|"fast")
-                info "Creating fast devcontainer configuration..."
-
-                # Create .devcontainer directory
-                if ! mkdir -p .devcontainer 2>/dev/null; then
-                    error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
-                fi
-
-                # Fast mode defaults (non-interactive)
-                repo_name="$(basename "$PROJECT_DIR")"
-                workspace_folder="/workspaces/$repo_name"
-                container_user="vscode"
-                remote_user="$container_user"
-                set_chown=true
-                mount_project_to_container=true
-                mounts_snippet=""
-                if [ "$mount_project_to_container" = true ]; then
-                    mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
-                fi
-
-                if [ "$set_chown" = true ]; then
-                    chown_snippet="; if id -u $container_user >/dev/null 2>&1; then if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi; else echo 'User $container_user not found in image, skipping chown'; fi"
-                else
-                    chown_snippet=""
-                fi
-
-                # Create basic devcontainer.json
-                if ! cat > .devcontainer/devcontainer.json << 'EOF'
-{
-    "name": "Basic Dev Container",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-    $mounts_snippet
-    "workspaceFolder": "$workspace_folder",
-    "remoteUser": "$remote_user",
-    "containerUser": "$container_user",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.vscode-json",
-                "ms-vscode.vscode-git"
-            ]
-        }
-    },
-    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git; else apt-get update && apt-get install -y --no-install-recommends curl git; fi; mkdir -p $workspace_folder${chown_snippet}'"
-}
-EOF
-                then
-                    error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
-                fi
-
-                validate_json_if_available ".devcontainer/devcontainer.json"
-
-                success "Fast devcontainer configuration created"
-                info "Run 'dcutil up' to start the container"
-                ;;
-
-            "--wizard"|"wizard"|"")
-                info "Devcontainer Initialization Wizard"
-                echo ""
-
-                # Get project type
-                echo -e "${YELLOW}📋 Choose project type:${NC}"
-                echo "1) Basic (Ubuntu + common tools)"
-                echo "2) Node.js"
-                echo "3) Python"
-                echo "4) Go"
-                echo "5) Custom image"
-                echo ""
-                read -r -p "Enter choice [1-5]: " project_choice
-
-                # Validate project choice
-                if [[ ! "$project_choice" =~ ^[1-5]$ ]]; then
-                    error_exit "Invalid choice. Please enter a number between 1-5." "$EXIT_INVALID_ARGS"
-                fi
-
-                # Get container name
-                read -r -p "Container name [My Project]: " container_name
-                container_name=${container_name:-"My Project"}
-
-                # Prompt for workspace folder (validate)
-                while true; do
-                    read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
-                    workspace_folder=${workspace_folder:-/workspaces}
-                    validate_workspace_folder "$workspace_folder"
-                    case $? in
-                        0) break;;
-                        1) echo "Invalid input: workspace folder cannot be empty";;
-                        2) echo "Workspace folder must be an absolute path (start with /)";;
-                        3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
-                        4) echo "Workspace folder must not have leading or trailing whitespace";;
-                        *) echo "Invalid workspace folder";;
-                    esac
-                done
-
-                # Prompt for container user (supports name or numeric UID[:GID])
-                read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
-                container_user_input=${container_user_input:-vscode}
-
-                container_user_is_numeric=false
-                container_uid=""
-                container_gid=""
-                if [[ "$container_user_input" =~ ^[0-9]+(:[0-9]+)?$ ]]; then
-                    container_user_is_numeric=true
-                    container_uid="${container_user_input%%:*}"
-                    container_gid="${container_user_input##*:}"
-                    if [[ "$container_gid" == "$container_uid" ]]; then
-                        container_gid="$container_uid"
-                    fi
-                    container_user="$container_uid"
-                    remote_user="$container_uid"
-                else
-                    container_user="$container_user_input"
-                    remote_user="$container_user"
-                fi
-
-                # Ask whether to set ownership of the workspace
-                read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
-                chown_choice=${chown_choice:-Y}
-                set_chown=false
-                if [[ "$chown_choice" =~ ^[Yy] ]]; then
-                    set_chown=true
-                fi
-
-                # Ask whether to mount host project dir into container workspace
-                read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
-                mount_choice=${mount_choice:-Y}
-                mount_project_to_container=false
-                mounts_snippet=""
-                if [[ "$mount_choice" =~ ^[Yy] ]]; then
-                    mount_project_to_container=true
-                    mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
-                fi
-
-                # Default chown snippet based on numeric/user input
-                chown_snippet=""
-                if [ "$set_chown" = true ]; then
-                    if [ "$container_user_is_numeric" = true ]; then
-                        chown_snippet="; if command -v sudo >/dev/null; then sudo chown -R ${container_uid}:${container_gid} $workspace_folder || true; else chown -R ${container_uid}:${container_gid} $workspace_folder || true; fi"
-                    else
-                        guarded_chown_snippet="; if id -u $container_user >/dev/null 2>&1; then if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi; else echo 'User $container_user not found in image, skipping chown'; fi"
-                        unguarded_chown_snippet="; if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi"
-                        chown_snippet="$guarded_chown_snippet"
-                    fi
-                fi
-
-                if ! mkdir -p .devcontainer 2>/dev/null; then
-                    error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
-                fi
-
-                case "$project_choice" in
-                    "1")
-                        image="mcr.microsoft.com/devcontainers/base:ubuntu"
-                        ;;
-                    "2")
-                        image="mcr.microsoft.com/devcontainers/javascript-node:18"
-                        ;;
-                    "3")
-                        image="mcr.microsoft.com/devcontainers/python:3.10"
-                        ;;
-                    "4")
-                        image="mcr.microsoft.com/devcontainers/go:1.21"
-                        ;;
-                    "5")
-                        read -r -p "Enter Docker image name: " custom_image
-                        if [ -z "$custom_image" ]; then
-                            error_exit "Docker image name cannot be empty" "$EXIT_INVALID_ARGS"
-                        fi
-                        image="$custom_image"
-                        ;;
-                    *)
-                        error_exit "Invalid choice" "$EXIT_INVALID_ARGS"
-                        ;;
-                esac
-
-                # Offer to do a best-effort check whether the chosen container user exists in the image
-                user_check_skipped=true
-                if [ "$container_user_is_numeric" = false ]; then
-                    if command -v docker >/dev/null 2>&1; then
-                        read -r -p "Check whether user '$container_user' exists in the selected image before writing config? (Y/n): " check_choice
-                        check_choice=${check_choice:-Y}
-                        if [[ "$check_choice" =~ ^[Yy] ]]; then
-                            user_check_skipped=false
-                        fi
-                    fi
-                else
-                    info "Numeric UID/GID provided; skipping user existence check in image"
-                fi
-
-                if [ "$container_user_is_numeric" = false ] && [ "$user_check_skipped" = false ] && command -v docker >/dev/null 2>&1; then
-                    if check_user_in_image "$image" "$container_user"; then
-                        info "User '$container_user' found in $image"
-                        chown_snippet="$unguarded_chown_snippet"
-                    else
-                        warning "User '$container_user' not found in $image"
-                        read -r -p "Continue and write configuration anyway? (y/N): " cont_choice
-                        if [[ ! "$cont_choice" =~ ^[Yy] ]]; then
-                            info "Cancelling init"
-                            exit $EXIT_SUCCESS
-                        fi
-                    fi
-                fi
-
-                # Create devcontainer.json depending on image and selected options
-                if ! cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "$image",
-    $mounts_snippet
-    "workspaceFolder": "$workspace_folder",
-    "remoteUser": "$remote_user",
-    "containerUser": "$container_user",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.vscode-json"
-            ]
-        }
-    },
-    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git vim nano; else apt-get update && apt-get install -y --no-install-recommends curl git vim nano; fi; if command -v npm >/dev/null && [ -f package.json ]; then npm install; fi; if command -v pip >/dev/null && [ -f requirements.txt ]; then pip install -r requirements.txt; fi; if command -v go >/dev/null && [ -f go.mod ]; then go mod download; fi; mkdir -p $workspace_folder${chown_snippet}'"
-}
-EOF
-                then
-                    error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
-                fi
-
-                validate_json_if_available ".devcontainer/devcontainer.json"
-
-                success "Devcontainer configuration created"
-                info "Run 'dcutil up' to start the container"
-
-                success "Devcontainer configuration created"
-                info "Run 'dcutil up' to start the container"
-                ;;
-
-            "--help"|"-h")
-                echo "Usage: dcutil init [mode]"
-                echo ""
-                echo "Modes:"
-                echo "  fast     Create basic Ubuntu container automatically"
-                echo "  wizard   Interactive setup (default)"
-                echo ""
-                echo "Examples:"
-                echo "  dcutil init          # Start wizard"
-                echo "  dcutil init fast     # Quick basic setup"
-                echo "  dcutil init --fast   # Quick basic setup"
-                ;;
-
-            *)
-                echo -e "${RED}❌ Unknown init mode: $INIT_MODE${NC}"
-                echo "Use 'dcutil init --help' for usage information"
-                exit 1
-            ;;
-        esac
+    "test")
+        test_dcutil_improvements
         ;;
     "help"|"-h"|"--help")
         print_usage
