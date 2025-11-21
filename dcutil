@@ -12,6 +12,18 @@ source "$SCRIPT_DIR/lib/docker.sh"
 source "$SCRIPT_DIR/lib/volumes.sh"
 source "$SCRIPT_DIR/lib/security.sh"
 source "$SCRIPT_DIR/lib/init.sh"
+# features module is optional
+if [ -f "$SCRIPT_DIR/lib/features.sh" ]; then
+    source "$SCRIPT_DIR/lib/features.sh"
+fi
+# lifecycle module is optional
+if [ -f "$SCRIPT_DIR/lib/lifecycle.sh" ]; then
+    source "$SCRIPT_DIR/lib/lifecycle.sh"
+fi
+# environment module is optional
+if [ -f "$SCRIPT_DIR/lib/environment.sh" ]; then
+    source "$SCRIPT_DIR/lib/environment.sh"
+fi
 
 # Test function to verify improvements
 test_dcutil_improvements() {
@@ -85,10 +97,12 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose rebuild help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
+    local compose_commands="up down restart status list exec logs build clean help --help -h"
+    local build_commands="info validate clean help --help -h"
     local rebuild_options="--force -f --preserve-volumes --preserve-ssh --preserve-agents --preserve-all --help -h"
     local up_options="--project-home --help -h"
 
@@ -103,6 +117,14 @@ _source_dcutil_completion() {
             ;;
         volumes)
             COMPREPLY=($(compgen -W "${volumes_commands}" -- "${cur}"))
+            return
+            ;;
+        compose)
+            COMPREPLY=($(compgen -W "${compose_commands}" -- "${cur}"))
+            return
+            ;;
+        build)
+            COMPREPLY=($(compgen -W "${build_commands}" -- "${cur}"))
             return
             ;;
         rebuild)
@@ -179,6 +201,8 @@ _dcutil() {
         'init:Initialize a devcontainer'
         'install-agent:Install AI agent inside the devcontainer'
         'volumes:Volume management'
+        'compose:Docker Compose support'
+        'build:Custom Dockerfile build support'
         'ssh:SSH key management'
         'rebuild:Rebuild devcontainer with preservation options'
         'completion:Generate completion script'
@@ -207,6 +231,14 @@ _dcutil() {
         'backup:Create volume backup'
         'restore:Restore volume from backup'
         'help:Show volumes help'
+    )
+
+    local -a build_commands
+    build_commands=(
+        'info:Show build configuration information'
+        'validate:Validate build configuration'
+        'clean:Clean build artifacts and cache'
+        'help:Show build help'
     )
 
     local -a up_options
@@ -254,6 +286,9 @@ _dcutil() {
                     ;;
                 volumes)
                     _describe 'volume command' volumes_commands
+                    ;;
+                build)
+                    _describe 'build command' build_commands
                     ;;
                 up)
                     if [[ $line[2] == --* ]]; then
@@ -337,6 +372,36 @@ elif [ "$COMMAND" = "volumes" ]; then
     # Volumes command doesn't need project directory
     determine_project_dir
     shift 1
+elif [ "$COMMAND" = "compose" ]; then
+    # Compose command doesn't need project directory
+    determine_project_dir
+    shift 1
+    dcutil_compose "$@"
+    exit $EXIT_SUCCESS
+elif [ "$COMMAND" = "build" ]; then
+    # Build command doesn't need project directory
+    determine_project_dir
+    shift 1
+    dcutil_build "$@"
+    exit $EXIT_SUCCESS
+elif [ "$COMMAND" = "features" ]; then
+    # Features command doesn't need project directory
+    determine_project_dir
+    shift 1
+    features_cli "$@"
+    exit $EXIT_SUCCESS
+elif [ "$COMMAND" = "lifecycle" ]; then
+    # Lifecycle command doesn't need project directory
+    determine_project_dir
+    shift 1
+    lifecycle_cli "$@"
+    exit $EXIT_SUCCESS
+elif [ "$COMMAND" = "environment" ]; then
+    # Environment command doesn't need project directory
+    determine_project_dir
+    shift 1
+    environment_cli "$@"
+    exit $EXIT_SUCCESS
 elif [ "$COMMAND" = "rebuild" ]; then
     # Rebuild command doesn't need project directory
     determine_project_dir
@@ -421,6 +486,16 @@ case "$COMMAND" in
         ;;
     "down")
         devcontainer_down
+        ;;
+
+    "features")
+        # Optional features command
+        if [ -z "${1:-}" ]; then
+            print_usage
+            exit $EXIT_INVALID_ARGS
+        fi
+        features_cli "$@"
+        exit $EXIT_SUCCESS
         ;;
     "restart")
         devcontainer_restart

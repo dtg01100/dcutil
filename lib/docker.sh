@@ -6,6 +6,25 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Source additional modules if available
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/compose.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/compose.sh"
+fi
+
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/build.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/build.sh"
+fi
+
+# Optional lifecycle support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/lifecycle.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/lifecycle.sh"
+fi
+
+# Optional environment support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/environment.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/environment.sh"
+fi
+
 # Global variables
 CONTAINER_NAME=""
 IMAGE_NAME=""
@@ -21,8 +40,7 @@ check_docker_daemon() {
 # Parse devcontainer.json configuration
 parse_devcontainer_config() {
     local config_file=""
-    
-    # Find devcontainer configuration
+
     if [ -f ".devcontainer/devcontainer.json" ]; then
         config_file=".devcontainer/devcontainer.json"
     elif [ -f ".devcontainer.json" ]; then
@@ -31,62 +49,118 @@ parse_devcontainer_config() {
         error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
     fi
 
-    # Validate JSON
-    validate_json_if_available "$config_file"
+    DEVCONTAINER_CONFIG_FILE="$config_file"
 
-    # Parse configuration using jq if available
+    # Validate JSON
+    validate_json_if_available "$DEVCONTAINER_CONFIG_FILE"
+
+    # Defaults
+    IMAGE_NAME="mcr.microsoft.com/devcontainers/base:ubuntu"
+    WORKSPACE_FOLDER="/workspaces/${PWD##*/}"
+    CONTAINER_USER="vscode"
+    REMOTE_USER="vscode"
+    MOUNTS=()
+    FEATURES=()
+    CONTAINER_ENV=()
+    REMOTE_ENV=()
+    PRIVILEGED=false
+    CAP_ADD=()
+    SECURITY_OPT=()
+    TMPFS_LIST=()
+    WAIT_FOR=()
+    APP_PORTS=()
+    SHUTDOWN_ACTION="stopContainer"
+
     if command -v jq &> /dev/null; then
-        CONTAINER_NAME="devcontainer_$(basename "$PROJECT_DIR")_$(date +%s)"
-        
-        # Extract basic configuration
-        IMAGE_NAME=$(jq -r '.image // "mcr.microsoft.com/devcontainers/base:ubuntu"' "$config_file")
-        WORKSPACE_FOLDER=$(jq -r '.workspaceFolder // "/workspaces/${PWD##*/}"' "$config_file")
-        CONTAINER_USER=$(jq -r '.containerUser // "vscode"' "$config_file")
-        REMOTE_USER=$(jq -r '.remoteUser // .containerUser // "vscode"' "$config_file")
-        
-        # Extract mounts
-        MOUNTS=()
-        if jq -e '.mounts' "$config_file" >/dev/null 2>&1; then
-            # Parse mounts from JSON array
+        IMAGE_NAME=$(jq -r '.image // env.IMAGE_NAME' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$IMAGE_NAME")
+        # Only update WORKSPACE_FOLDER if it's not null
+        local workspace_from_config
+        workspace_from_config=$(jq -r '.workspaceFolder // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ -n "$workspace_from_config" ] && [ "$workspace_from_config" != "null" ]; then
+            WORKSPACE_FOLDER="$workspace_from_config"
+        fi
+        CONTAINER_USER=$(jq -r '.containerUser // "vscode"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$CONTAINER_USER")
+        REMOTE_USER=$(jq -r '.remoteUser // .containerUser // "vscode"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$REMOTE_USER")
+
+        # mounts
+        if jq -e '.mounts' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             while IFS= read -r mount_spec; do
-                if [ -n "$mount_spec" ] && [ "$mount_spec" != "null" ]; then
-                    # The mount spec is already in Docker format: "source=...,target=...,type=..."
-                    MOUNTS+=("$mount_spec")
-                fi
-            done < <(jq -r '.mounts[]' "$config_file" 2>/dev/null || echo "")
+                MOUNTS+=("$mount_spec")
+            done < <(jq -r '.mounts[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
         fi
-        
-        # Extract features and other configurations
-        FEATURES=()
-        if jq -e '.features' "$config_file" >/dev/null 2>&1; then
-            while IFS= read -r feature; do
-                if [ -n "$feature" ]; then
-                    FEATURES+=("$feature")
+
+        # features
+        if jq -e '.features' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r id; do
+                local v
+                v=$(jq -r --arg id "$id" '.features[$id]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                if [ "$v" != "false" ]; then
+                    FEATURES+=("$id")
                 fi
-            done < <(jq -r 'to_entries[] | "\(.key)=\(.value|tostring)"' "$config_file" | grep "^features=" | cut -d= -f2-)
+            done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
         fi
-        
-    else
-        # Fallback parsing without jq
-        IMAGE_NAME=$(grep -o '"image": *"[^"]*"' "$config_file" | sed 's/.*: *"\([^"]*\)".*/\1/' | head -1)
-        IMAGE_NAME=${IMAGE_NAME:-"mcr.microsoft.com/devcontainers/base:ubuntu"}
-        WORKSPACE_FOLDER=$(grep -o '"workspaceFolder": *"[^"]*"' "$config_file" | sed 's/.*: *"\([^"]*\)".*/\1/' | head -1)
-        WORKSPACE_FOLDER=${WORKSPACE_FOLDER:-"/workspaces/${PWD##*/}"}
-        CONTAINER_USER=$(grep -o '"containerUser": *"[^"]*"' "$config_file" | sed 's/.*: *"\([^"]*\)".*/\1/' | head -1)
-        CONTAINER_USER=${CONTAINER_USER:-"vscode"}
-        REMOTE_USER=$(grep -o '"remoteUser": *"[^"]*"' "$config_file" | sed 's/.*: *"\([^"]*\)".*/\1/' | head -1)
-        REMOTE_USER=${REMOTE_USER:-"$CONTAINER_USER"}
+
+        # envs
+        if jq -e '.containerEnv' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS='=' read -r key val; do
+                CONTAINER_ENV+=("$key=$val")
+            done < <(jq -r '.containerEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+        if jq -e '.remoteEnv' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS='=' read -r key val; do
+                REMOTE_ENV+=("$key=$val")
+            done < <(jq -r '.remoteEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+
+        # security
+        if jq -e '.privileged' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            PRIVILEGED=$(jq -r '.privileged' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$PRIVILEGED")
+        fi
+        if jq -e '.capAdd' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r cap; do
+                CAP_ADD+=("$cap")
+            done < <(jq -r '.capAdd[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+        if jq -e '.securityOpt' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r opt; do
+                SECURITY_OPT+=("$opt")
+            done < <(jq -r '.securityOpt[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+        if jq -e '.tmpfs' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r t; do
+                TMPFS_LIST+=("$t")
+            done < <(jq -r '.tmpfs[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+
+        # services
+        if jq -e '.waitFor' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r w; do
+                WAIT_FOR+=("$w")
+            done < <(jq -r '.waitFor[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+        if jq -e '.appPort' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r p; do
+                APP_PORTS+=("$p")
+            done < <(jq -r '.appPort[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+        fi
+
+        SHUTDOWN_ACTION=$(jq -r '.shutdownAction // "stopContainer"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$SHUTDOWN_ACTION")
     fi
 }
+
 
 # Build devcontainer image
 docker_build() {
     info "Building devcontainer image..."
     check_docker_daemon
     parse_devcontainer_config
-    
-    # Check if there's a Dockerfile in .devcontainer
-    if [ -f ".devcontainer/Dockerfile" ]; then
+
+    # Check for custom build configuration
+    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
+        info "Using custom build configuration"
+        build_custom_image "$IMAGE_NAME"
+    elif [ -f ".devcontainer/Dockerfile" ]; then
+        # Fallback: simple Dockerfile build
         info "Building custom Dockerfile..."
         if ! docker build -f .devcontainer/Dockerfile -t "$IMAGE_NAME" . 2>/dev/null; then
             error_exit "Failed to build devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
@@ -100,8 +174,8 @@ docker_build() {
     fi
     
     # Run postCreateCommand if specified
-    if command -v jq &> /dev/null && jq -e '.postCreateCommand' "$config_file" >/dev/null 2>&1; then
-        POST_CREATE_CMD=$(jq -r '.postCreateCommand' "$config_file")
+    if command -v jq &> /dev/null && jq -e '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+        POST_CREATE_CMD=$(jq -r '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE")
         info "Running post-create command..."
         # This would need to be run in a temporary container for full compatibility
     fi
@@ -112,17 +186,28 @@ docker_build() {
 # Start devcontainer
 docker_up() {
     local project_dir="${1:-}"
-    
+
     # If project_dir is not provided, use current working directory
     if [ -z "$project_dir" ]; then
         project_dir="$(pwd)"
     fi
-    
+
     PROJECT_DIR="$project_dir"
     info "Starting devcontainer setup..."
     check_docker_daemon
+
+    # Parse build configuration first (if available)
+    if command -v parse_build_config >/dev/null 2>&1; then
+        parse_build_config
+    fi
+
     parse_devcontainer_config
-    
+
+    # Build custom image if needed
+    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
+        docker_build
+    fi
+
     # Check if project-home option is enabled
     if [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" = true ]; then
         info "Setting container home folder to project directory..."
@@ -147,14 +232,30 @@ docker_up() {
         MOUNT_ARGS+=("$HOME_MOUNT")
     fi
     
-    # Build environment variables
+    # Build environment variables using environment module if available
     ENV_ARGS=()
-    ENV_ARGS+=("-e" "REMOTE_USER=$REMOTE_USER")
-    ENV_ARGS+=("-e" "WORKSPACE_FOLDER=$WORKSPACE_FOLDER")
-    
-    # Add VS Code server environment
-    ENV_ARGS+=("-e" "GITHUB_TOKEN=${GITHUB_TOKEN:-}")
-    ENV_ARGS+=("-e" "NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=4096}")
+    if command -v build_container_env_args >/dev/null 2>&1; then
+        # Use environment module for comprehensive environment handling
+        parse_environment_config
+        while IFS= read -r env_arg; do
+            ENV_ARGS+=("$env_arg")
+        done < <(build_container_env_args)
+    else
+        # Fallback to basic environment variables
+        ENV_ARGS+=("-e" "REMOTE_USER=$REMOTE_USER")
+        ENV_ARGS+=("-e" "WORKSPACE_FOLDER=$WORKSPACE_FOLDER")
+        
+        # Add container environment variables if parsed
+        for env_var in "${CONTAINER_ENV[@]}"; do
+            if [ -n "$env_var" ]; then
+                ENV_ARGS+=("-e" "$env_var")
+            fi
+        done
+        
+        # Add VS Code server environment
+        ENV_ARGS+=("-e" "GITHUB_TOKEN=${GITHUB_TOKEN:-}")
+        ENV_ARGS+=("-e" "NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=4096}")
+    fi
     
     # Build port mappings
     PORT_ARGS=()
@@ -195,10 +296,27 @@ docker_up() {
     
     # Wait for container to be ready
     sleep 2
-    
+
     # Run post-create commands if specified
     run_post_create_commands
-    
+
+    # Run post-start command if specified
+    if command -v execute_post_start_command >/dev/null 2>&1; then
+        execute_post_start_command
+    fi
+
+    # Apply remote environment variables if specified
+    if command -v apply_remote_environment >/dev/null 2>&1; then
+        parse_environment_config
+        apply_remote_environment "$CONTAINER_NAME"
+    fi
+
+    # Set up user environment if specified
+    if command -v setup_user_environment >/dev/null 2>&1; then
+        parse_environment_config
+        setup_user_environment "$CONTAINER_NAME"
+    fi
+
     success "Devcontainer started successfully"
 }
 
@@ -211,8 +329,8 @@ run_post_create_commands() {
         config_file=".devcontainer.json"
     fi
     
-    if [ -n "$config_file" ] && command -v jq &> /dev/null && jq -e '.postCreateCommand' "$config_file" >/dev/null 2>&1; then
-        POST_CREATE_CMD=$(jq -r '.postCreateCommand' "$config_file")
+    if [ -n "$DEVCONTAINER_CONFIG_FILE" ] && command -v jq &> /dev/null && jq -e '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+        POST_CREATE_CMD=$(jq -r '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE")
         info "Running post-create command..."
         if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$POST_CREATE_CMD" 2>/dev/null; then
             warning "Post-create command failed (continuing anyway)"
@@ -231,6 +349,18 @@ docker_down() {
     
     info "Stopping devcontainer..."
     check_docker_daemon
+    
+    # Check if using Docker Compose
+    if command -v is_compose_mode >/dev/null 2>&1 && command -v parse_compose_config >/dev/null 2>&1; then
+        parse_compose_config
+        if is_compose_mode; then
+            compose_down "$project_dir"
+            success "Devcontainer stopped successfully (Docker Compose mode)"
+            return 0
+        fi
+    fi
+    
+    # Fall back to standard Docker container operations
     
     # Find container by project directory label
     local container_id
@@ -297,6 +427,17 @@ docker_status() {
     
     info "Checking container status..."
     check_docker_daemon
+    
+    # Check if using Docker Compose
+    if command -v is_compose_mode >/dev/null 2>&1 && command -v parse_compose_config >/dev/null 2>&1; then
+        parse_compose_config
+        if is_compose_mode; then
+            compose_status "$project_dir"
+            return 0
+        fi
+    fi
+    
+    # Fall back to standard Docker container operations
     
     local container_id
     container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
@@ -398,7 +539,7 @@ docker_clean() {
         config_file=".devcontainer.json"
     fi
     
-    if [ -n "$config_file" ] && [ -f ".devcontainer/Dockerfile" ]; then
+    if [ -n "$DEVCONTAINER_CONFIG_FILE" ] && [ -f ".devcontainer/Dockerfile" ]; then
         parse_devcontainer_config
         docker rmi "$IMAGE_NAME" 2>/dev/null || true
     fi
