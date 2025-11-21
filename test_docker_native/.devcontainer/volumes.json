@@ -1,0 +1,11 @@
+{
+  "volumes": {
+    "testdata": {
+      "host_path": "/var/mnt/Disk2/projects/dcutil/test_docker_native/testdata",
+      "container_path": "/workspace/testdata",
+      "mount_type": "bind",
+      "auto_mount": true,
+      "created": "2025-11-21T15:11:46Z"
+    }
+  }
+}

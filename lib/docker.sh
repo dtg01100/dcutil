@@ -10,15 +10,11 @@ source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 USE_DOCKER_NATIVE=false
 
 # Check what devcontainer solution is available
-check_devcontainer_availability() {
-    if command -v devcontainer &> /dev/null; then
-        info "Using devcontainer CLI"
-        USE_DOCKER_NATIVE=false
-        return 0
+is_docker_native_mode() {
+    if ! command -v devcontainer &> /dev/null; then
+        return 0  # Docker-native mode
     else
-        info "Devcontainer CLI not found, using Docker-native operations"
-        USE_DOCKER_NATIVE=true
-        return 0  # Docker-native mode available
+        return 1  # devcontainer CLI mode
     fi
 }
 
@@ -92,13 +88,13 @@ safe_devcontainer_command() {
 # Wrapper functions that support both modes
 devcontainer_up() {
     info "Starting devcontainer setup..."
-    info "devcontainer_up received PROJECT_DIR: '$PROJECT_DIR'"
     
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
+    if is_docker_native_mode; then
         # Pass PROJECT_DIR as parameter to docker_native function
-        info "Calling docker_up with PROJECT_DIR: '$PROJECT_DIR'"
+        info "Using Docker-native operations (devcontainer CLI not available)"
         docker_up "$PROJECT_DIR"
     else
+        info "Using devcontainer CLI"
         # Original devcontainer CLI logic
         # Check if project-home option is enabled
         if [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" = true ]; then
@@ -192,8 +188,8 @@ devcontainer_up() {
 # Simplified wrapper functions for other operations
 devcontainer_down() {
     info "Stopping devcontainer..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_down
+    if is_docker_native_mode; then
+        docker_down "$PROJECT_DIR"
     else
         safe_devcontainer_command "down"
     fi
@@ -203,8 +199,8 @@ devcontainer_down() {
 devcontainer_restart() {
     info "Restarting devcontainer..."
     # Stop if running (ignore errors)
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_down 2>/dev/null || true
+    if is_docker_native_mode; then
+        docker_down "$PROJECT_DIR" 2>/dev/null || true
         devcontainer_up
     else
         safe_devcontainer_command "down" 2>/dev/null || true
@@ -215,8 +211,8 @@ devcontainer_restart() {
 
 devcontainer_enter() {
     info "Entering container..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_enter
+    if is_docker_native_mode; then
+        docker_enter "$PROJECT_DIR"
     else
         check_devcontainer_cli
         check_docker_daemon
@@ -256,8 +252,8 @@ devcontainer_enter() {
 
 devcontainer_status() {
     info "Checking container status..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_status
+    if is_docker_native_mode; then
+        docker_status "$PROJECT_DIR"
     else
         if devcontainer exec --workspace-folder . echo "Container is running" 2>/dev/null; then
             echo "Container is running"
@@ -269,8 +265,8 @@ devcontainer_status() {
 
 devcontainer_logs() {
     info "Showing container logs..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_logs
+    if is_docker_native_mode; then
+        docker_logs "$PROJECT_DIR"
     else
         check_docker_daemon
 
@@ -289,8 +285,8 @@ devcontainer_logs() {
 
 devcontainer_list() {
     info "Listing running devcontainers..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_list
+    if is_docker_native_mode; then
+        docker_list "$PROJECT_DIR"
     else
         check_docker_daemon
 
@@ -304,8 +300,8 @@ devcontainer_list() {
 devcontainer_run() {
     validate_run_command "$@"
     info "Running command in container: $*"
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_run "$@"
+    if is_docker_native_mode; then
+        docker_run "$PROJECT_DIR" "$@"
     else
         check_devcontainer_cli
         check_docker_daemon
@@ -318,8 +314,8 @@ devcontainer_run() {
 
 devcontainer_build() {
     info "Building devcontainer image..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_build
+    if is_docker_native_mode; then
+        docker_build "$PROJECT_DIR"
     else
         safe_devcontainer_command "build"
     fi
@@ -328,8 +324,8 @@ devcontainer_build() {
 
 devcontainer_clean() {
     info "Cleaning up devcontainer..."
-    if [ "$USE_DOCKER_NATIVE" = true ]; then
-        docker_clean
+    if is_docker_native_mode; then
+        docker_clean "$PROJECT_DIR"
     else
         check_devcontainer_cli
         check_docker_daemon

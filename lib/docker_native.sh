@@ -234,12 +234,19 @@ run_post_create_commands() {
 
 # Stop devcontainer
 docker_down() {
+    local project_dir="${1:-}"
+    
+    # If project_dir is not provided, use current working directory
+    if [ -z "$project_dir" ]; then
+        project_dir="$(pwd)"
+    fi
+    
     info "Stopping devcontainer..."
     check_docker_daemon
     
     # Find container by project directory label
     local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
     
     if [ -n "$container_id" ]; then
         if ! docker stop "$container_id" 2>/dev/null; then
@@ -286,11 +293,22 @@ docker_enter() {
 
 # Check devcontainer status
 docker_status() {
+    local project_dir="${1:-}"
+    
+    # If project_dir is not provided, use current working directory
+    if [ -z "$project_dir" ]; then
+        project_dir="$(pwd)"
+    fi
+    
+    info "docker_status received project_dir: '$project_dir'"
+    
     info "Checking container status..."
     check_docker_daemon
     
     local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
+    
+    info "Looking for container with label: devcontainer.local_folder=$project_dir"
     
     if [ -n "$container_id" ]; then
         local status
@@ -334,18 +352,20 @@ docker_list() {
 
 # Run command in devcontainer
 docker_run() {
+    local project_dir="$1"
+    shift  # Remove project_dir from arguments
     validate_run_command "$@"
     info "Running command in container: $*"
     check_docker_daemon
     
     local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
     
     if [ -z "$container_id" ]; then
-        error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
+        error_exit "No running devcontainer found for $project_dir" "$EXIT_DEVCONTAINER_ERROR"
     fi
     
-    if ! docker exec "$container_id" "$@" 2>/dev/null; then
+    if ! docker exec "$container_id" "$@"; then
         error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
     fi
 }

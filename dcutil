@@ -13,10 +13,8 @@ source "$SCRIPT_DIR/lib/volumes.sh"
 source "$SCRIPT_DIR/lib/security.sh"
 source "$SCRIPT_DIR/lib/init.sh"
 
-# Source docker_native module if needed (when devcontainer CLI is not available)
-if ! command -v devcontainer &> /dev/null; then
-    source "$SCRIPT_DIR/lib/docker_native.sh"
-fi
+# Source docker_native module (needed for fallback mode)
+source "$SCRIPT_DIR/lib/docker_native.sh"
 
 # Test function to verify improvements
 test_dcutil_improvements() {
@@ -474,7 +472,7 @@ case "$COMMAND" in
                 if [ $# -lt 3 ]; then
                     error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
                 fi
-                add_volume "$1" "$2" "$3" "$4"
+                add_volume "$1" "$2" "$3" "${4:-}"
                 ;;
             "remove")
                 if [ $# -eq 0 ]; then
