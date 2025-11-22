@@ -40,6 +40,10 @@ fi
 if [ -f "$SCRIPT_DIR/lib/schema-validation.sh" ]; then
     source "$SCRIPT_DIR/lib/schema-validation.sh"
 fi
+# podman backend module is optional
+if [ -f "$SCRIPT_DIR/lib/podman.sh" ]; then
+    source "$SCRIPT_DIR/lib/podman.sh"
+fi
 
 # Test function to verify improvements
 test_dcutil_improvements() {
@@ -113,7 +117,7 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
@@ -228,6 +232,7 @@ local -a commands
         'shutdown:Container shutdown actions'
         'rebuild:Rebuild devcontainer with preservation options'
         'schema:Devcontainer configuration schema validation'
+        'podman:Podman backend configuration and status'
         'completion:Generate completion script'
         'test:Test dcutil improvements'
         'help:Show help message'
@@ -988,7 +993,7 @@ elif [ "$COMMAND" = "schema" ]; then
                 error_exit "Schema validation cleanup not available." "$EXIT_CONFIG_ERROR"
             fi
             exit $EXIT_SUCCESS
-;;
+            ;;
         "help"|"-h"|"--help")
             cat << 'EOF'
 Usage: dcutil schema <command> [options]
@@ -1009,6 +1014,90 @@ Validates JSON structure, property types, required fields, and specification com
 Provides detailed error and warning messages for configuration issues.
 EOF
             exit $EXIT_SUCCESS
+            ;;
+        *)
+            error_exit "Unknown schema subcommand: ${1:-}. Use 'dcutil schema help' for usage." "$EXIT_INVALID_ARGS"
+            ;;
+    esac
+elif [ "$COMMAND" = "podman" ]; then
+    # Podman backend command doesn't need project directory
+    determine_project_dir
+    shift 1
+    
+    # Set up environment for Podman backend modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Check for Podman subcommands
+    case "${1:-}" in
+        "status")
+            # Show Podman backend status
+            if command -v show_backend_status >/dev/null 2>&1; then
+                show_backend_status
+            else
+                error_exit "Podman backend not available." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "validate")
+            # Validate Podman backend configuration
+            if command -v validate_backend_config >/dev/null 2>&1; then
+                validate_backend_config
+            else
+                error_exit "Podman backend not available." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "init")
+            # Initialize Podman backend
+            if command -v init_podman_backend >/dev/null 2>&1; then
+                init_podman_backend
+            else
+                error_exit "Podman backend not available." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "help"|"-h"|"--help")
+            cat << 'EOF'
+Usage: dcutil podman <command> [options]
+
+Podman backend support for dcutil with Docker compatibility:
+
+Commands:
+  status    Show Podman backend status and configuration
+  validate  Validate Podman backend configuration
+  init      Initialize Podman backend
+
+Examples:
+  dcutil podman status
+  dcutil podman validate
+  dcutil podman init
+
+Features:
+  - Automatic backend detection (Podman/Docker)
+  - Rootless container support with Podman
+  - Docker compatibility layer
+  - Fallback to Docker when needed
+  - OCI runtime compatibility
+
+Environment Variables:
+  DCUTIL_BACKEND=podman    Force Podman backend
+  DCUTIL_BACKEND=docker    Force Docker backend
+  DCUTIL_BACKEND=auto      Auto-detect (default)
+EOF
+            exit $EXIT_SUCCESS
+            ;;
+        "")
+            # Default: show status
+            if command -v show_backend_status >/dev/null 2>&1; then
+                show_backend_status
+            else
+                error_exit "Podman backend not available." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        *)
+            error_exit "Unknown podman subcommand: ${1:-}. Use 'dcutil podman help' for usage." "$EXIT_INVALID_ARGS"
             ;;
     esac
 else

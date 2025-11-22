@@ -55,11 +55,28 @@ CONTAINER_NAME=""
 IMAGE_NAME=""
 PROJECT_DIR=""
 
-# Check Docker daemon availability
-check_docker_daemon() {
-    if ! docker info &> /dev/null; then
-        error_exit "Docker daemon is not running or not accessible. Please start Docker." "$EXIT_DOCKER_ERROR"
+# Check container daemon availability (Docker or Podman)
+check_container_daemon() {
+    # Check if Podman backend is enabled and available
+    if [ "$PODMAN_BACKEND_ENABLED" = true ] && command -v podman >/dev/null 2>&1; then
+        if podman info &> /dev/null; then
+            info "Using Podman container engine"
+            return 0
+        fi
     fi
+    
+    # Fallback to Docker
+    if command -v docker >/dev/null 2>&1 && docker info &> /dev/null; then
+        info "Using Docker container engine"
+        return 0
+    fi
+    
+    error_exit "No container engine found or accessible. Please install Docker or Podman." "$EXIT_DOCKER_ERROR"
+}
+
+# Backward compatibility alias
+check_docker_daemon() {
+    check_container_daemon "$@"
 }
 
 # Parse devcontainer.json configuration
@@ -211,10 +228,18 @@ docker_build() {
         # Fall back to standard image pull/build
         if [ -n "${IMAGE_NAME:-}" ]; then
             info "Pulling image: $IMAGE_NAME"
-            if docker pull "$IMAGE_NAME"; then
-                success "Image pulled successfully: $IMAGE_NAME"
+            if command -v execute_container_command >/dev/null 2>&1; then
+                if execute_container_command pull "$IMAGE_NAME"; then
+                    success "Image pulled successfully: $IMAGE_NAME"
+                else
+                    error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
+                fi
             else
-                error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
+                if docker pull "$IMAGE_NAME"; then
+                    success "Image pulled successfully: $IMAGE_NAME"
+                else
+                    error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
+                fi
             fi
         else
             error_exit "No image or build configuration specified" "$EXIT_CONFIG_ERROR"
@@ -248,17 +273,30 @@ docker_up() {
     fi
     
     # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_up
         success "Devcontainer started successfully"
         return 0
     fi
     
-    # Override image name for custom builds
+# Override image name for custom builds
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
         # Generate image name from project directory
         IMAGE_NAME="dcutil-${PWD##*/}:custom"
         info "Using custom build image: $IMAGE_NAME"
+        
+        # Build the custom image first
+        info "Building custom devcontainer image..."
+        if command -v execute_container_command >/dev/null 2>&1; then
+            if ! execute_container_command build -t "$IMAGE_NAME" .; then
+                error_exit "Failed to build custom devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+        else
+            if ! docker build -t "$IMAGE_NAME" .; then
+                error_exit "Failed to build custom devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+        fi
+        success "Custom image built successfully: $IMAGE_NAME"
     fi
     
     # Generate container name from project directory
@@ -447,21 +485,34 @@ docker_down() {
     info "Stopping devcontainer..."
     
     # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_down
         return 0
     fi
     
     # Check if container exists
-    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        info "No running devcontainer found"
-        success "Devcontainer stopped"
-        return 0
-    fi
-    
-    # Stop container
-    if ! docker stop "$CONTAINER_NAME" &>/dev/null; then
-        error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            info "No running devcontainer found"
+            success "Devcontainer stopped"
+            return 0
+        fi
+        
+        # Stop container
+        if ! execute_container_command stop "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        fi
+    else
+        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            info "No running devcontainer found"
+            success "Devcontainer stopped"
+            return 0
+        fi
+        
+        # Stop container
+        if ! docker stop "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        fi
     fi
     
     success "Devcontainer stopped"
@@ -472,19 +523,30 @@ docker_restart() {
     info "Restarting devcontainer..."
     
     # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_restart
         return 0
     fi
     
     # Check if container exists
-    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
-    fi
-    
-    # Restart container
-    if ! docker restart "$CONTAINER_NAME" &>/dev/null; then
-        error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        # Restart container
+        if ! execute_container_command restart "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        fi
+    else
+        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        # Restart container
+        if ! docker restart "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        fi
     fi
     
     success "Devcontainer restarted successfully"
@@ -494,30 +556,47 @@ docker_restart() {
 docker_enter() {
     info "Entering container..."
     
-    # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+# Check if we're in Docker Compose mode
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         if [ -t 0 ]; then
             docker_compose_exec /bin/bash
         else
-            docker_compose_exec /bin/sh
+            docker_compose_exec sh
         fi
         return 0
     fi
     
     # Check if container exists and is running
-    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
-    fi
-    
-    if ! docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-        error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
-    fi
-    
-    # Enter container
-    if [ -t 0 ]; then
-        docker exec -it "$CONTAINER_NAME" /bin/bash
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        if ! execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+            error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        # Enter container
+        if [ -t 0 ]; then
+            execute_container_command exec -it "$CONTAINER_NAME" /bin/bash
+        else
+            execute_container_command exec -i "$CONTAINER_NAME" /bin/sh
+        fi
     else
-        docker exec -i "$CONTAINER_NAME" /bin/sh
+        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        if ! docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+            error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        # Enter container
+        if [ -t 0 ]; then
+            docker exec -it "$CONTAINER_NAME" /bin/bash
+        else
+            docker exec -i "$CONTAINER_NAME" /bin/sh
+        fi
     fi
 }
 
@@ -526,15 +605,64 @@ docker_status() {
     info "Checking container status..."
     
     # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_status
         return 0
     fi
     
-    # Check if container exists
-    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        echo "Container is not running"
-        return 0
+# Check if container exists
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            echo "Container is not running"
+            return 0
+        fi
+        
+        # Check if container is running
+        if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+            echo "Container is running"
+            
+            # Show container details
+            local container_ip
+            container_ip=$(execute_container_command inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
+            if [ -n "$container_ip" ]; then
+                echo "Container IP: $container_ip"
+            fi
+            
+            # Show exposed ports
+            local port_info
+            port_info=$(execute_container_command inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
+            if [ -n "$port_info" ] && [ "$port_info" != "<no value>" ]; then
+                echo "Port mappings: $port_info"
+            fi
+        else
+            echo "Container is stopped"
+        fi
+    else
+        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            echo "Container is not running"
+            return 0
+        fi
+        
+        # Check if container is running
+        if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+            echo "Container is running"
+            
+            # Show container details
+            local container_ip
+            container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
+            if [ -n "$container_ip" ]; then
+                echo "Container IP: $container_ip"
+            fi
+            
+            # Show exposed ports
+            local port_info
+            port_info=$(docker inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
+            if [ -n "$port_info" ] && [ "$port_info" != "<no value>" ]; then
+                echo "Port mappings: $port_info"
+            fi
+        else
+            echo "Container is stopped"
+        fi
     fi
     
     # Check if container is running
@@ -565,18 +693,27 @@ docker_logs() {
     info "Showing container logs..."
     
     # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_logs
         return 0
     fi
     
     # Check if container exists
-    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        # Show logs
+        execute_container_command logs -f "$CONTAINER_NAME"
+    else
+        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        # Show logs
+        docker logs -f "$CONTAINER_NAME"
     fi
-    
-    # Show logs
-    docker logs -f "$CONTAINER_NAME"
 }
 
 # List running devcontainers
@@ -621,19 +758,30 @@ docker_clean() {
     info "Cleaning up devcontainer..."
     
     # Check if we're in Docker Compose mode
-    if is_compose_mode 2>/dev/null; then
+    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_clean
         return 0
     fi
     
     # Stop container if running
-    if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-        if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-            docker stop "$CONTAINER_NAME" &>/dev/null || true
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+                execute_container_command stop "$CONTAINER_NAME" &>/dev/null || true
+            fi
+            
+            # Remove container
+            execute_container_command rm "$CONTAINER_NAME" &>/dev/null || true
         fi
-        
-        # Remove container
-        docker rm "$CONTAINER_NAME" &>/dev/null || true
+    else
+        if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+                docker stop "$CONTAINER_NAME" &>/dev/null || true
+            fi
+            
+            # Remove container
+            docker rm "$CONTAINER_NAME" &>/dev/null || true
+        fi
     fi
     
     # Remove volumes if requested
@@ -672,6 +820,18 @@ devcontainer_up() {
     info "Starting devcontainer setup..."
     docker_up "$PROJECT_DIR"
     success "Devcontainer started successfully"
+}
+
+# Execute container command with backend support
+execute_container_command() {
+    local cmd="$1"
+    shift
+    
+    if command -v execute_podman_command >/dev/null 2>&1 && [ "$PODMAN_BACKEND_ENABLED" = true ]; then
+        execute_podman_command "$cmd" "$@"
+    else
+        docker "$cmd" "$@"
+    fi
 }
 
 devcontainer_down() {
@@ -1015,3 +1175,8 @@ devcontainer_userprobe_cleanup() {
         error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
     fi
 }
+
+# Initialize Podman backend on startup
+if command -v init_podman_backend >/dev/null 2>&1; then
+    init_podman_backend
+fi
