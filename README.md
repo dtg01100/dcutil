@@ -30,6 +30,13 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 - **Colored output** for better visibility and debugging
 - **Automatic project detection** with multiple fallback strategies
 
+#### Container Backend Support
+- **Docker Backend**: Full Docker CLI compatibility with all features
+- **Podman Backend**: Complete Podman support with rootless containers
+- **Auto-Detection**: Automatically detects and uses available container runtime
+- **Backend Switching**: Runtime backend selection via environment variables
+- **Enterprise Ready**: Rootless support, enhanced security, OCI compliance
+
 ## Commands
 
 ### Core Container Management
@@ -55,6 +62,10 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 - `hostrequirements <cmd>` - Host system validation (validate, show, cleanup)
 - `shutdown <cmd>` - Container shutdown actions (execute, show, validate)
 - `schema <cmd>` - Configuration schema validation (validate, show, cleanup)
+
+### Container Backend Management
+- `status` - Show container status and backend information
+- Environment variable `DCUTIL_BACKEND` - Control container backend (docker, podman, auto)
 
 ### Orchestration & Utilities
 - `compose <cmd>` - Docker Compose environments (up, down, restart, logs, exec, status, scale, config)
@@ -88,6 +99,45 @@ The `--project-home` option allows you to set the container's home folder to the
 ```
 
 When using `--project-home`, the project directory will be mounted as the home directory (`/home/vscode`) in the container, allowing the container to use the project as the default home folder.
+
+### Container Backend Selection
+
+dcutil supports both Docker and Podman as container backends:
+
+```bash
+# Auto-detect backend (default)
+./dcutil up
+
+# Force Docker backend
+DCUTIL_BACKEND=docker ./dcutil up
+
+# Force Podman backend
+DCUTIL_BACKEND=podman ./dcutil up
+
+# Check current backend
+./dcutil status
+```
+
+#### Backend Features
+
+**Docker Backend:**
+- Full Docker CLI compatibility
+- All existing workflows preserved
+- Traditional daemon-based architecture
+
+**Podman Backend:**
+- Rootless container support
+- No persistent daemon required
+- Enhanced security model
+- Direct OCI runtime integration
+- Kubernetes YAML support (`podman play kube`)
+- Enterprise-grade capabilities
+
+**Auto-Detection:**
+- Prefers Podman if available
+- Falls back to Docker automatically
+- Seamless backend switching
+- Consistent command interface across backends
 
 ### Initialization
 
@@ -190,7 +240,7 @@ dcutil includes comprehensive error handling with specific exit codes:
 - `0` - Success
 - `1` - Invalid arguments or user input
 - `2` - Dependencies not found (devcontainer CLI)
-- `3` - Docker daemon errors
+- `3` - Container daemon errors (Docker/Podman)
 - `4` - Devcontainer operation failures
 - `5` - Permission errors
 - `6` - Configuration errors
@@ -268,7 +318,7 @@ dcutil implements **100% of the Devcontainer Specification** including:
 ## Requirements
 
 - **Devcontainer CLI**: `npm install -g @devcontainers/cli`
-- **Docker**: For container runtime
+- **Container Runtime**: Docker or Podman
 - **Bash or Zsh**: For auto-completion support
 - **jq**: For JSON processing (optional, enhances some features)
 

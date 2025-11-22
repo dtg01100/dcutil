@@ -17,6 +17,8 @@ declare -a INPUTS_NAMES=()
 declare -A INPUTS_DEFAULTS=()
 declare -A INPUTS_DESCRIPTIONS=()
 declare -A INPUTS_VALUES=()
+# Track per-feature environment variables set during installation
+declare -A FEATURE_ENV_VARS=()
 
 # Load inputs values interactively if not already set
 load_input_values() {
@@ -90,62 +92,104 @@ parse_features_config() {
         mkdir -p "$FEATURES_DIR"
         mkdir -p "$FEATURES_CACHE_DIR"
         
-        # Parse features object - handle both object and array formats
+        # Reset arrays/maps
+        FEATURES_IDS=()
+        FEATURES_CONFIG_MAP=()
+
+        # Parse features - handle both object and array formats
         if jq -e '.features' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-            # Object format: {"featureId": config}
-            while IFS= read -r feature_id; do
-                if [ -n "$feature_id" ] && [ "$feature_id" != "null" ]; then
-                    # Get the configuration for this feature
-                    local feature_config
-                    feature_config=$(jq -r ".features[\"$feature_id\"]" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
-                    
-                    if [ -n "$feature_config" ] && [ "$feature_config" != "null" ]; then
-                        # Convert object configuration into consistent string format for map
-                        FEATURES_IDS+=("$feature_id")
-                        FEATURES_CONFIG_MAP["$feature_id"]="$feature_config"
+            # If it's an object (map)
+            if jq -e '.features | type == "object"' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+                while IFS= read -r feature_key; do
+                    if [ -n "$feature_key" ] && [ "$feature_key" != "null" ]; then
+                        local feature_config
+                        feature_config=$(jq -c --arg key "$feature_key" '.features[$key]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
+
+                        # Skip disabled features (boolean false)
+                        if [ "$feature_config" = "false" ] || [ "$feature_config" = "null" ]; then
+                            continue
+                        fi
+
+                        # Normalize true -> {}
+                        if [ "$feature_config" = "true" ]; then
+                            feature_config="{}"
+                        fi
+
+                        FEATURES_IDS+=("$feature_key")
+                        FEATURES_CONFIG_MAP["$feature_key"]="$feature_config"
                     fi
-                fi
-            done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+            elif jq -e '.features | type == "array"' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+                # If it's an array, read entries as feature specs
+                jq -c '.features[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null | while IFS= read -r entry; do
+                    if [ -z "$entry" ] || [ "$entry" = "null" ]; then
+                        continue
+                    fi
+                    local entry_type
+                    entry_type=$(jq -r 'type' <<< "$entry" 2>/dev/null || echo "")
+                    if [ "$entry_type" = "string" ]; then
+                        FEATURES_IDS+=("$entry")
+                        FEATURES_CONFIG_MAP["$entry"]="{}"
+                    elif [ "$entry_type" = "object" ]; then
+                        # Handle object entries either with .id or as {"id": {...}} or {"<id>": {...}}
+                        if jq -e 'has("id")' <<< "$entry" >/dev/null 2>&1; then
+                            local id
+                            id=$(jq -r '.id' <<< "$entry" 2>/dev/null || echo "")
+                            if [ -n "$id" ]; then
+                                local cfg
+                                cfg=$(jq -c '.' <<< "$entry" 2>/dev/null || echo "{}")
+                                FEATURES_IDS+=("$id")
+                                FEATURES_CONFIG_MAP["$id"]="$cfg"
+                            fi
+                        else
+                            local key
+                            key=$(jq -r 'keys[0]' <<< "$entry" 2>/dev/null || echo "")
+                            if [ -n "$key" ]; then
+                                local cfg
+                                cfg=$(jq -c '.[keys[0]]' <<< "$entry" 2>/dev/null || echo "{}")
+                                FEATURES_IDS+=("$key")
+                                FEATURES_CONFIG_MAP["$key"]="$cfg"
+                            fi
+                        fi
+                    fi
+                done
+            fi
         fi
 
-        # Parse optional inputs (feature inputs) from devcontainer.json
+        # Parse optional inputs
         if jq -e '.inputs' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             while IFS= read -r input_name; do
                 if [ -n "$input_name" ] && [ "$input_name" != "null" ]; then
                     INPUTS_NAMES+=("$input_name")
-                        # load default/description if provided
-                        local def
-                        def=$(jq -r ".inputs[\"$input_name\"].default // empty" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
-                        if [ -n "$def" ] && [ "$def" != "null" ]; then
-                            INPUTS_DEFAULTS["$input_name"]="$def"
-                        fi
-                        local desc
-                        desc=$(jq -r ".inputs[\"$input_name\"].description // empty" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
-                        if [ -n "$desc" ] && [ "$desc" != "null" ]; then
-                            INPUTS_DESCRIPTIONS["$input_name"]="$desc"
-                        fi
-
+                    local def
+                    def=$(jq -r ".inputs[\"$input_name\"].default // empty" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                    if [ -n "$def" ] && [ "$def" != "null" ]; then
+                        INPUTS_DEFAULTS["$input_name"]="$def"
+                    fi
+                    local desc
+                    desc=$(jq -r ".inputs[\"$input_name\"].description // empty" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                    if [ -n "$desc" ] && [ "$desc" != "null" ]; then
+                        INPUTS_DESCRIPTIONS["$input_name"]="$desc"
+                    fi
                 fi
             done < <(jq -r '.inputs | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
             if [ ${#INPUTS_NAMES[@]} -gt 0 ]; then
                 info "Found ${#INPUTS_NAMES[@]} input(s) configured"
-                # Register input names for interactive prompt
                 for input_name in "${INPUTS_NAMES[@]}"; do
                     INPUTS_VALUES["$input_name"]="${INPUTS_DEFAULTS[$input_name]:-}"
                 done
             fi
         fi
 
-        if [ ${#FEATURES_CONFIG[@]} -gt 0 ]; then
-            info "Found ${#FEATURES_CONFIG[@]} feature(s):"
-            for feature in "${FEATURES_CONFIG[@]}"; do
-                local feature_id="${feature%:*}"
+        if [ ${#FEATURES_IDS[@]} -gt 0 ]; then
+            info "Found ${#FEATURES_IDS[@]} feature(s):"
+            for feature_id in "${FEATURES_IDS[@]}"; do
                 info "  - $feature_id"
             done
             return 0
         fi
-fi
-     
+    fi
+    
     return 1
 }
 
@@ -163,16 +207,23 @@ parse_feature_spec() {
     else
         feature_id="$feature_spec"
     fi
+
+    # Normalize formats:
+    # - Short: node -> ghcr.io/devcontainers/features/node
+    # - Medium: devcontainers/features/node -> ghcr.io/devcontainers/features/node
+    # - Full: ghcr.io/devcontainers/features/node -> keep as-is
     
-    # Handle different feature ID formats
-    if [[ ! "$feature_id" == *"/"* ]]; then
-        # Short format: node -> ghcr.io/devcontainers/features/node
+    # If no slash -> short format
+    if [[ "$feature_id" != *"/"* ]]; then
         feature_id="$FEATURES_REGISTRY/$FEATURES_NAMESPACE/$feature_id"
-    elif [[ ! "$feature_id" == */*/* ]]; then
-        # Medium format: devcontainers/features/node -> ghcr.io/devcontainers/features/node
-        feature_id="$FEATURES_REGISTRY/$feature_id"
+    else
+        # Detect if first segment looks like a registry (contains '.' or ':')
+        local first_segment="${feature_id%%/*}"
+        if [[ "$first_segment" != *.* && "$first_segment" != *:* && "$feature_id" != "$FEATURES_REGISTRY"/* ]]; then
+            feature_id="$FEATURES_REGISTRY/$feature_id"
+        fi
     fi
-    
+
     echo "$feature_id:$feature_version"
 }
 
@@ -261,11 +312,11 @@ env_prepare_inputs_for_feature() {
     local feature_name
     feature_name="${feature_id##*/}"
     local feature_safe_name
-    feature_safe_name=$(echo "$feature_name" | tr '/-.' '__' | tr '[:lower:]' '[:upper:]')
+    feature_safe_name=$(echo "$feature_name" | sed 's#[/\\.-]#_#g' | tr '[:lower:]' '[:upper:]')
 
     # Set environment variables for feature inputs
     for input_name in "${INPUTS_NAMES[@]}"; do
-        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | tr '[:lower:]' '[:upper:]' | tr '-.' '_')"
+        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')"
         local val="${INPUTS_VALUES[$input_name]:-}"
 
         if [ -z "$val" ]; then
@@ -282,7 +333,7 @@ env_prepare_inputs_for_feature() {
 env_clear_inputs_for_feature() {
     local feature_safe_name="$1"
     for input_name in "${INPUTS_NAMES[@]}"; do
-        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | tr '[:lower:]' '[:upper:]' | tr '-.' '_')"
+        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')"
         unset "DCUTIL_INPUT_${input_name^^}"
         unset "$var_name"
     done
@@ -305,7 +356,7 @@ install_feature() {
     feature_id=$(parse_feature_spec "$feature_spec" | cut -d: -f1)
     local feature_name="${feature_id##*/}"
     local feature_safe_name
-    feature_safe_name=$(echo "$feature_name" | tr '/-.' '__' | tr '[:lower:]' '[:upper:]')
+    feature_safe_name=$(echo "$feature_name" | sed 's#[/\\.-]#_#g' | tr '[:lower:]' '[:upper:]')
     
     # Create installation log entry
     echo "$(date): Installing $feature_spec" >> "$FEATURES_INSTALL_LOG"
@@ -396,9 +447,15 @@ show_features_info() {
     echo "  Install Directory: $FEATURES_DIR"
     echo "  Features:"
     
-    for feature_spec in "${FEATURES_CONFIG[@]}"; do
-        local feature_id="${feature_spec%:*}"
-        local feature_config="${feature_spec#*:}"
+    for feature_key in "${FEATURES_IDS[@]}"; do
+        local feature_spec="$feature_key"
+        local feature_config
+        feature_config="${FEATURES_CONFIG_MAP[$feature_key]}"
+        
+        local parsed_spec
+        parsed_spec=$(parse_feature_spec "$feature_spec")
+        local feature_id="${parsed_spec%:*}"
+        local feature_version="${parsed_spec#*:}"
         
         # Extract just the feature name from the ID
         local feature_name="${feature_id##*/}"
@@ -406,17 +463,17 @@ show_features_info() {
         echo "    - $feature_name"
         echo "      ID: $feature_id"
         
-        # Show version if available in config
+        # Show version if available in config or parsed spec
         if command -v jq &> /dev/null; then
             local version
-            version=$(echo "$feature_config" | jq -r '.version // "latest"' 2>/dev/null)
-            echo "      Version: ${version:-latest}"
+            version=$(echo "$feature_config" | jq -r '.version // "'$feature_version'"' 2>/dev/null || echo "$feature_version")
+            echo "      Version: ${version:-$feature_version}"
         else
-            echo "      Version: latest"
+            echo "      Version: $feature_version"
         fi
         
         # Check cache status
-        local cache_key="${feature_id//\//_}_latest"
+        local cache_key="${feature_id//\//_}_$feature_version"
         local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
         if [ -d "$cache_dir" ]; then
             echo "      Status: Cached"
@@ -445,22 +502,34 @@ validate_features_config() {
     local warnings=()
     
     # Validate each feature specification
-    for feature_spec in "${FEATURES_CONFIG[@]}"; do
+    for feature_key in "${FEATURES_IDS[@]}"; do
+        local feature_spec="$feature_key"
+        local feature_config
+        feature_config="${FEATURES_CONFIG_MAP[$feature_key]}"
         local parsed_spec
         parsed_spec=$(parse_feature_spec "$feature_spec")
         local feature_id="${parsed_spec%:*}"
         local feature_version="${parsed_spec#*:}"
-        
+
+        # If config contains a version, prefer it
+        if command -v jq &> /dev/null; then
+            local cfg_version
+            cfg_version=$(echo "$feature_config" | jq -r '.version // empty' 2>/dev/null || echo "")
+            if [ -n "$cfg_version" ] && [ "$cfg_version" != "null" ]; then
+                feature_version="$cfg_version"
+            fi
+        fi
+
         # Validate feature ID format
-        if [[ ! "$feature_id" =~ ^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$ ]]; then
+        if [[ ! "$feature_id" =~ ^[a-zA-Z0-9._-]+(\/[a-zA-Z0-9._-]+){2,3}$ ]]; then
             errors+=("Invalid feature ID format: $feature_id")
         fi
-        
+
         # Check for latest version warning
         if [ "$feature_version" = "latest" ]; then
             warnings+=("Using 'latest' version for $feature_id - consider pinning to specific version")
         fi
-        
+
         # Check cache status
         local cache_key="${feature_id//\//_}_${feature_version}"
         local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
@@ -538,17 +607,29 @@ check_features_updates() {
     
     local updates_available=()
     
-    for feature_spec in "${FEATURES_CONFIG[@]}"; do
+    for feature_key in "${FEATURES_IDS[@]}"; do
+        local feature_spec="$feature_key"
+        local feature_config
+        feature_config="${FEATURES_CONFIG_MAP[$feature_key]}"
         local parsed_spec
         parsed_spec=$(parse_feature_spec "$feature_spec")
         local feature_id="${parsed_spec%:*}"
         local feature_version="${parsed_spec#*:}"
-        
+
+        # If config contains a version, prefer it
+        if command -v jq &> /dev/null; then
+            local cfg_version
+            cfg_version=$(echo "$feature_config" | jq -r '.version // empty' 2>/dev/null || echo "")
+            if [ -n "$cfg_version" ] && [ "$cfg_version" != "null" ]; then
+                feature_version="$cfg_version"
+            fi
+        fi
+
         # Skip if using latest
         if [ "$feature_version" = "latest" ]; then
             continue
         fi
-        
+
         # For now, we'll assume updates are available
         # In a full implementation, this would check the registry for newer versions
         updates_available+=("$feature_spec")

@@ -32,6 +32,10 @@ warning() {
     echo -e "${YELLOW}⚠️  Warning: $1${NC}" >&2
 }
 
+error() {
+    echo -e "${RED}❌ Error: $1${NC}" >&2
+}
+
 success() {
     echo -e "${GREEN}✅ $1${NC}"
 }
@@ -100,7 +104,9 @@ safe_path() {
         "~/"*) echo "${HOME}/${path#"~/"}" ;;
         "~"*) echo "$HOME" ;;
         *) echo "$path" ;;
-    esac | xargs realpath -m 2>/dev/null || echo "$path"
+    esac | while IFS= read -r line; do
+        realpath -m "$line" 2>/dev/null || echo "$line"
+    done
 }
 
 # Validate a workspace folder path provided for devcontainer configuration
@@ -174,7 +180,7 @@ check_user_in_image() {
 # 3. Use script's directory as fallback
 determine_project_dir() {
     local potential_path="${1:-}"
-
+    
     if [ -n "$potential_path" ]; then
         validate_project_path "$potential_path"
     elif [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
@@ -186,6 +192,22 @@ determine_project_dir() {
     # Final validation
     if [ ! -d "$PROJECT_DIR" ]; then
         error_exit "Determined project directory '$PROJECT_DIR' is not valid." "$EXIT_CONFIG_ERROR"
+    fi
+    
+    # Initialize DEVCONTAINER_CONFIG_FILE for all modules
+    initialize_devcontainer_config
+}
+
+# Initialize devcontainer configuration file path
+initialize_devcontainer_config() {
+    if [ -f "$PROJECT_DIR/.devcontainer/devcontainer.json" ]; then
+        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer/devcontainer.json"
+    elif [ -f "$PROJECT_DIR/.devcontainer.json" ]; then
+        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer.json"
+    elif [ -f "$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json" ]; then
+        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json"
+    else
+        export DEVCONTAINER_CONFIG_FILE=""
     fi
 }
 

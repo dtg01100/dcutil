@@ -45,6 +45,11 @@ if [ -f "$SCRIPT_DIR/lib/podman.sh" ]; then
     source "$SCRIPT_DIR/lib/podman.sh"
 fi
 
+# Initialize backend system
+if command -v init_container_backend >/dev/null 2>&1; then
+    init_container_backend
+fi
+
 # Test function to verify improvements
 test_dcutil_improvements() {
     echo "Testing dcutil improvements..."
@@ -100,7 +105,7 @@ test_dcutil_improvements() {
     echo "Testing complete!"
 }
 
-# Parse and validate arguments
+# Parse and validate arguments  
 COMMAND="${1:-help}"
 
 # Handle special completion command
@@ -502,6 +507,12 @@ elif [ "$COMMAND" = "lifecycle" ]; then
             ;;
         "")
             # Standard lifecycle execution - fall through to normal processing
+            if command -v execute_lifecycle_commands >/dev/null 2>&1; then
+                execute_lifecycle_commands
+            else
+                error_exit "Lifecycle execution not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
             ;;
         "help"|"-h"|"--help")
             cat << 'EOF'
@@ -512,10 +523,12 @@ Devcontainer lifecycle commands for container initialization and management:
 Commands:
   info      Show lifecycle configuration
   validate  Validate lifecycle configuration
+  (none)    Execute lifecycle commands (default)
 
 Examples:
   dcutil lifecycle info
   dcutil lifecycle validate
+  dcutil lifecycle
 
 Manages onCreateCommand, updateContentCommand, postAttachCommand, and waitFor properties.
 EOF
@@ -1170,7 +1183,8 @@ EOF
         shift 1  # Remove command only
     else
         determine_project_dir "${2:-}"
-        shift 1  # Remove command only
+        # For non-up commands, we need to preserve all remaining arguments
+        # Do not shift here to avoid losing arguments that the sub-commands may need
     fi
 fi
 
@@ -1497,10 +1511,10 @@ case "$COMMAND" in
                 if [ $# -eq 0 ]; then
                     error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
                 fi
-                backup_volume "$1" "$2"
+                backup_volume "$1" "${2:-}"
                 ;;
             "restore")
-                if [ $# -lt 1 ]; then
+                if [ $# -lt 2 ]; then
                     error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
                 fi
                 restore_volume "$1" "$2"
@@ -1776,7 +1790,22 @@ case "$COMMAND" in
                 error_exit "Unknown shutdown subcommand: $subcommand. Use 'dcutil shutdown help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
-;;
+        ;;
+"rebuild")
+        # Rebuild command doesn't need project directory
+        determine_project_dir ""
+        
+        # Set up environment for rebuild
+        export PROJECT_DIR
+        cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+        
+# Execute rebuild with options (pass all remaining args)
+        if command -v devcontainer_rebuild >/dev/null 2>&1; then
+            devcontainer_rebuild "$@"
+        else
+            error_exit "Rebuild functionality not available." "$EXIT_CONFIG_ERROR"
+        fi
+        ;;
     "test")
         test_dcutil_improvements
         ;;

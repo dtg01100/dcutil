@@ -815,6 +815,127 @@ check_devcontainer_cli() {
     check_docker_daemon
 }
 
+# Rebuild devcontainer with preservation options
+devcontainer_rebuild() {
+    local force=false
+    local preserve_volumes=false
+    local preserve_ssh=false
+    local preserve_agents=false
+    local preserve_all=false
+    
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --force|-f)
+                force=true
+                shift
+                ;;
+            --preserve-volumes)
+                preserve_volumes=true
+                shift
+                ;;
+            --preserve-ssh)
+                preserve_ssh=true
+                shift
+                ;;
+            --preserve-agents)
+                preserve_agents=true
+                shift
+                ;;
+            --preserve-all)
+                preserve_all=true
+                shift
+                ;;
+            --help|-h)
+                echo "Usage: dcutil rebuild [options]"
+                echo ""
+                echo "Options:"
+                echo "  --force, -f           Force rebuild without confirmation"
+                echo "  --preserve-volumes    Preserve volume data"
+                echo "  --preserve-ssh        Preserve SSH keys"
+                echo "  --preserve-agents     Preserve installed agents"
+                echo "  --preserve-all        Preserve all data (volumes, SSH, agents)"
+                echo "  --help, -h           Show this help"
+                exit $EXIT_SUCCESS
+                ;;
+            *)
+                error_exit "Unknown rebuild option: $1. Use 'dcutil rebuild --help' for usage." 1
+                ;;
+        esac
+    done
+    
+    info "Rebuilding devcontainer..."
+    
+    # Check preservation options
+    if [ "$preserve_all" = true ]; then
+        preserve_volumes=true
+        preserve_ssh=true
+        preserve_agents=true
+    fi
+    
+    # Show what will be preserved
+    info "Preservation options:"
+    if [ "$preserve_volumes" = true ]; then
+        info "  ✓ Volumes will be preserved"
+    else
+        info "  ✗ Volumes will be cleaned"
+    fi
+    
+    if [ "$preserve_ssh" = true ]; then
+        info "  ✓ SSH keys will be preserved"
+    else
+        info "  ✗ SSH keys will be cleaned"
+    fi
+    
+    if [ "$preserve_agents" = true ]; then
+        info "  ✓ AI agents will be preserved"
+    else
+        info "  ✗ AI agents will be cleaned"
+    fi
+    
+    # Confirmation unless forced
+    if [ "$force" != true ]; then
+        echo ""
+        read -r -p "Continue with rebuild? (y/N): " confirm
+        if [[ ! "$confirm" =~ ^[Yy] ]]; then
+            info "Rebuild cancelled"
+            return 0
+        fi
+    fi
+    
+    # Stop existing container
+    info "Stopping existing devcontainer..."
+    devcontainer_down
+    
+    # Clean up based on preservation options
+    if [ "$preserve_volumes" != true ]; then
+        info "Cleaning volumes..."
+        if command -v cleanup_volumes >/dev/null 2>&1; then
+            cleanup_volumes
+        fi
+    fi
+    
+    if [ "$preserve_ssh" != true ]; then
+        info "Cleaning SSH configuration..."
+        if command -v cleanup_ssh >/dev/null 2>&1; then
+            cleanup_ssh
+        fi
+    fi
+    
+    if [ "$preserve_agents" != true ]; then
+        info "Cleaning AI agents..."
+        if command -v cleanup_agents >/dev/null 2>&1; then
+            cleanup_agents
+        fi
+    fi
+    
+    # Start new container
+    info "Starting new devcontainer..."
+    devcontainer_up
+    
+    success "Devcontainer rebuilt successfully"
+}
+
 # Wrapper functions that call Docker-native operations directly
 devcontainer_up() {
     info "Starting devcontainer setup..."

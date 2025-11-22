@@ -1,4 +1,3 @@
-echo "DEBUG: About to call print_usage"
 #!/bin/bash
 
 # Main dcutil script

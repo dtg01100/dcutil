@@ -262,7 +262,7 @@ environment_cli() {
             success "Environment variables are valid"
             ;;
         "apply-remote")
-            local container_id="$1"
+            local container_id="${1:-}"
             if [ -z "$container_id" ]; then
                 # Find running container by project label
                 container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" | head -1)

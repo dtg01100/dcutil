@@ -78,6 +78,11 @@ add_volume() {
         error_exit "Invalid mount type: '$mount_type'. Use 'bind', 'volume', or 'tmpfs'." "$EXIT_INVALID_ARGS"
     fi
 
+    # Validate volume name for all types
+    if ! [[ "$volume_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+        error_exit "Invalid volume name: '$volume_name'. Use alphanumeric characters, dots, hyphens, and underscores only." "$EXIT_INVALID_ARGS"
+    fi
+
     # Expand tilde in paths safely
     host_path=$(safe_path "$host_path")
     container_path=$(safe_path "$container_path")
@@ -94,10 +99,7 @@ add_volume() {
             fi
             ;;
         "volume")
-            # Volume names should be valid
-            if ! [[ "$volume_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-                error_exit "Invalid volume name: '$volume_name'. Use alphanumeric characters, dots, hyphens, and underscores only." "$EXIT_INVALID_ARGS"
-            fi
+            # Volume names already validated above
             ;;
         "tmpfs")
             # tmpfs doesn't need host path validation

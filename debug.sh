@@ -1,15 +1,13 @@
-echo "DEBUG: COMMAND=$COMMAND"
 source "$SCRIPT_DIR/lib/docker.sh"
-source "$SCRIPT_DIR/lib/volumes.sh"
-source "$SCRIPT_DIR/lib/security.sh"
-source "$SCRIPT_DIR/lib/init.sh"
-# features module is optional
-if [ -f "$SCRIPT_DIR/lib/features.sh" ]; then
-    source "$SCRIPT_DIR/lib/features.sh"
-fi
-# lifecycle module is optional
-if [ -f "$SCRIPT_DIR/lib/lifecycle.sh" ]; then
 #!/bin/bash
+
+# Debug wrapper for dcutil - minimal wrapper script
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export SCRIPT_DIR
+
+"$SCRIPT_DIR/dcutil" "$@"
 
 # Main dcutil script
 # Routes commands to appropriate modules
