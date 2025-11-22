@@ -15,6 +15,26 @@ if [ -f "$(dirname "${BASH_SOURCE[0]}")/build.sh" ]; then
     source "$(dirname "${BASH_SOURCE[0]}")/build.sh"
 fi
 
+# Optional userprobe support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/userprobe.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/userprobe.sh"
+fi
+
+# Optional merging support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/merging.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/merging.sh"
+fi
+
+# Optional integration support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/integration.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/integration.sh"
+fi
+
+# Optional advanced features support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/advanced.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/advanced.sh"
+fi
+
 # Optional features support
 if [ -f "$(dirname "${BASH_SOURCE[0]}")/features.sh" ]; then
     source "$(dirname "${BASH_SOURCE[0]}")/features.sh"
@@ -222,6 +242,11 @@ docker_up() {
 
     parse_devcontainer_config
     
+    # Merge image metadata with devcontainer.json if needed
+    if command -v merge_image_metadata >/dev/null 2>&1 && needs_metadata_merging >/dev/null 2>&1; then
+        merge_image_metadata
+    fi
+    
     # Check if we're in Docker Compose mode
     if is_compose_mode 2>/dev/null; then
         docker_compose_up
@@ -356,6 +381,12 @@ docker_up() {
         install_features
     fi
 
+    # Apply advanced features if configured
+    if command -v apply_advanced_features >/dev/null 2>&1 && has_advanced_features >/dev/null 2>&1; then
+        info "Applying advanced features..."
+        apply_advanced_features
+    fi
+
     # Run post-start command if specified
     if command -v execute_post_start_command >/dev/null 2>&1; then
         execute_post_start_command
@@ -376,6 +407,18 @@ docker_up() {
     # Run post-attach commands if specified
     if command -v execute_post_attach_command >/dev/null 2>&1; then
         execute_post_attach_command
+    fi
+
+    # Apply tool integration features if configured
+    if command -v apply_tool_integration >/dev/null 2>&1 && has_tool_integration >/dev/null 2>&1; then
+        info "Applying tool integration features..."
+        apply_tool_integration
+    fi
+
+    # Apply user environment probing if configured
+    if command -v apply_user_env_probe >/dev/null 2>&1 && has_user_env_probe >/dev/null 2>&1; then
+        info "Applying user environment probing..."
+        apply_user_env_probe
     fi
 
     success "Devcontainer started successfully"
@@ -834,5 +877,141 @@ devcontainer_features_check_updates() {
         check_features_updates
     else
         error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Advanced Features wrapper functions
+devcontainer_advanced_info() {
+    info "Showing advanced features information..."
+    if command -v show_advanced_features_info >/dev/null 2>&1; then
+        show_advanced_features_info
+    else
+        error_exit "Advanced features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_advanced_validate() {
+    info "Validating advanced features configuration..."
+    if command -v validate_advanced_features_config >/dev/null 2>&1; then
+        validate_advanced_features_config
+    else
+        error_exit "Advanced features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_advanced_apply() {
+    info "Applying advanced features to running container..."
+    if command -v apply_advanced_features >/dev/null 2>&1; then
+        apply_advanced_features
+        success "Advanced features applied successfully"
+    else
+        error_exit "Advanced features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Integration wrapper functions
+devcontainer_integration_info() {
+    info "Showing integration information..."
+    if command -v show_tool_integration_info >/dev/null 2>&1; then
+        show_tool_integration_info
+    else
+        error_exit "Integration module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_integration_validate() {
+    info "Validating integration configuration..."
+    if command -v validate_tool_integration_config >/dev/null 2>&1; then
+        validate_tool_integration_config
+    else
+        error_exit "Integration module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_integration_apply() {
+    info "Applying integration features to running container..."
+    if command -v apply_tool_integration >/dev/null 2>&1; then
+        apply_tool_integration
+        success "Integration features applied successfully"
+    else
+        error_exit "Integration module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Merging wrapper functions
+devcontainer_merging_show() {
+    info "Showing merged configuration..."
+    if command -v show_merged_config >/dev/null 2>&1; then
+        show_merged_config
+    else
+        error_exit "Merging module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_merging_validate() {
+    info "Validating merged configuration..."
+    if command -v validate_merged_config >/dev/null 2>&1; then
+        validate_merged_config
+    else
+        error_exit "Merging module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_merging_cleanup() {
+    info "Cleaning up merged configuration..."
+    if command -v cleanup_merged_config >/dev/null 2>&1; then
+        cleanup_merged_config
+        success "Merged configuration cleaned up"
+    else
+        error_exit "Merging module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Userprobe wrapper functions
+devcontainer_userprobe_probe() {
+    info "Probing user environment..."
+    if command -v probe_user_environment >/dev/null 2>&1; then
+        probe_user_environment
+        success "Environment probing completed"
+    else
+        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_userprobe_show() {
+    info "Showing probed environment..."
+    if command -v show_probed_environment >/dev/null 2>&1; then
+        show_probed_environment
+    else
+        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_userprobe_apply() {
+    info "Applying probed environment to container..."
+    if command -v apply_probed_environment >/dev/null 2>&1; then
+        apply_probed_environment
+        success "Probed environment applied to container"
+    else
+        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_userprobe_validate() {
+    info "Validating userEnvProbe configuration..."
+    if command -v validate_user_env_probe_config >/dev/null 2>&1; then
+        validate_user_env_probe_config
+    else
+        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_userprobe_cleanup() {
+    info "Cleaning up probed environment..."
+    if command -v cleanup_probed_environment >/dev/null 2>&1; then
+        cleanup_probed_environment
+        success "Probed environment cleaned up"
+    else
+        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
     fi
 }

@@ -7,15 +7,53 @@
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for Features
-FEATURES_CONFIG=()
+declare -a FEATURES_IDS=()
+declare -A FEATURES_CONFIG_MAP=()
 FEATURES_DIR=""
 FEATURES_CACHE_DIR=""
 FEATURES_INSTALL_LOG=""
+# Inputs support
+declare -a INPUTS_NAMES=()
+declare -A INPUTS_DEFAULTS=()
+declare -A INPUTS_DESCRIPTIONS=()
+declare -A INPUTS_VALUES=()
 
+# Load inputs values interactively if not already set
+load_input_values() {
+    if [ ${#INPUTS_NAMES[@]} -eq 0 ]; then
+        return 0
+    fi
+
+    for input_name in "${INPUTS_NAMES[@]}"; do
+        local default="${INPUTS_DEFAULTS[$input_name]:-}"
+        local description="${INPUTS_DESCRIPTIONS[$input_name]:-}"
+        local value="${INPUTS_VALUES[$input_name]:-}"
+
+        if [ -n "$value" ]; then
+            continue
+        fi
+
+        if [ -n "$description" ]; then
+            echo "Input: $input_name - $description"
+        else
+            echo "Input: $input_name"
+        fi
+
+        if [ -n "$default" ]; then
+            read -r -p "Enter value for $input_name (default: $default): " val
+            val=${val:-$default}
+        else
+            read -r -p "Enter value for $input_name: " val
+        fi
+
+        INPUTS_VALUES["$input_name"]="$val"
+    done
+}
 # Constants
 FEATURES_REGISTRY="ghcr.io"
 FEATURES_NAMESPACE="devcontainers/features"
 FEATURES_DEFAULT_VERSION="latest"
+
 
 # Check if Features are configured
 has_features() {
@@ -62,13 +100,42 @@ parse_features_config() {
                     feature_config=$(jq -r ".features[\"$feature_id\"]" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
                     
                     if [ -n "$feature_config" ] && [ "$feature_config" != "null" ]; then
-                        # Store as "id:config" format
-                        FEATURES_CONFIG+=("$feature_id:$feature_config")
+                        # Convert object configuration into consistent string format for map
+                        FEATURES_IDS+=("$feature_id")
+                        FEATURES_CONFIG_MAP["$feature_id"]="$feature_config"
                     fi
                 fi
             done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
         fi
-        
+
+        # Parse optional inputs (feature inputs) from devcontainer.json
+        if jq -e '.inputs' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r input_name; do
+                if [ -n "$input_name" ] && [ "$input_name" != "null" ]; then
+                    INPUTS_NAMES+=("$input_name")
+                        # load default/description if provided
+                        local def
+                        def=$(jq -r ".inputs[\"$input_name\"].default // empty" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                        if [ -n "$def" ] && [ "$def" != "null" ]; then
+                            INPUTS_DEFAULTS["$input_name"]="$def"
+                        fi
+                        local desc
+                        desc=$(jq -r ".inputs[\"$input_name\"].description // empty" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                        if [ -n "$desc" ] && [ "$desc" != "null" ]; then
+                            INPUTS_DESCRIPTIONS["$input_name"]="$desc"
+                        fi
+
+                fi
+            done < <(jq -r '.inputs | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+            if [ ${#INPUTS_NAMES[@]} -gt 0 ]; then
+                info "Found ${#INPUTS_NAMES[@]} input(s) configured"
+                # Register input names for interactive prompt
+                for input_name in "${INPUTS_NAMES[@]}"; do
+                    INPUTS_VALUES["$input_name"]="${INPUTS_DEFAULTS[$input_name]:-}"
+                done
+            fi
+        fi
+
         if [ ${#FEATURES_CONFIG[@]} -gt 0 ]; then
             info "Found ${#FEATURES_CONFIG[@]} feature(s):"
             for feature in "${FEATURES_CONFIG[@]}"; do
@@ -77,8 +144,8 @@ parse_features_config() {
             done
             return 0
         fi
-    fi
-    
+fi
+     
     return 1
 }
 
@@ -167,15 +234,65 @@ download_feature() {
     "documentationURL": "https://github.com/devcontainers/features/tree/main/src/$feature_name"
 }
 EOF
+
+    # Create a basic install script if none provided (fallback for local testing)
+    if [ ! -f "$cache_dir/src/install.sh" ]; then
+        cat > "$cache_dir/src/install.sh" << 'FEATURE_INSTALL_SCRIPT'
+#!/bin/bash
+# Default fallback install script for features
+# This script simply prints DCUTIL_INPUT_* environment variables for testing
+env | sed -n 's/^DCUTIL_INPUT_/DCUTIL_INPUT_/p' | sed 's/^/DCUTIL_INPUT: /'
+env | sed -n 's/^DCUTIL_FEATURE_INPUT_/DCUTIL_FEATURE_INPUT_/p' | sed 's/^/DCUTIL_FEATURE_INPUT: /'
+exit 0
+FEATURE_INSTALL_SCRIPT
+        chmod +x "$cache_dir/src/install.sh"
+    fi
     
     success "Feature cached: $feature_id@$feature_version"
     echo "$cache_dir"
+}
+
+# Helper: prepare env variables for a feature's inputs
+env_prepare_inputs_for_feature() {
+    local feature_spec="$1"
+    local feature_config="$2"
+    local feature_id
+    feature_id=$(parse_feature_spec "$feature_spec" | cut -d: -f1)
+    local feature_name
+    feature_name="${feature_id##*/}"
+    local feature_safe_name
+    feature_safe_name=$(echo "$feature_name" | tr '/-.' '__' | tr '[:lower:]' '[:upper:]')
+
+    # Set environment variables for feature inputs
+    for input_name in "${INPUTS_NAMES[@]}"; do
+        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | tr '[:lower:]' '[:upper:]' | tr '-.' '_')"
+        local val="${INPUTS_VALUES[$input_name]:-}"
+
+        if [ -z "$val" ]; then
+            val="${INPUTS_DEFAULTS[$input_name]:-}"
+        fi
+
+        # Also set DCUTIL_INPUT_<name> for cross feature use
+        export "DCUTIL_INPUT_${input_name^^}"="$val"
+        export "$var_name"="$val"
+    done
+}
+
+# Helper: clear env variables for a feature
+env_clear_inputs_for_feature() {
+    local feature_safe_name="$1"
+    for input_name in "${INPUTS_NAMES[@]}"; do
+        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | tr '[:lower:]' '[:upper:]' | tr '-.' '_')"
+        unset "DCUTIL_INPUT_${input_name^^}"
+        unset "$var_name"
+    done
 }
 
 # Install a single feature
 install_feature() {
     local feature_spec="$1"
     local install_dir="$2"
+    local feature_config="$3"
     
     info "Installing feature: $feature_spec"
     
@@ -187,9 +304,14 @@ install_feature() {
     local feature_id
     feature_id=$(parse_feature_spec "$feature_spec" | cut -d: -f1)
     local feature_name="${feature_id##*/}"
+    local feature_safe_name
+    feature_safe_name=$(echo "$feature_name" | tr '/-.' '__' | tr '[:lower:]' '[:upper:]')
     
     # Create installation log entry
     echo "$(date): Installing $feature_spec" >> "$FEATURES_INSTALL_LOG"
+    
+    # Prepare input environment variables
+    env_prepare_inputs_for_feature "$feature_spec" "$feature_config"
     
     # For now, we'll create a basic installation
     # In a full implementation, this would execute the feature's install.sh script
@@ -197,13 +319,17 @@ install_feature() {
     local install_script="$feature_dir/src/install.sh"
     if [ -f "$install_script" ]; then
         info "Running feature installation script..."
-        if bash "$install_script"; then
+        # Run install script and capture output into install log
+        if bash "$install_script" >> "$FEATURES_INSTALL_LOG" 2>&1; then
             success "Feature installed successfully: $feature_spec"
             echo "$(date): Successfully installed $feature_spec" >> "$FEATURES_INSTALL_LOG"
+            # Cleanup env variables for next feature
+            env_clear_inputs_for_feature "$feature_safe_name"
             return 0
         else
             error "Feature installation failed: $feature_spec"
             echo "$(date): Failed to install $feature_spec" >> "$FEATURES_INSTALL_LOG"
+            env_clear_inputs_for_feature "$feature_safe_name"
             return 1
         fi
     else
@@ -211,6 +337,7 @@ install_feature() {
         # Create a mock installation
         echo "$(date): Feature $feature_spec would be installed (mock)" >> "$FEATURES_INSTALL_LOG"
         success "Feature processing completed: $feature_spec"
+        env_clear_inputs_for_feature "$feature_safe_name"
         return 0
     fi
 }
@@ -222,7 +349,7 @@ install_features() {
         return 0
     fi
     
-    info "Installing ${#FEATURES_CONFIG[@]} feature(s)..."
+    info "Installing ${#FEATURES_IDS[@]} feature(s)..."
     
     # Initialize installation log
     echo "# Devcontainer Features Installation Log" > "$FEATURES_INSTALL_LOG"
@@ -230,10 +357,16 @@ install_features() {
     echo "# Project: $PROJECT_DIR" >> "$FEATURES_INSTALL_LOG"
     echo "" >> "$FEATURES_INSTALL_LOG"
     
+    # Load inputs if any
+    load_input_values
+    
     local failed_features=()
     
-    for feature_spec in "${FEATURES_CONFIG[@]}"; do
-        if ! install_feature "$feature_spec" "$FEATURES_DIR"; then
+    for feature_id in "${FEATURES_IDS[@]}"; do
+        local feature_spec="$feature_id"
+        local feature_config
+        feature_config="${FEATURES_CONFIG_MAP[$feature_id]}"
+        if ! install_feature "$feature_spec" "$FEATURES_DIR" "$feature_config"; then
             failed_features+=("$feature_spec")
         fi
     done

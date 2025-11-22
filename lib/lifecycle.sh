@@ -7,6 +7,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for lifecycle commands
+INITIALIZE_COMMAND=""
 ON_CREATE_COMMAND=""
 UPDATE_CONTENT_COMMAND=""
 POST_ATTACH_COMMAND=""
@@ -15,6 +16,12 @@ WAIT_FOR=""
 # Parse lifecycle commands from devcontainer.json
 parse_lifecycle_config() {
     if command -v jq &> /dev/null; then
+        # Parse initializeCommand
+        if jq -e '.initializeCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            INITIALIZE_COMMAND=$(jq -r '.initializeCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            info "initializeCommand found"
+        fi
+
         # Parse onCreateCommand
         if jq -e '.onCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             ON_CREATE_COMMAND=$(jq -r '.onCreateCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
@@ -42,6 +49,29 @@ parse_lifecycle_config() {
         return 0
     fi
     return 1
+}
+
+# Execute initializeCommand
+execute_initialize_command() {
+    if [ -z "${INITIALIZE_COMMAND:-}" ]; then
+        return 0
+    fi
+
+    info "Running initializeCommand..."
+
+    # Check if command is object (parallel execution)
+    if command -v jq &> /dev/null && echo "$INITIALIZE_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        execute_parallel_commands "$INITIALIZE_COMMAND" "initializeCommand"
+    else
+        # Single command or array
+        execute_lifecycle_command "$INITIALIZE_COMMAND" "initializeCommand"
+    fi
+
+    if [ $? -eq 0 ]; then
+        success "initializeCommand completed successfully"
+    else
+        warning "initializeCommand failed (continuing anyway)"
+    fi
 }
 
 # Execute onCreateCommand
@@ -225,6 +255,9 @@ execute_lifecycle_commands() {
     local wait_for_value="${WAIT_FOR:-updateContentCommand}"
     
     info "Executing lifecycle commands with waitFor=$wait_for_value"
+    
+    # Execute initializeCommand first if configured
+    execute_initialize_command
     
     # Always execute onCreateCommand first
     execute_on_create_command

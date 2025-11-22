@@ -1,29 +1,15 @@
 {
-    "name": "Devcontainer Features Test",
+    "name": "User Environment Probe Test",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
     "containerUser": "vscode",
     "remoteUser": "vscode",
     "workspaceFolder": "/workspace",
     
-    "features": {
-        "ghcr.io/devcontainers/features/common-utils": {
-            "installZsh": false,
-            "configureZshAsDefaultShell": false,
-            "installOhMyZsh": false,
-            "upgradePackages": true,
-            "username": "vscode",
-            "userUid": 1000,
-            "userGid": 1000
-        },
-        "ghcr.io/devcontainers/features/git": {
-            "ppa": true,
-            "version": "latest"
-        },
-        "node": {
-            "nodeGypOSXCode": true,
-            "version": "18"
-        }
+    "userEnvProbe": "bash",
+    
+    "remoteEnv": {
+        "CUSTOM_VAR": "from-devcontainer"
     },
     
-    "postCreateCommand": "echo 'Features installation completed'"
+    "postCreateCommand": "echo 'Environment setup completed'"
 }
