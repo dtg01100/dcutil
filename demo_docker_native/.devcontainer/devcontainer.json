@@ -1,0 +1,22 @@
+{
+    "name": "Lifecycle Commands Devcontainer",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+    "containerUser": "vscode",
+    "remoteUser": "vscode",
+    "workspaceFolder": "/workspace",
+    
+    "onCreateCommand": {
+        "setup": "echo 'Setting up environment...'",
+        "install": ["apt-get update", "echo 'Package update completed'"]
+    },
+    
+    "updateContentCommand": "echo 'Updating content...'",
+    
+    "postCreateCommand": "echo 'Post-create setup completed'",
+    
+    "postStartCommand": "echo 'Container started successfully'",
+    
+    "postAttachCommand": "echo 'Developer attached to container'",
+    
+    "waitFor": "updateContentCommand"
+}

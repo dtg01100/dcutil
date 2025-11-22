@@ -40,20 +40,29 @@ check_docker_daemon() {
 # Parse devcontainer.json configuration
 parse_devcontainer_config() {
     local config_file=""
-
+    
     if [ -f ".devcontainer/devcontainer.json" ]; then
         config_file=".devcontainer/devcontainer.json"
     elif [ -f ".devcontainer.json" ]; then
         config_file=".devcontainer.json"
+    elif [ -f ".devcontainer/devcontainer/devcontainer.json" ]; then
+        config_file=".devcontainer/devcontainer/devcontainer.json"
     else
         error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
     fi
-
+    
     DEVCONTAINER_CONFIG_FILE="$config_file"
-
+    
     # Validate JSON
     validate_json_if_available "$DEVCONTAINER_CONFIG_FILE"
-
+    
+    # Check if this is a Docker Compose configuration
+    if command -v jq &> /dev/null && parse_compose_config 2>/dev/null; then
+        info "Using Docker Compose configuration"
+        return 0
+    fi
+    
+    # Fall back to standard configuration
     # Defaults
     IMAGE_NAME="mcr.microsoft.com/devcontainers/base:ubuntu"
     WORKSPACE_FOLDER="/workspaces/${PWD##*/}"
@@ -95,7 +104,11 @@ parse_devcontainer_config() {
         # mounts
         if jq -e '.mounts' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             while IFS= read -r mount_spec; do
-                MOUNTS+=("$mount_spec")
+                # Expand variables in mount specification
+                local expanded_mount="$mount_spec"
+                expanded_mount="${expanded_mount//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
+                expanded_mount="${expanded_mount//\$\{localWorkspaceFolderBasename\}/${PROJECT_DIR##*/}}"
+                MOUNTS+=("$expanded_mount")
             done < <(jq -r '.mounts[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
         fi
 
@@ -164,33 +177,24 @@ docker_build() {
     info "Building devcontainer image..."
     check_docker_daemon
     parse_devcontainer_config
-
-    # Check for custom build configuration
-    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
-        info "Using custom build configuration"
-        build_custom_image "$IMAGE_NAME"
-    elif [ -f ".devcontainer/Dockerfile" ]; then
-        # Fallback: simple Dockerfile build
-        info "Building custom Dockerfile..."
-        if ! docker build -f .devcontainer/Dockerfile -t "$IMAGE_NAME" . 2>/dev/null; then
-            error_exit "Failed to build devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
-        fi
+    
+    # Check if enhanced build configuration is available
+    if command -v parse_build_config >/dev/null 2>&1 && parse_build_config >/dev/null 2>&1; then
+        # Use enhanced build for custom configurations
+        docker_build_enhanced
     else
-        info "Using base image: $IMAGE_NAME"
-        # Pull the image to ensure it's available
-        if ! docker pull "$IMAGE_NAME" 2>/dev/null; then
-            error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
+        # Fall back to standard image pull/build
+        if [ -n "${IMAGE_NAME:-}" ]; then
+            info "Pulling image: $IMAGE_NAME"
+            if docker pull "$IMAGE_NAME"; then
+                success "Image pulled successfully: $IMAGE_NAME"
+            else
+                error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+        else
+            error_exit "No image or build configuration specified" "$EXIT_CONFIG_ERROR"
         fi
     fi
-    
-    # Run postCreateCommand if specified
-    if command -v jq &> /dev/null && jq -e '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-        POST_CREATE_CMD=$(jq -r '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE")
-        info "Running post-create command..."
-        # This would need to be run in a temporary container for full compatibility
-    fi
-    
-    success "Build completed"
 }
 
 # Start devcontainer
@@ -213,12 +217,23 @@ docker_up() {
 
     parse_devcontainer_config
     
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        docker_compose_up
+        success "Devcontainer started successfully"
+        return 0
+    fi
+    
     # Override image name for custom builds
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
         # Generate image name from project directory
         IMAGE_NAME="dcutil-${PWD##*/}:custom"
         info "Using custom build image: $IMAGE_NAME"
     fi
+    
+    # Generate container name from project directory
+    CONTAINER_NAME="dcutil-$(basename "$PROJECT_DIR")"
+    info "Using container name: $CONTAINER_NAME"
 
     # Build custom image if needed
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
@@ -282,8 +297,8 @@ docker_up() {
     # Create container
     info "Creating container: $CONTAINER_NAME"
     
-    local container_id
-    container_id=$(docker create \
+    # Create container in background to avoid hanging
+    docker create \
         --name "$CONTAINER_NAME" \
         --hostname "${PROJECT_DIR##*/}" \
         --user "$CONTAINER_USER" \
@@ -298,11 +313,19 @@ docker_up() {
         "${ENV_ARGS[@]}" \
         "${MOUNT_ARGS[@]}" \
         "$IMAGE_NAME" \
-        /bin/sh -c "while sleep 1000; do :; done" 2>/dev/null)
+        /bin/sh -c "while sleep 1000; do :; done" >/dev/null 2>&1 &
     
-    if [ -z "$container_id" ]; then
+    local create_pid=$!
+    wait $create_pid
+    local create_result=$?
+    
+    if [ $create_result -ne 0 ]; then
         error_exit "Failed to create devcontainer" "$EXIT_DEVCONTAINER_ERROR"
     fi
+    
+    # Get the container ID
+    local container_id
+    container_id=$(docker inspect -f '{{.Id}}' "$CONTAINER_NAME" 2>/dev/null)
     
     info "Container created: $container_id"
     
@@ -316,6 +339,11 @@ docker_up() {
 
     # Run post-create commands if specified
     run_post_create_commands
+
+    # Run lifecycle commands (onCreateCommand, updateContentCommand)
+    if command -v execute_lifecycle_commands >/dev/null 2>&1; then
+        execute_lifecycle_commands
+    fi
 
     # Run post-start command if specified
     if command -v execute_post_start_command >/dev/null 2>&1; then
@@ -332,6 +360,11 @@ docker_up() {
     if command -v setup_user_environment >/dev/null 2>&1; then
         parse_environment_config
         setup_user_environment "$CONTAINER_NAME"
+    fi
+
+    # Run post-attach commands if specified
+    if command -v execute_post_attach_command >/dev/null 2>&1; then
+        execute_post_attach_command
     fi
 
     success "Devcontainer started successfully"
@@ -357,40 +390,24 @@ run_post_create_commands() {
 
 # Stop devcontainer
 docker_down() {
-    local project_dir="${1:-}"
-    
-    # If project_dir is not provided, use current working directory
-    if [ -z "$project_dir" ]; then
-        project_dir="$(pwd)"
-    fi
-    
     info "Stopping devcontainer..."
-    check_docker_daemon
     
-    # Check if using Docker Compose
-    if command -v is_compose_mode >/dev/null 2>&1 && command -v parse_compose_config >/dev/null 2>&1; then
-        parse_compose_config
-        if is_compose_mode; then
-            compose_down "$project_dir"
-            success "Devcontainer stopped successfully (Docker Compose mode)"
-            return 0
-        fi
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        docker_compose_down
+        return 0
     fi
     
-    # Fall back to standard Docker container operations
-    
-    # Find container by project directory label
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
-    
-    if [ -n "$container_id" ]; then
-        if ! docker stop "$container_id" 2>/dev/null; then
-            error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-        # Remove container
-        docker rm "$container_id" 2>/dev/null || true
-    else
+    # Check if container exists
+    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
         info "No running devcontainer found"
+        success "Devcontainer stopped"
+        return 0
+    fi
+    
+    # Stop container
+    if ! docker stop "$CONTAINER_NAME" &>/dev/null; then
+        error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
     fi
     
     success "Devcontainer stopped"
@@ -398,102 +415,114 @@ docker_down() {
 
 # Restart devcontainer
 docker_restart() {
-    local project_dir="${1:-}"
-    docker_down "$project_dir"
-    sleep 1
-    docker_up "$project_dir"
+    info "Restarting devcontainer..."
+    
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        docker_compose_restart
+        return 0
+    fi
+    
+    # Check if container exists
+    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+    fi
+    
+    # Restart container
+    if ! docker restart "$CONTAINER_NAME" &>/dev/null; then
+        error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+    fi
+    
     success "Devcontainer restarted successfully"
 }
 
 # Enter devcontainer
 docker_enter() {
-    local project_dir="${1:-}"
+    info "Entering container..."
     
-    # If project_dir is not provided, use current working directory
-    if [ -z "$project_dir" ]; then
-        project_dir="$(pwd)"
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        if [ -t 0 ]; then
+            docker_compose_exec /bin/bash
+        else
+            docker_compose_exec /bin/sh
+        fi
+        return 0
     fi
     
-    info "Entering container..."
-    check_docker_daemon
+    # Check if container exists and is running
+    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+    fi
     
-    # Check if container is running
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
-    
-    if [ -z "$container_id" ]; then
-        warning "Container is not running. Starting it..."
-        docker_up "$project_dir"
-        container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
+    if ! docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+        error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
     fi
     
     # Enter container
-    if ! docker exec -it "$container_id" /bin/bash; then
-        error_exit "Failed to enter container" "$EXIT_DEVCONTAINER_ERROR"
+    if [ -t 0 ]; then
+        docker exec -it "$CONTAINER_NAME" /bin/bash
+    else
+        docker exec -i "$CONTAINER_NAME" /bin/sh
     fi
 }
 
 # Check devcontainer status
 docker_status() {
-    local project_dir="${1:-}"
-    
-    # If project_dir is not provided, use current working directory
-    if [ -z "$project_dir" ]; then
-        project_dir="$(pwd)"
-    fi
-    
     info "Checking container status..."
-    check_docker_daemon
     
-    # Check if using Docker Compose
-    if command -v is_compose_mode >/dev/null 2>&1 && command -v parse_compose_config >/dev/null 2>&1; then
-        parse_compose_config
-        if is_compose_mode; then
-            compose_status "$project_dir"
-            return 0
-        fi
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        docker_compose_status
+        return 0
     fi
     
-    # Fall back to standard Docker container operations
+    # Check if container exists
+    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        echo "Container is not running"
+        return 0
+    fi
     
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
-    
-    if [ -n "$container_id" ]; then
-        local status
-        status=$(docker inspect "$container_id" --format='{{.State.Status}}' 2>/dev/null)
-        if [ "$status" = "running" ]; then
-            echo "Container is running"
-        else
-            echo "Container is $status"
+    # Check if container is running
+    if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+        echo "Container is running"
+        
+        # Show container details
+        local container_ip
+        container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
+        if [ -n "$container_ip" ]; then
+            echo "Container IP: $container_ip"
+        fi
+        
+        # Show exposed ports
+        local port_info
+        port_info=$(docker port "$CONTAINER_NAME" 2>/dev/null)
+        if [ -n "$port_info" ]; then
+            echo "Exposed ports:"
+            echo "$port_info"
         fi
     else
-        echo "Container is not running"
+        echo "Container exists but is not running"
     fi
 }
 
 # Show devcontainer logs
 docker_logs() {
-    local project_dir="${1:-}"
-    
-    # If project_dir is not provided, use current working directory
-    if [ -z "$project_dir" ]; then
-        project_dir="$(pwd)"
-    fi
-    
     info "Showing container logs..."
-    check_docker_daemon
     
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
-    
-    if [ -z "$container_id" ]; then
-        error_exit "No running devcontainer found for $project_dir" "$EXIT_DEVCONTAINER_ERROR"
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        docker_compose_logs
+        return 0
     fi
     
-    if ! docker logs "$container_id" 2>/dev/null; then
-        error_exit "Failed to show container logs" "$EXIT_DEVCONTAINER_ERROR"
+    # Check if container exists
+    if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
     fi
+    
+    # Show logs
+    docker logs -f "$CONTAINER_NAME"
 }
 
 # List running devcontainers
@@ -535,33 +564,37 @@ docker_run() {
 
 # Clean up devcontainer
 docker_clean() {
-    local project_dir="${1:-}"
-    
-    # If project_dir is not provided, use current working directory
-    if [ -z "$project_dir" ]; then
-        project_dir="$(pwd)"
-    fi
-    
     info "Cleaning up devcontainer..."
-    check_docker_daemon
     
-    # Stop and remove container
-    docker_down "$project_dir" 2>/dev/null || true
-    
-    # Remove image if it's a custom build
-    local config_file=""
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
+    # Check if we're in Docker Compose mode
+    if is_compose_mode 2>/dev/null; then
+        docker_compose_clean
+        return 0
     fi
     
-    if [ -n "$DEVCONTAINER_CONFIG_FILE" ] && [ -f ".devcontainer/Dockerfile" ]; then
-        parse_devcontainer_config
-        docker rmi "$IMAGE_NAME" 2>/dev/null || true
+    # Stop container if running
+    if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+            docker stop "$CONTAINER_NAME" &>/dev/null || true
+        fi
+        
+        # Remove container
+        docker rm "$CONTAINER_NAME" &>/dev/null || true
     fi
     
-    success "Cleanup completed"
+    # Remove volumes if requested
+    if [ "${2:-}" = "--remove-volumes" ] || [ "${1:-}" = "--remove-volumes" ]; then
+        # Remove associated volumes
+        local volume_names
+        volume_names=$(docker inspect "$CONTAINER_NAME" -f '{{range .Mounts}}{{.Name}} {{end}}' 2>/dev/null || echo "")
+        for volume in $volume_names; do
+            if [ -n "$volume" ]; then
+                docker volume rm "$volume" 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    success "Devcontainer cleaned up"
 }
 
 # Check if Docker is available (always true for this implementation)
@@ -585,6 +618,104 @@ devcontainer_up() {
     info "Starting devcontainer setup..."
     docker_up "$PROJECT_DIR"
     success "Devcontainer started successfully"
+}
+
+devcontainer_down() {
+    info "Stopping devcontainer..."
+    docker_down "$PROJECT_DIR"
+    success "Devcontainer stopped"
+}
+
+devcontainer_restart() {
+    info "Restarting devcontainer..."
+    docker_restart "$PROJECT_DIR"
+    success "Devcontainer restarted successfully"
+}
+
+devcontainer_enter() {
+    info "Entering container..."
+    docker_enter "$PROJECT_DIR"
+}
+
+devcontainer_status() {
+    info "Checking container status..."
+    docker_status "$PROJECT_DIR"
+}
+
+devcontainer_logs() {
+    info "Showing container logs..."
+    docker_logs "$PROJECT_DIR"
+}
+
+devcontainer_list() {
+    info "Listing running devcontainers..."
+    docker_list "$PROJECT_DIR"
+}
+
+devcontainer_run() {
+    if [ $# -eq 0 ]; then
+        error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" "$EXIT_INVALID_ARGS"
+    fi
+    docker_run "$PROJECT_DIR" "$@"
+}
+
+devcontainer_build() {
+    info "Building devcontainer image..."
+    docker_build "$PROJECT_DIR"
+    success "Devcontainer image built successfully"
+}
+
+devcontainer_clean() {
+    info "Cleaning up devcontainer..."
+    docker_clean "$PROJECT_DIR"
+    success "Devcontainer cleaned up successfully"
+}
+
+# Docker Compose wrapper functions
+devcontainer_compose_up() {
+    info "Starting Docker Compose devcontainer..."
+    docker_compose_up
+    success "Docker Compose devcontainer started successfully"
+}
+
+devcontainer_compose_down() {
+    info "Stopping Docker Compose devcontainer..."
+    docker_compose_down
+    success "Docker Compose devcontainer stopped successfully"
+}
+
+devcontainer_compose_restart() {
+    info "Restarting Docker Compose devcontainer..."
+    docker_compose_restart
+    success "Docker Compose devcontainer restarted successfully"
+}
+
+devcontainer_compose_logs() {
+    info "Showing Docker Compose devcontainer logs..."
+    docker_compose_logs
+}
+
+devcontainer_compose_exec() {
+    if [ $# -eq 0 ]; then
+        error_exit "exec command requires a command to execute. Usage: dcutil compose exec <command>" "$EXIT_INVALID_ARGS"
+    fi
+    docker_compose_exec "$@"
+}
+
+devcontainer_compose_status() {
+    info "Checking Docker Compose devcontainer status..."
+    docker_compose_status
+}
+
+devcontainer_compose_build() {
+    info "Building Docker Compose images..."
+    docker_compose_build
+}
+
+devcontainer_compose_clean() {
+    info "Cleaning up Docker Compose devcontainer..."
+    docker_compose_clean
+    success "Docker Compose devcontainer cleaned up successfully"
 }
 
 devcontainer_down() {

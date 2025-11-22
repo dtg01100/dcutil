@@ -376,15 +376,99 @@ elif [ "$COMMAND" = "compose" ]; then
     # Compose command doesn't need project directory
     determine_project_dir
     shift 1
-    dcutil_compose "$@"
-    exit $EXIT_SUCCESS
 elif [ "$COMMAND" = "build" ]; then
     # Build command doesn't need project directory
     determine_project_dir
     shift 1
+    
+    # Set up environment for build modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Check for build subcommands
+    case "${1:-}" in
+        "info")
+            # Show build info
+            if command -v show_build_info >/dev/null 2>&1; then
+                show_build_info
+            else
+                error_exit "Build info not available. No build configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "validate")
+            # Validate build configuration
+            if command -v validate_build_config >/dev/null 2>&1; then
+                if validate_build_config; then
+                    success "Build configuration is valid"
+                else
+                    error_exit "Build configuration validation failed" "$EXIT_CONFIG_ERROR"
+                fi
+            else
+                error_exit "Build validation not available. No build configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "clean")
+            # Clean build artifacts
+            if command -v clean_build_artifacts >/dev/null 2>&1; then
+                clean_build_artifacts
+            else
+                error_exit "Build clean not available. No build configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "")
+            # Standard build - fall through to normal processing
+            ;;
+        *)
+            # Assume it's a project path or invalid
+            ;;
+    esac
+    
+    # Standard build command
     dcutil_build "$@"
     exit $EXIT_SUCCESS
-elif [ "$COMMAND" = "features" ]; then
+elif [ "$COMMAND" = "lifecycle" ]; then
+    # Lifecycle command doesn't need project directory
+    determine_project_dir
+    shift 1
+    
+    # Set up environment for lifecycle modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Check for lifecycle subcommands
+    case "${1:-}" in
+        "info")
+            # Show lifecycle info
+            if command -v show_lifecycle_info >/dev/null 2>&1; then
+                show_lifecycle_info
+            else
+                error_exit "Lifecycle info not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "validate")
+            # Validate lifecycle configuration
+            if command -v validate_lifecycle_config >/dev/null 2>&1; then
+                if validate_lifecycle_config; then
+                    success "Lifecycle configuration is valid"
+                else
+                    error_exit "Lifecycle configuration validation failed" "$EXIT_CONFIG_ERROR"
+                fi
+            else
+                error_exit "Lifecycle validation not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "")
+            # Standard lifecycle execution - fall through to normal processing
+            ;;
+        *)
+            # Assume it's a project path or invalid
+            ;;
+    esac
     # Features command doesn't need project directory
     determine_project_dir
     shift 1
@@ -473,6 +557,34 @@ info "PROJECT_DIR before cd: '$PROJECT_DIR'"
 # Export PROJECT_DIR for all modules
 export PROJECT_DIR
 cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+
+# Usage functions
+print_compose_usage() {
+    cat << 'EOF'
+Usage: dcutil compose <command> [options]
+
+Docker Compose commands for multi-container devenvironments:
+
+Commands:
+  up       Start the Docker Compose environment
+  down     Stop the Docker Compose environment
+  restart  Restart the Docker Compose environment
+  logs     Show logs from the Docker Compose services
+  exec     Execute a command in the main service container
+  status   Show status of Docker Compose services
+  build    Build Docker Compose images
+  clean    Clean up Docker Compose environment (stop and remove)
+
+Examples:
+  dcutil compose up
+  dcutil compose logs
+  dcutil compose exec bash
+  dcutil compose down
+  dcutil compose build
+
+Requires a devcontainer.json with dockerComposeFile and service properties.
+EOF
+}
 
 # Command routing
 case "$COMMAND" in
@@ -584,6 +696,51 @@ case "$COMMAND" in
                 ;;
             *)
                 error_exit "Unknown volumes subcommand: $subcommand. Use 'dcutil volumes help' for usage." "$EXIT_INVALID_ARGS"
+                ;;
+        esac
+        ;;
+    "compose")
+        if [ $# -eq 0 ]; then
+            print_compose_usage
+            exit $EXIT_INVALID_ARGS
+        fi
+
+        subcommand="$1"
+        shift
+
+        case "$subcommand" in
+            "up")
+                devcontainer_compose_up
+                ;;
+            "down")
+                devcontainer_compose_down
+                ;;
+            "restart")
+                devcontainer_compose_restart
+                ;;
+            "logs")
+                devcontainer_compose_logs
+                ;;
+            "exec")
+                if [ $# -eq 0 ]; then
+                    error_exit "Usage: dcutil compose exec <command>" "$EXIT_INVALID_ARGS"
+                fi
+                devcontainer_compose_exec "$@"
+                ;;
+            "status")
+                devcontainer_compose_status
+                ;;
+            "build")
+                devcontainer_compose_build
+                ;;
+            "clean")
+                devcontainer_compose_clean
+                ;;
+            "help"|"-h"|"--help")
+                print_compose_usage
+                ;;
+            *)
+                error_exit "Unknown compose subcommand: $subcommand. Use 'dcutil compose help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
         ;;

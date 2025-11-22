@@ -1,296 +1,300 @@
 #!/bin/bash
 
-# Lifecycle management for dcutil
-# Implements onCreateCommand, updateContentCommand, postStartCommand execution
+# Lifecycle command support for dcutil
+# Implements additional lifecycle hooks from devcontainer specification
 
+# Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
-# Run lifecycle command in a temporary container from the image
-run_lifecycle_command() {
-    local cmd="$1"
-    local image="$2"
-    local user="${3:-root}"
-    local workdir="${4:-/}"
-
-    if [ -z "$cmd" ] || [ -z "$image" ]; then
-        error_exit "Lifecycle command and image are required" "$EXIT_INVALID_ARGS"
-    fi
-
-    info "Running lifecycle command: $cmd on image: $image"
-
-    local cid
-    cid=$(docker create \
-        --user "$user" \
-        --workdir "$workdir" \
-        "$image" \
-        /bin/sh -c "while sleep 1000; do :; done")
-    if [ -z "$cid" ]; then
-        error_exit "Failed to create temporary container for lifecycle command" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    if ! docker start "$cid" >/dev/null; then
-        error_exit "Failed to start temporary container for lifecycle command" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    # Wait a moment for container to be ready
-    sleep 1
-
-    if ! docker exec "$cid" /bin/sh -c "$cmd"; then
-        warning "Lifecycle command failed: $cmd"
-        docker stop "$cid" >/dev/null || true
-        docker rm "$cid" >/dev/null || true
-        return 1
-    fi
-
-    docker stop "$cid" >/dev/null || true
-    docker rm "$cid" >/dev/null || true
-
-    success "Lifecycle command executed successfully"
-    return 0
-}
-
-# Run lifecycle command inside existing container
-run_lifecycle_command_in_container() {
-    local cmd="$1"
-    local cid="$2"
-    local user="${3:-}"
-    local workdir="${4:-}"
-
-    if [ -z "$cmd" ] || [ -z "$cid" ]; then
-        error_exit "Lifecycle command and container id are required" "$EXIT_INVALID_ARGS"
-    fi
-
-    info "Running lifecycle command in container: $cmd"
-
-    local exec_args=()
-    if [ -n "$user" ]; then
-        exec_args+=("--user" "$user")
-    fi
-    # Only add workdir if it's a valid absolute path
-    if [ -n "$workdir" ] && [[ "$workdir" = /* ]]; then
-        exec_args+=("--workdir" "$workdir")
-    fi
-
-    if ! docker exec "${exec_args[@]}" "$cid" /bin/sh -c "$cmd"; then
-        warning "Lifecycle command failed in container: $cmd"
-        return 1
-    fi
-
-    success "Lifecycle command executed inside container"
-    return 0
-}
-
-# Execute lifecycle command with support for arrays and sudo
-execute_lifecycle_command_with_config() {
-    local config_key="$1"
-    local execution_context="$2"  # "image" or "container"
-    local image_or_container="$3"
-    local user="${4:-}"
-    local workdir="${5:-}"
-    
-    local config_file=""
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    fi
-
-    if [ -z "$config_file" ]; then
-        return 0
-    fi
-
-    # Check if command exists
-    if ! command -v jq >/dev/null 2>&1 || ! jq -e ".$config_key" "$config_file" >/dev/null 2>&1; then
-        return 0
-    fi
-
-    # Check for sudo variant
-    local sudo_key="${config_key}Sudo"
-    local use_sudo=false
-    if jq -e ".$sudo_key" "$config_file" >/dev/null 2>&1; then
-        use_sudo=$(jq -r ".$sudo_key" "$config_file")
-    fi
-
-    # Get command (handle both string and array)
-    local cmd=""
-    if jq -e ".$config_key | type" "$config_file" | grep -q "string"; then
-        cmd=$(jq -r ".$config_key" "$config_file")
-    elif jq -e ".$config_key | type" "$config_file" | grep -q "array"; then
-        # Convert array to shell command string
-        cmd=$(jq -r ".$config_key | join(\" \")" "$config_file")
-    fi
-
-    if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
-        info "Executing $config_key..."
-        
-        # Add sudo if requested
-        if [ "$use_sudo" = "true" ]; then
-            cmd="sudo $cmd"
-        fi
-        
-        # Execute based on context
-        if [ "$execution_context" = "image" ]; then
-            if ! run_lifecycle_command "$cmd" "$image_or_container" "$user" "$workdir"; then
-                warning "$config_key failed, continuing..."
-                return 1
-            fi
-        else
-            if ! run_lifecycle_command_in_container "$cmd" "$image_or_container" "$user" "$workdir"; then
-                warning "$config_key failed, continuing..."
-                return 1
-            fi
-        fi
-        
-        success "$config_key executed successfully"
-        return 0
-    fi
-}
-
-# Execute onCreateCommand (runs during image build or container creation)
-execute_on_create_command() {
-    # Parse devcontainer config to get IMAGE_NAME
-    parse_devcontainer_config || return 1
-    execute_lifecycle_command_with_config "onCreateCommand" "image" "$IMAGE_NAME"
-}
-
-# Execute updateContentCommand (runs when content needs updating)
-execute_update_content_command() {
-    # Parse devcontainer config to get CONTAINER_USER and WORKSPACE_FOLDER
-    parse_devcontainer_config || return 1
-    # Find running container
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" | head -1)
-    if [ -n "$container_id" ]; then
-        execute_lifecycle_command_with_config "updateContentCommand" "container" "$container_id" "$CONTAINER_USER" "$WORKSPACE_FOLDER"
-    else
-        warning "No running container found for updateContentCommand"
-    fi
-}
-
-# Execute postStartCommand (runs after container starts)
-execute_post_start_command() {
-    # Parse devcontainer config to get CONTAINER_USER and WORKSPACE_FOLDER
-    parse_devcontainer_config || return 1
-    # Find running container
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" | head -1)
-    if [ -n "$container_id" ]; then
-        execute_lifecycle_command_with_config "postStartCommand" "container" "$container_id" "$CONTAINER_USER" "$WORKSPACE_FOLDER"
-    else
-        warning "No running container found for postStartCommand"
-    fi
-}
-
-# Execute postAttachCommand (runs when attaching to container)
-execute_post_attach_command() {
-    # Parse devcontainer config to get CONTAINER_USER and WORKSPACE_FOLDER
-    parse_devcontainer_config || return 1
-    # Find running container
-    local container_id
-    container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" | head -1)
-    if [ -n "$container_id" ]; then
-        execute_lifecycle_command_with_config "postAttachCommand" "container" "$container_id" "$CONTAINER_USER" "$WORKSPACE_FOLDER"
-    else
-        warning "No running container found for postAttachCommand"
-    fi
-}
-
-
+# Global variables for lifecycle commands
+ON_CREATE_COMMAND=""
+UPDATE_CONTENT_COMMAND=""
+POST_ATTACH_COMMAND=""
+WAIT_FOR=""
 
 # Parse lifecycle commands from devcontainer.json
 parse_lifecycle_config() {
-    local config_file=""
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    else
+    if command -v jq &> /dev/null; then
+        # Parse onCreateCommand
+        if jq -e '.onCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            ON_CREATE_COMMAND=$(jq -r '.onCreateCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            info "onCreateCommand found"
+        fi
+        
+        # Parse updateContentCommand
+        if jq -e '.updateContentCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            UPDATE_CONTENT_COMMAND=$(jq -r '.updateContentCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            info "updateContentCommand found"
+        fi
+        
+        # Parse postAttachCommand
+        if jq -e '.postAttachCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            POST_ATTACH_COMMAND=$(jq -r '.postAttachCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            info "postAttachCommand found"
+        fi
+        
+        # Parse waitFor
+        WAIT_FOR=$(jq -r '.waitFor // "updateContentCommand"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ -n "$WAIT_FOR" ] && [ "$WAIT_FOR" != "null" ]; then
+            info "waitFor set to: $WAIT_FOR"
+        fi
+        
         return 0
     fi
+    return 1
+}
 
-    ON_CREATE_CMD=""
-    if command -v jq >/dev/null 2>&1 && jq -e '.onCreateCommand' "$config_file" >/dev/null 2>&1; then
-        ON_CREATE_CMD=$(jq -r '.onCreateCommand' "$config_file")
+# Execute onCreateCommand
+execute_on_create_command() {
+    if [ -z "${ON_CREATE_COMMAND:-}" ]; then
+        return 0
     fi
-
-    UPDATE_CONTENT_CMD=""
-    if command -v jq >/dev/null 2>&1 && jq -e '.updateContentCommand' "$config_file" >/dev/null 2>&1; then
-        UPDATE_CONTENT_CMD=$(jq -r '.updateContentCommand' "$config_file")
+    
+    info "Running onCreateCommand..."
+    
+    # Check if command is object (parallel execution)
+    if command -v jq &> /dev/null && echo "$ON_CREATE_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        execute_parallel_commands "$ON_CREATE_COMMAND" "onCreateCommand"
+    else
+        # Single command or array
+        execute_lifecycle_command "$ON_CREATE_COMMAND" "onCreateCommand"
     fi
-
-    POST_START_CMD=""
-    if command -v jq >/dev/null 2>&1 && jq -e '.postStartCommand' "$config_file" >/dev/null 2>&1; then
-        POST_START_CMD=$(jq -r '.postStartCommand' "$config_file")
+    
+    if [ $? -eq 0 ]; then
+        success "onCreateCommand completed successfully"
+    else
+        warning "onCreateCommand failed (continuing anyway)"
     fi
+}
 
+# Execute updateContentCommand
+execute_update_content_command() {
+    if [ -z "${UPDATE_CONTENT_COMMAND:-}" ]; then
+        return 0
+    fi
+    
+    info "Running updateContentCommand..."
+    
+    # Check if command is object (parallel execution)
+    if command -v jq &> /dev/null && echo "$UPDATE_CONTENT_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        execute_parallel_commands "$UPDATE_CONTENT_COMMAND" "updateContentCommand"
+    else
+        # Single command or array
+        execute_lifecycle_command "$UPDATE_CONTENT_COMMAND" "updateContentCommand"
+    fi
+    
+    if [ $? -eq 0 ]; then
+        success "updateContentCommand completed successfully"
+    else
+        warning "updateContentCommand failed (continuing anyway)"
+    fi
+}
+
+# Execute postAttachCommand
+execute_post_attach_command() {
+    if [ -z "${POST_ATTACH_COMMAND:-}" ]; then
+        return 0
+    fi
+    
+    info "Running postAttachCommand..."
+    
+    # Check if command is object (parallel execution)
+    if command -v jq &> /dev/null && echo "$POST_ATTACH_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        execute_parallel_commands "$POST_ATTACH_COMMAND" "postAttachCommand"
+    else
+        # Single command or array
+        execute_lifecycle_command "$POST_ATTACH_COMMAND" "postAttachCommand"
+    fi
+    
+    if [ $? -eq 0 ]; then
+        success "postAttachCommand completed successfully"
+    else
+        warning "postAttachCommand failed (continuing anyway)"
+    fi
+}
+
+# Execute a lifecycle command (single command or array)
+execute_lifecycle_command() {
+    local command_json="$1"
+    local command_name="$2"
+    
+    if [ -z "$command_json" ] || [ "$command_json" = "null" ]; then
+        return 0
+    fi
+    
+    # Check if it's an array
+    if command -v jq &> /dev/null && echo "$command_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        # Execute array of commands sequentially
+        echo "$command_json" | jq -r '.[]' 2>/dev/null | while IFS= read -r cmd; do
+            if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
+                info "[$command_name] Executing: $cmd"
+                if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"; then
+                    error "[$command_name] Command failed: $cmd"
+                    return 1
+                fi
+            fi
+        done
+    else
+        # Single command
+        info "[$command_name] Executing: $command_json"
+        if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$command_json"; then
+            error "[$command_name] Command failed: $command_json"
+            return 1
+        fi
+    fi
+    
     return 0
 }
 
-# CLI interface
-lifecycle_cli() {
-    local cmd="$1"
-    shift || true
-
-    case "$cmd" in
-        "run-on-create")
-            execute_on_create_command
-            ;;
-        "run-update-content")
-            execute_update_content_command
-            ;;
-        "run-post-start")
-            execute_post_start_command
-            ;;
-        "run-post-attach")
-            execute_post_attach_command
-            ;;
-        "list")
-            local config_file=""
-            if [ -f ".devcontainer/devcontainer.json" ]; then
-                config_file=".devcontainer/devcontainer.json"
-            elif [ -f ".devcontainer.json" ]; then
-                config_file=".devcontainer.json"
+# Execute parallel commands from object
+execute_parallel_commands() {
+    local commands_json="$1"
+    local command_name="$2"
+    
+    if [ -z "$commands_json" ] || [ "$commands_json" = "null" ]; then
+        return 0
+    fi
+    
+    info "[$command_name] Executing parallel commands..."
+    
+    # Extract command names and execute in parallel
+    local pids=()
+    local command_names=()
+    
+    # Get all command names
+    if command -v jq &> /dev/null; then
+        while IFS= read -r name; do
+            if [ -n "$name" ] && [ "$name" != "null" ]; then
+                command_names+=("$name")
             fi
-
-            if [ -z "$config_file" ]; then
-                echo "No devcontainer configuration found"
-                return 0
+        done < <(echo "$commands_json" | jq -r 'keys[]' 2>/dev/null || echo "")
+    fi
+    
+    # Execute each command in parallel
+    for cmd_name in "${command_names[@]}"; do
+        if command -v jq &> /dev/null; then
+            local cmd_value
+            cmd_value=$(echo "$commands_json" | jq -r ".[\"$cmd_name\"]" 2>/dev/null)
+            
+            if [ -n "$cmd_value" ] && [ "$cmd_value" != "null" ]; then
+                info "[$command_name] Starting parallel command: $cmd_name"
+                
+                # Execute command in background
+                (
+                    if echo "$cmd_value" | jq -e 'type == "array"' >/dev/null 2>&1; then
+                        # Array command
+                        echo "$cmd_value" | jq -r '.[]' 2>/dev/null | while IFS= read -r cmd; do
+                            if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
+                                docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"
+                            fi
+                        done
+                    else
+                        # Single command
+                        docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd_value"
+                    fi
+                ) &
+                
+                pids+=($!)
             fi
+        fi
+    done
+    
+    # Wait for all parallel commands to complete
+    local failed_pids=()
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            failed_pids+=("$pid")
+        fi
+    done
+    
+    if [ ${#failed_pids[@]} -gt 0 ]; then
+        error "[$command_name] Some parallel commands failed"
+        return 1
+    fi
+    
+    success "[$command_name] All parallel commands completed successfully"
+    return 0
+}
 
-            echo "Configured lifecycle commands:"
-            if command -v jq >/dev/null 2>&1; then
-                if jq -e '.onCreateCommand' "$config_file" >/dev/null 2>&1; then
-                    echo "  onCreateCommand: $(jq -r '.onCreateCommand' "$config_file")"
-                fi
-                if jq -e '.updateContentCommand' "$config_file" >/dev/null 2>&1; then
-                    echo "  updateContentCommand: $(jq -r '.updateContentCommand' "$config_file")"
-                fi
-                if jq -e '.postCreateCommand' "$config_file" >/dev/null 2>&1; then
-                    echo "  postCreateCommand: $(jq -r '.postCreateCommand' "$config_file")"
-                fi
-                if jq -e '.postStartCommand' "$config_file" >/dev/null 2>&1; then
-                    echo "  postStartCommand: $(jq -r '.postStartCommand' "$config_file")"
-                fi
-                if jq -e '.postAttachCommand' "$config_file" >/dev/null 2>&1; then
-                    echo "  postAttachCommand: $(jq -r '.postAttachCommand' "$config_file")"
-                fi
-            else
-                echo "  jq not available for parsing configuration"
-            fi
+# Execute lifecycle commands based on waitFor policy
+execute_lifecycle_commands() {
+    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    local wait_for_value="${WAIT_FOR:-updateContentCommand}"
+    
+    info "Executing lifecycle commands with waitFor=$wait_for_value"
+    
+    # Always execute onCreateCommand first
+    execute_on_create_command
+    
+    # Execute updateContentCommand
+    execute_update_content_command
+    
+    # Wait for specific command if waitFor is set
+    case "$wait_for_value" in
+        "onCreateCommand")
+            # Wait after onCreateCommand (already done)
             ;;
-        "help"|"-h"|"--help")
-            echo "Usage: dcutil lifecycle <command>"
-            echo ""
-            echo "Commands:"
-            echo "  list                    List configured lifecycle commands"
-            echo "  run-on-create          Execute onCreateCommand"
-            echo "  run-update-content     Execute updateContentCommand"
-            echo "  run-post-start         Execute postStartCommand"
-            echo "  run-post-attach        Execute postAttachCommand"
-            echo "  help                   Show this help"
+        "updateContentCommand")
+            # Wait after updateContentCommand (already done)
+            ;;
+        "postCreateCommand")
+            # Wait will be handled by the main docker.sh script
             ;;
         *)
-            error_exit "Unknown lifecycle command: $cmd" "$EXIT_INVALID_ARGS"
+            warning "Unknown waitFor value: $wait_for_value"
             ;;
     esac
+    
+    return 0
+}
+
+# Show lifecycle configuration
+show_lifecycle_info() {
+    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+        echo "No lifecycle configuration found."
+        return 1
+    fi
+    
+    echo "Lifecycle Configuration:"
+    if [ -n "${ON_CREATE_COMMAND:-}" ]; then
+        echo "  onCreateCommand: $ON_CREATE_COMMAND"
+    fi
+    if [ -n "${UPDATE_CONTENT_COMMAND:-}" ]; then
+        echo "  updateContentCommand: $UPDATE_CONTENT_COMMAND"
+    fi
+    if [ -n "${POST_ATTACH_COMMAND:-}" ]; then
+        echo "  postAttachCommand: $POST_ATTACH_COMMAND"
+    fi
+    echo "  waitFor: ${WAIT_FOR:-updateContentCommand}"
+}
+
+# Validate lifecycle configuration
+validate_lifecycle_config() {
+    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+        return 0
+    fi
+    
+    local errors=()
+    
+    # Validate waitFor value
+    case "${WAIT_FOR:-updateContentCommand}" in
+        "onCreateCommand"|"updateContentCommand"|"postCreateCommand")
+            ;;
+        *)
+            errors+=("Invalid waitFor value: ${WAIT_FOR:-updateContentCommand}")
+            ;;
+    esac
+    
+    if [ ${#errors[@]} -gt 0 ]; then
+        echo "Lifecycle configuration validation errors:"
+        for error in "${errors[@]}"; do
+            echo "  - $error"
+        done
+        return 1
+    fi
+    
+    return 0
 }

@@ -1,308 +1,269 @@
 #!/bin/bash
 
-# Custom Dockerfile builds support for dcutil
-# Implements the build object from devcontainers specification
+# Enhanced build configuration support for dcutil
+# Handles advanced Dockerfile build options per devcontainer specification
 
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for build configuration
-BUILD_DOCKERFILE=""
 BUILD_CONTEXT=""
+BUILD_DOCKERFILE=""
 BUILD_ARGS=()
 BUILD_TARGET=""
 BUILD_CACHE_FROM=()
+BUILD_NO_CACHE=false
+BUILD_SQUASH=false
+
+# Check if build configuration is specified
+is_custom_build() {
+    if command -v jq &> /dev/null; then
+        if jq -e '.build' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+    return 1
+}
 
 # Parse build configuration from devcontainer.json
 parse_build_config() {
-    local config_file=""
-
-    # Find devcontainer configuration
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    else
-        return 0  # No devcontainer config
+    if ! is_custom_build; then
+        return 1
     fi
-
-    # Initialize build variables
-    BUILD_ARGS=()
-    BUILD_CACHE_FROM=()
-
-    # Check if build object is specified
-    if command -v jq >/dev/null 2>&1 && jq -e '.build' "$config_file" >/dev/null 2>&1; then
-        info "Custom build configuration found"
-
+    
+    info "Parsing build configuration..."
+    
+    if command -v jq &> /dev/null; then
         # Parse build.dockerfile
-        BUILD_DOCKERFILE=$(jq -r '.build.dockerfile // "Dockerfile"' "$config_file")
-
-        # Parse build.context
-        BUILD_CONTEXT=$(jq -r '.build.context // "."' "$config_file")
-
-        # Parse build.args
-        if jq -e '.build.args' "$config_file" >/dev/null 2>&1; then
-            while IFS='=' read -r key value; do
-                if [ -n "$key" ] && [ -n "$value" ]; then
-                    local arg="--build-arg ${key}=${value}"
-                    local duplicate=false
-                    for existing in "${BUILD_ARGS[@]}"; do
-                        if [ "$existing" = "$arg" ]; then
-                            duplicate=true
-                            break
-                        fi
-                    done
-                    if [ "$duplicate" = false ]; then
-                        BUILD_ARGS+=("$arg")
-                    fi
-                fi
-            done < <(jq -r '.build.args | to_entries[] | "\(.key)=\(.value)"' "$config_file" 2>/dev/null || echo "")
+        BUILD_DOCKERFILE=$(jq -r '.build.dockerfile // "Dockerfile"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "null" ]; then
+            # Expand variables in dockerfile path
+            BUILD_DOCKERFILE=$(echo "$BUILD_DOCKERFILE" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+            info "Using Dockerfile: $BUILD_DOCKERFILE"
         fi
-
+        
+        # Parse build.context
+        BUILD_CONTEXT=$(jq -r '.build.context // "."' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ -n "$BUILD_CONTEXT" ] && [ "$BUILD_CONTEXT" != "null" ]; then
+            # Expand variables in context path
+            BUILD_CONTEXT=$(echo "$BUILD_CONTEXT" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+            info "Using build context: $BUILD_CONTEXT"
+        fi
+        
         # Parse build.target
-        BUILD_TARGET=$(jq -r '.build.target // ""' "$config_file")
-        if [ -n "$BUILD_TARGET" ]; then
-            local target_arg="--target $BUILD_TARGET"
-            local duplicate=false
-            for existing in "${BUILD_ARGS[@]}"; do
-                if [ "$existing" = "$target_arg" ]; then
-                    duplicate=true
-                    break
+        BUILD_TARGET=$(jq -r '.build.target // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ -n "$BUILD_TARGET" ] && [ "$BUILD_TARGET" != "null" ]; then
+            info "Using build target: $BUILD_TARGET"
+        fi
+        
+        # Parse build.args
+        if jq -e '.build.args' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            while IFS= read -r arg; do
+                if [ -n "$arg" ] && [ "$arg" != "null" ]; then
+                    # Expand variables in build args
+                    local expanded_arg
+                    expanded_arg=$(echo "$arg" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+                    BUILD_ARGS+=("$expanded_arg")
                 fi
-            done
-            if [ "$duplicate" = false ]; then
-                BUILD_ARGS+=("$target_arg")
+            done < <(jq -r '.build.args | to_entries[] | "\(.key)=\(.value|tostring)"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+            
+            if [ ${#BUILD_ARGS[@]} -gt 0 ]; then
+                info "Using build args: ${BUILD_ARGS[*]}"
             fi
         fi
-
+        
         # Parse build.cacheFrom
-        if jq -e '.build.cacheFrom' "$config_file" >/dev/null 2>&1; then
+        if jq -e '.build.cacheFrom' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             while IFS= read -r cache_image; do
                 if [ -n "$cache_image" ] && [ "$cache_image" != "null" ]; then
-                    local cache_arg="--cache-from $cache_image"
-                    local duplicate=false
-                    for existing in "${BUILD_CACHE_FROM[@]}"; do
-                        if [ "$existing" = "$cache_arg" ]; then
-                            duplicate=true
-                            break
-                        fi
-                    done
-                    if [ "$duplicate" = false ]; then
-                        BUILD_CACHE_FROM+=("$cache_arg")
-                    fi
+                    BUILD_CACHE_FROM+=("$cache_image")
                 fi
-            done < <(jq -r '.build.cacheFrom[]' "$config_file" 2>/dev/null || echo "")
+            done < <(jq -r '.build.cacheFrom[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+            
+            if [ ${#BUILD_CACHE_FROM[@]} -gt 0 ]; then
+                info "Using cache from: ${BUILD_CACHE_FROM[*]}"
+            fi
         fi
         
-        info "Build configuration:"
-        info "  Dockerfile: $BUILD_DOCKERFILE"
-        info "  Context: $BUILD_CONTEXT"
-        info "  Target: ${BUILD_TARGET:-default}"
-        info "  Args: ${#BUILD_ARGS[@]} build arguments"
-        info "  Cache sources: ${#BUILD_CACHE_FROM[@]} cache images"
-        info "  BUILD_ARGS: ${BUILD_ARGS[*]}"
+        # Parse build.noCache
+        BUILD_NO_CACHE=$(jq -r '.build.noCache // false' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ "$BUILD_NO_CACHE" = "true" ]; then
+            info "Build cache disabled"
+        fi
         
-        # Validate build files exist
+        # Parse build.squash (if supported)
+        BUILD_SQUASH=$(jq -r '.build.squash // false' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ "$BUILD_SQUASH" = "true" ]; then
+            info "Build squash enabled"
+        fi
+        
+        return 0
+    fi
+    
+    return 1
+}
+
+# Build Docker image with enhanced options
+docker_build_enhanced() {
+    if ! is_custom_build; then
+        error_exit "No build configuration found. Use 'dcutil build' for standard builds." "$EXIT_CONFIG_ERROR"
+    fi
+    
+    info "Building Docker image with enhanced configuration..."
+    check_docker_daemon
+    
+    # Validate build files exist
+    if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "Dockerfile" ]; then
         if [ ! -f "$BUILD_DOCKERFILE" ]; then
             error_exit "Dockerfile not found: $BUILD_DOCKERFILE" "$EXIT_CONFIG_ERROR"
         fi
-        
-        if [ ! -d "$BUILD_CONTEXT" ]; then
-            error_exit "Build context not found: $BUILD_CONTEXT" "$EXIT_CONFIG_ERROR"
-        fi
-        
-        return 0
     fi
     
-    return 0  # No build configuration
-}
-
-# Check if custom build is configured
-is_custom_build() {
-    [ -n "$BUILD_DOCKERFILE" ]
-}
-
-# Build custom container image
-build_custom_image() {
-    local image_name="$1"
-    
-    if ! is_custom_build; then
-        return 0  # No custom build needed
+    if [ ! -d "$BUILD_CONTEXT" ]; then
+        error_exit "Build context directory not found: $BUILD_CONTEXT" "$EXIT_CONFIG_ERROR"
     fi
     
-    info "Building custom container image: $image_name"
-    check_docker_daemon
+    # Build docker build command
+    local build_cmd="docker build"
     
-    # Change to build context
-    local original_dir
-    original_dir="$(pwd)"
-    cd "$BUILD_CONTEXT" || error_exit "Failed to change to build context: $BUILD_CONTEXT" "$EXIT_PERMISSION_ERROR"
-    
-    # Build the image
-    local build_cmd=("docker" "build")
-
-    # Add cache arguments first
-    for cache_arg in "${BUILD_CACHE_FROM[@]}"; do
-        build_cmd+=("$cache_arg")
+    # Add build args
+    for arg in "${BUILD_ARGS[@]}"; do
+        build_cmd="$build_cmd --build-arg $arg"
     done
     
-    # Add build arguments
-    for build_arg in "${BUILD_ARGS[@]}"; do
-        build_cmd+=("$build_arg")
+    # Add cache-from
+    for cache_image in "${BUILD_CACHE_FROM[@]}"; do
+        build_cmd="$build_cmd --cache-from $cache_image"
     done
     
-    # Add tags and context
-    build_cmd+=("-t" "$image_name" "-f" "$BUILD_DOCKERFILE" ".")
-    
-    info "Running: ${build_cmd[*]}"
-    if ! "${build_cmd[@]}" 2>/dev/null; then
-        cd "$original_dir"
-        error_exit "Failed to build custom image: $image_name" "$EXIT_DEVCONTAINER_ERROR"
+    # Add target
+    if [ -n "$BUILD_TARGET" ]; then
+        build_cmd="$build_cmd --target $BUILD_TARGET"
     fi
     
-    cd "$original_dir"
-    success "Custom image built successfully: $image_name"
+    # Add no-cache option
+    if [ "$BUILD_NO_CACHE" = "true" ]; then
+        build_cmd="$build_cmd --no-cache"
+    fi
+    
+    # Add squash option (if supported)
+    if [ "$BUILD_SQUASH" = "true" ]; then
+        build_cmd="$build_cmd --squash"
+    fi
+    
+    # Add dockerfile path
+    if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "Dockerfile" ]; then
+        build_cmd="$build_cmd -f $BUILD_DOCKERFILE"
+    fi
+    
+    # Add context
+    build_cmd="$build_cmd $BUILD_CONTEXT"
+    
+    # Add image name
+    if [ -n "${IMAGE_NAME:-}" ]; then
+        build_cmd="$build_cmd -t $IMAGE_NAME"
+    fi
+    
+    info "Executing: $build_cmd"
+    
+    # Execute build command
+    if eval $build_cmd; then
+        success "Docker image built successfully: $IMAGE_NAME"
+    else
+        error_exit "Failed to build Docker image" "$EXIT_DEVCONTAINER_ERROR"
+    fi
 }
 
-# Get build information for display
-get_build_info() {
-    if ! is_custom_build; then
-        echo "No custom build configuration"
-        return 0
+# Show build configuration info
+show_build_info() {
+    # Parse devcontainer config first to set DEVCONTAINER_CONFIG_FILE
+    if command -v parse_devcontainer_config >/dev/null 2>&1; then
+        parse_devcontainer_config
+    else
+        error_exit "Failed to parse devcontainer configuration" "$EXIT_CONFIG_ERROR"
     fi
     
-    echo "Custom Build Configuration:"
-    echo "  Dockerfile: $BUILD_DOCKERFILE"
-    echo "  Context: $BUILD_CONTEXT"
-    echo "  Target: ${BUILD_TARGET:-default}"
-    echo "  Build Args: ${#BUILD_ARGS[@]} arguments"
-    echo "  Cache Sources: ${#BUILD_CACHE_FROM[@]} images"
+    if [ -z "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
+        error_exit "No devcontainer configuration file found. Run from a project directory with .devcontainer/devcontainer.json" "$EXIT_CONFIG_ERROR"
+    fi
     
+    if ! is_custom_build; then
+        echo "No custom build configuration found."
+        return 1
+    fi
+    
+    # Parse build config first
+    parse_build_config
+    
+    echo "Build Configuration:"
+    echo "  Dockerfile: ${BUILD_DOCKERFILE:-Dockerfile}"
+    echo "  Context: ${BUILD_CONTEXT:-.}"
+    if [ -n "$BUILD_TARGET" ]; then
+        echo "  Target: $BUILD_TARGET"
+    fi
     if [ ${#BUILD_ARGS[@]} -gt 0 ]; then
-        echo "  Build Arguments:"
-        for ((i=0; i<${#BUILD_ARGS[@]}; i+=2)); do
-            if [ "${BUILD_ARGS[$i]}" = "--build-arg" ]; then
-                echo "    ${BUILD_ARGS[$i+1]}"
-            fi
+        echo "  Build Args:"
+        for arg in "${BUILD_ARGS[@]}"; do
+            echo "    $arg"
         done
     fi
-    
     if [ ${#BUILD_CACHE_FROM[@]} -gt 0 ]; then
         echo "  Cache From:"
-        for ((i=0; i<${#BUILD_CACHE_FROM[@]}; i+=2)); do
-            if [ "${BUILD_CACHE_FROM[$i]}" = "--cache-from" ]; then
-                echo "    ${BUILD_CACHE_FROM[$i+1]}"
-            fi
+        for cache in "${BUILD_CACHE_FROM[@]}"; do
+            echo "    $cache"
         done
     fi
+    echo "  No Cache: ${BUILD_NO_CACHE}"
+    echo "  Squash: ${BUILD_SQUASH}"
 }
 
 # Validate build configuration
 validate_build_config() {
     if ! is_custom_build; then
-        return 0  # No build config to validate
+        return 0
     fi
     
     local errors=()
     
-    # Check Dockerfile exists
-    if [ ! -f "$BUILD_DOCKERFILE" ]; then
-        errors+=("Dockerfile not found: $BUILD_DOCKERFILE")
-    fi
-    
-    # Check context exists
-    if [ ! -d "$BUILD_CONTEXT" ]; then
-        errors+=("Build context not found: $BUILD_CONTEXT")
-    fi
-    
-    # Check for basic Dockerfile syntax
-    if [ -f "$BUILD_DOCKERFILE" ]; then
-        if ! head -1 "$BUILD_DOCKERFILE" | grep -q "^FROM "; then
-            errors+=("Dockerfile does not start with FROM instruction")
+    # Check if dockerfile exists
+    if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "Dockerfile" ]; then
+        if [ ! -f "$BUILD_DOCKERFILE" ]; then
+            errors+=("Dockerfile not found: $BUILD_DOCKERFILE")
         fi
     fi
     
-    # Report errors
+    # Check if context exists
+    if [ ! -d "$BUILD_CONTEXT" ]; then
+        errors+=("Build context directory not found: $BUILD_CONTEXT")
+    fi
+    
+    # Check if docker build supports squash
+    if [ "$BUILD_SQUASH" = "true" ]; then
+        if ! docker build --help | grep -q -- "--squash"; then
+            errors+=("Docker build squash is not supported by this Docker version")
+        fi
+    fi
+    
     if [ ${#errors[@]} -gt 0 ]; then
-        echo "Build configuration validation failed:"
-        for err in "${errors[@]}"; do
-            echo "  - $err"
+        echo "Build configuration validation errors:"
+        for error in "${errors[@]}"; do
+            echo "  - $error"
         done
         return 1
     fi
     
-    success "Build configuration validation passed"
     return 0
 }
 
 # Clean build artifacts
 clean_build_artifacts() {
-    if ! is_custom_build; then
-        return 0
-    fi
-    
     info "Cleaning build artifacts..."
     
-    # Remove dangling build cache
-    if docker builder prune -f >/dev/null 2>&1; then
-        info "Build cache cleaned"
-    fi
+    # Remove intermediate images if any
+    docker image prune -f
     
-    # Note: We don't remove the built image here as it might be in use
-    # Users can manually remove with: docker rmi <image_name>
+    # Remove dangling images
+    docker image prune -f --filter "dangling=true"
     
     success "Build artifacts cleaned"
-}
-
-# Build command interface
-dcutil_build() {
-    local subcommand="$1"
-    shift
-    
-    case "$subcommand" in
-        "info")
-            parse_build_config
-            get_build_info
-            ;;
-        "validate")
-            parse_build_config
-            if validate_build_config; then
-                success "Build configuration is valid"
-            else
-                error_exit "Build configuration validation failed" "$EXIT_CONFIG_ERROR"
-            fi
-            ;;
-        "clean")
-            parse_build_config
-            clean_build_artifacts
-            ;;
-        "help"|"-h"|"--help")
-            print_build_usage
-            ;;
-        *)
-            error_exit "Unknown build subcommand: $subcommand" "$EXIT_INVALID_ARGS"
-            ;;
-    esac
-}
-
-# Print build usage
-print_build_usage() {
-    echo "Usage: dcutil build <subcommand>"
-    echo ""
-    echo "Build subcommands:"
-    echo "  info       Show build configuration information"
-    echo "  validate   Validate build configuration"
-    echo "  clean      Clean build artifacts and cache"
-    echo "  help       Show this help"
-    echo ""
-    echo "Configuration is read from devcontainer.json build object:"
-    echo '  "build": {'
-    echo '    "dockerfile": "Dockerfile",'
-    echo '    "context": "..",'
-    echo '    "args": {'
-    echo '      "NODE_VERSION": "18"'
-    echo '    },'
-    echo '    "target": "development",'
-    echo '    "cacheFrom": ["base:latest"]'
-    echo '  }'
 }
