@@ -170,7 +170,8 @@ validate_environment_variables() {
     done
     
     if [ ${#invalid_vars[@]} -gt 0 ]; then
-        error_exit "Invalid environment variable format: ${invalid_vars[*]}" "$EXIT_CONFIG_ERROR"
+        echo "Invalid environment variable format: ${invalid_vars[*]}" >&2
+        return 1
     fi
     
     return 0

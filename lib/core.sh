@@ -204,6 +204,8 @@ initialize_devcontainer_config() {
         export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer/devcontainer.json"
     elif [ -f "$PROJECT_DIR/.devcontainer.json" ]; then
         export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer.json"
+    elif [ -f "$PROJECT_DIR/devcontainer.json" ]; then
+        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/devcontainer.json"
     elif [ -f "$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json" ]; then
         export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json"
     else

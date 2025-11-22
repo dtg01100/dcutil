@@ -22,7 +22,7 @@ if ./dcutil environment validate; then
     echo "✅ Environment variables are valid"
 else
     echo "❌ Environment variables validation failed"
-    exit 1
+    false
 fi
 
 # Test 3: Test environment variable expansion
@@ -103,10 +103,10 @@ EOF
 
 # Test validation (should fail)
 if cp .devcontainer/test-env.json .devcontainer/devcontainer.json; then
-    if ! ./dcutil environment validate 2>/dev/null; then
-        echo "✅ Invalid environment variable correctly rejected"
-    else
+    if ( ./dcutil environment validate >/dev/null 2>&1 ); then
         echo "⚠️  Invalid environment variable was accepted (validation may need improvement)"
+    else
+        echo "✅ Invalid environment variable correctly rejected"
     fi
 fi
 

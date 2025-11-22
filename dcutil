@@ -476,68 +476,75 @@ elif [ "$COMMAND" = "shutdown" ]; then
     # Shutdown action command doesn't need project directory
     determine_project_dir
     shift 1
-elif [ "$COMMAND" = "lifecycle" ]; then
-    # Lifecycle command doesn't need project directory
-    determine_project_dir
-    shift 1
-    
-    # Set up environment for lifecycle modules
-    export PROJECT_DIR
-    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
-    # Check for lifecycle subcommands
-    case "${1:-}" in
-        "info")
-            # Show lifecycle info
-            if command -v show_lifecycle_info >/dev/null 2>&1; then
-                show_lifecycle_info
-            else
-                error_exit "Lifecycle info not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "validate")
-            # Validate lifecycle configuration
-            if command -v validate_lifecycle_config >/dev/null 2>&1; then
-                validate_lifecycle_config
-            else
-                error_exit "Lifecycle validation not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "")
-            # Standard lifecycle execution - fall through to normal processing
-            if command -v execute_lifecycle_commands >/dev/null 2>&1; then
-                execute_lifecycle_commands
-            else
-                error_exit "Lifecycle execution not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "help"|"-h"|"--help")
-            cat << 'EOF'
+    elif [ "$COMMAND" = "lifecycle" ]; then
+        # Lifecycle command doesn't need project directory
+        determine_project_dir
+        shift 1
+
+        # Set up environment for lifecycle modules
+        export PROJECT_DIR
+        cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+
+        # Check for lifecycle subcommands
+        case "${1:-}" in
+            "info"|"list")
+                # Show lifecycle info
+                if command -v show_lifecycle_info >/dev/null 2>&1; then
+                    show_lifecycle_info
+                else
+                    error_exit "Lifecycle info not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+                fi
+                exit $EXIT_SUCCESS
+                ;;
+            "validate")
+                # Validate lifecycle configuration
+                if command -v validate_lifecycle_config >/dev/null 2>&1; then
+                    if validate_lifecycle_config; then
+                        success "Lifecycle configuration is valid"
+                    else
+                        error_exit "Lifecycle configuration validation failed" "$EXIT_CONFIG_ERROR"
+                    fi
+                else
+                    error_exit "Lifecycle validation not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+                fi
+                exit $EXIT_SUCCESS
+                ;;
+            "")
+                # Standard lifecycle execution - fall through to normal processing
+                if command -v execute_lifecycle_commands >/dev/null 2>&1; then
+                    execute_lifecycle_commands
+                else
+                    error_exit "Lifecycle execution not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+                fi
+                exit $EXIT_SUCCESS
+                ;;
+            "help"|"-h"|"--help")
+                cat << 'EOF'
 Usage: dcutil lifecycle <command> [options]
 
 Devcontainer lifecycle commands for container initialization and management:
 
 Commands:
   info      Show lifecycle configuration
+  list      List configured lifecycle commands
   validate  Validate lifecycle configuration
   (none)    Execute lifecycle commands (default)
 
 Examples:
   dcutil lifecycle info
+  dcutil lifecycle list
   dcutil lifecycle validate
   dcutil lifecycle
 
 Manages onCreateCommand, updateContentCommand, postAttachCommand, and waitFor properties.
 EOF
-            exit $EXIT_SUCCESS
-            ;;
-        *)
-            error_exit "Unknown lifecycle subcommand: ${1:-}. Use 'dcutil lifecycle help' for usage." "$EXIT_INVALID_ARGS"
-            ;;
-    esac
+                exit $EXIT_SUCCESS
+                ;;
+            *)
+                error_exit "Unknown lifecycle subcommand: ${1:-}. Use 'dcutil lifecycle help' for usage." "$EXIT_INVALID_ARGS"
+                ;;
+        esac
+
 elif [ "$COMMAND" = "advanced" ]; then
     # Advanced features command doesn't need project directory
     determine_project_dir

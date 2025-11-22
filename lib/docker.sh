@@ -364,7 +364,16 @@ docker_up() {
     
     # Create container
     info "Creating container: $CONTAINER_NAME"
-    
+
+    # Build additional mount args for optional paths
+    local OPTIONAL_MOUNTS=()
+    if [ -d "/run/user/1000/keyring" ]; then
+        OPTIONAL_MOUNTS+=("-v" "/run/user/1000/keyring:/run/user/1000/keyring")
+    fi
+    if [ -d "/tmp/.X11-unix" ]; then
+        OPTIONAL_MOUNTS+=("-v" "/tmp/.X11-unix:/tmp/.X11-unix")
+    fi
+
     # Create container in background to avoid hanging
     docker create \
         --name "$CONTAINER_NAME" \
@@ -375,19 +384,20 @@ docker_up() {
         --label "devcontainer=true" \
         --cap-add=SYS_PTRACE \
         --security-opt="seccomp=unconfined" \
-        -v "/run/user/1000/keyring:/run/user/1000/keyring" \
-        -v "/tmp/.X11-unix:/tmp/.X11-unix" \
+        "${OPTIONAL_MOUNTS[@]}" \
         "${PORT_ARGS[@]}" \
         "${ENV_ARGS[@]}" \
         "${MOUNT_ARGS[@]}" \
         "$IMAGE_NAME" \
-        /bin/sh -c "while sleep 1000; do :; done" >/dev/null 2>&1 &
-    
+        /bin/sh -c "while sleep 1000; do :; done" &
     local create_pid=$!
     wait $create_pid
     local create_result=$?
-    
+
     if [ $create_result -ne 0 ]; then
+        error "Failed to create devcontainer (docker create exited with $create_result)"
+        # Try to get more info about the failure
+        docker logs "$CONTAINER_NAME" 2>/dev/null || true
         error_exit "Failed to create devcontainer" "$EXIT_DEVCONTAINER_ERROR"
     fi
     
