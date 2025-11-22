@@ -1,22 +1,29 @@
 {
-    "name": "Lifecycle Commands Devcontainer",
+    "name": "Devcontainer Features Test",
     "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
     "containerUser": "vscode",
     "remoteUser": "vscode",
     "workspaceFolder": "/workspace",
     
-    "onCreateCommand": {
-        "setup": "echo 'Setting up environment...'",
-        "install": ["apt-get update", "echo 'Package update completed'"]
+    "features": {
+        "ghcr.io/devcontainers/features/common-utils": {
+            "installZsh": false,
+            "configureZshAsDefaultShell": false,
+            "installOhMyZsh": false,
+            "upgradePackages": true,
+            "username": "vscode",
+            "userUid": 1000,
+            "userGid": 1000
+        },
+        "ghcr.io/devcontainers/features/git": {
+            "ppa": true,
+            "version": "latest"
+        },
+        "node": {
+            "nodeGypOSXCode": true,
+            "version": "18"
+        }
     },
     
-    "updateContentCommand": "echo 'Updating content...'",
-    
-    "postCreateCommand": "echo 'Post-create setup completed'",
-    
-    "postStartCommand": "echo 'Container started successfully'",
-    
-    "postAttachCommand": "echo 'Developer attached to container'",
-    
-    "waitFor": "updateContentCommand"
+    "postCreateCommand": "echo 'Features installation completed'"
 }

@@ -15,6 +15,11 @@ if [ -f "$(dirname "${BASH_SOURCE[0]}")/build.sh" ]; then
     source "$(dirname "${BASH_SOURCE[0]}")/build.sh"
 fi
 
+# Optional features support
+if [ -f "$(dirname "${BASH_SOURCE[0]}")/features.sh" ]; then
+    source "$(dirname "${BASH_SOURCE[0]}")/features.sh"
+fi
+
 # Optional lifecycle support
 if [ -f "$(dirname "${BASH_SOURCE[0]}")/lifecycle.sh" ]; then
     source "$(dirname "${BASH_SOURCE[0]}")/lifecycle.sh"
@@ -343,6 +348,12 @@ docker_up() {
     # Run lifecycle commands (onCreateCommand, updateContentCommand)
     if command -v execute_lifecycle_commands >/dev/null 2>&1; then
         execute_lifecycle_commands
+    fi
+
+    # Install Devcontainer Features if configured
+    if command -v install_features >/dev/null 2>&1 && has_features >/dev/null 2>&1; then
+        info "Installing Devcontainer Features..."
+        install_features
     fi
 
     # Run post-start command if specified
@@ -766,4 +777,62 @@ devcontainer_clean() {
     info "Cleaning up devcontainer..."
     docker_clean "$PROJECT_DIR"
     success "Cleanup completed"
+}
+
+# Devcontainer Features wrapper functions
+devcontainer_features_install() {
+    info "Installing Devcontainer Features..."
+    if command -v install_features >/dev/null 2>&1; then
+        install_features
+        success "Features installation completed"
+    else
+        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_features_info() {
+    info "Showing Devcontainer Features information..."
+    if command -v show_features_info >/dev/null 2>&1; then
+        show_features_info
+    else
+        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_features_validate() {
+    info "Validating Devcontainer Features configuration..."
+    if command -v validate_features_config >/dev/null 2>&1; then
+        validate_features_config
+    else
+        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_features_clean() {
+    info "Cleaning Devcontainer Features cache..."
+    if command -v clean_features_cache >/dev/null 2>&1; then
+        clean_features_cache
+        success "Features cache cleaned"
+    else
+        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_features_update() {
+    info "Updating Devcontainer Features..."
+    if command -v update_features >/dev/null 2>&1; then
+        update_features
+        success "Features update completed"
+    else
+        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+devcontainer_features_check_updates() {
+    info "Checking for Devcontainer Features updates..."
+    if command -v check_features_updates >/dev/null 2>&1; then
+        check_features_updates
+    else
+        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
+    fi
 }

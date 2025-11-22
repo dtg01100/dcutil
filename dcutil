@@ -97,7 +97,7 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose rebuild help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose features rebuild help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
@@ -186,7 +186,7 @@ BASH_EOF
 #compdef dcutil
 
 _dcutil() {
-    local -a commands
+local -a commands
     commands=(
         'up:Start the devcontainer'
         'down:Stop the devcontainer'
@@ -200,10 +200,10 @@ _dcutil() {
         'run:Run a command in the container'
         'init:Initialize a devcontainer'
         'install-agent:Install AI agent inside the devcontainer'
+        'ssh:SSH key management'
         'volumes:Volume management'
         'compose:Docker Compose support'
-        'build:Custom Dockerfile build support'
-        'ssh:SSH key management'
+        'features:Devcontainer Features support'
         'rebuild:Rebuild devcontainer with preservation options'
         'completion:Generate completion script'
         'test:Test dcutil improvements'
@@ -469,17 +469,149 @@ elif [ "$COMMAND" = "lifecycle" ]; then
             # Assume it's a project path or invalid
             ;;
     esac
+elif [ "$COMMAND" = "features" ]; then
     # Features command doesn't need project directory
     determine_project_dir
     shift 1
-    features_cli "$@"
-    exit $EXIT_SUCCESS
+    
+    # Set up environment for features modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Check for features subcommands
+    case "${1:-}" in
+        "install")
+            # Install features
+            if command -v install_features >/dev/null 2>&1; then
+                install_features
+            else
+                error_exit "Features installation not available. No features configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "info")
+            # Show features info
+            if command -v show_features_info >/dev/null 2>&1; then
+                show_features_info
+            else
+                error_exit "Features info not available. No features configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "validate")
+            # Validate features configuration
+            if command -v validate_features_config >/dev/null 2>&1; then
+                validate_features_config
+            else
+                error_exit "Features validation not available. No features configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "clean")
+            # Clean features cache
+            if command -v clean_features_cache >/dev/null 2>&1; then
+                clean_features_cache
+            else
+                error_exit "Features clean not available. No features configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "update")
+            # Update features
+            if command -v update_features >/dev/null 2>&1; then
+                update_features
+            else
+                error_exit "Features update not available. No features configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "check-updates")
+            # Check for feature updates
+            if command -v check_features_updates >/dev/null 2>&1; then
+                check_features_updates
+            else
+                error_exit "Features update check not available. No features configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "help"|"-h"|"--help")
+            cat << 'EOF'
+Usage: dcutil features <command> [options]
+
+Devcontainer Features commands for adding tools and runtimes:
+
+Commands:
+  install        Install all configured features
+  info           Show features configuration and status
+  validate       Validate features configuration
+  clean          Clean features cache and installation
+  update         Update all features (re-download and install)
+  check-updates  Check for available feature updates
+
+Examples:
+  dcutil features install
+  dcutil features info
+  dcutil features validate
+  dcutil features clean
+  dcutil features update
+
+Requires a devcontainer.json with features property containing feature specifications.
+EOF
+            exit $EXIT_SUCCESS
+            ;;
+        "")
+            # Default: install features
+            if command -v install_features >/dev/null 2>&1; then
+                install_features
+            else
+                error_exit "No features configured or features module not available." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        *)
+            error_exit "Unknown features subcommand: ${1:-}. Use 'dcutil features help' for usage." "$EXIT_INVALID_ARGS"
+            ;;
+    esac
 elif [ "$COMMAND" = "lifecycle" ]; then
     # Lifecycle command doesn't need project directory
     determine_project_dir
     shift 1
-    lifecycle_cli "$@"
-    exit $EXIT_SUCCESS
+    
+    # Set up environment for lifecycle modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Check for lifecycle subcommands
+    case "${1:-}" in
+        "info")
+            # Show lifecycle info
+            if command -v show_lifecycle_info >/dev/null 2>&1; then
+                show_lifecycle_info
+            else
+                error_exit "Lifecycle info not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "validate")
+            # Validate lifecycle configuration
+            if command -v validate_lifecycle_config >/dev/null 2>&1; then
+                if validate_lifecycle_config; then
+                    success "Lifecycle configuration is valid"
+                else
+                    error_exit "Lifecycle configuration validation failed" "$EXIT_CONFIG_ERROR"
+                fi
+            else
+                error_exit "Lifecycle validation not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "")
+            # Standard lifecycle execution - fall through to normal processing
+            ;;
+        *)
+            error_exit "Unknown lifecycle subcommand: ${1:-}. Use 'dcutil lifecycle info' for usage." "$EXIT_INVALID_ARGS"
+            ;;
+    esac
 elif [ "$COMMAND" = "environment" ]; then
     # Environment command doesn't need project directory
     determine_project_dir
@@ -490,6 +622,7 @@ elif [ "$COMMAND" = "rebuild" ]; then
     # Rebuild command doesn't need project directory
     determine_project_dir
     shift 1
+
 elif [ "$COMMAND" = "init" ]; then
     # For init, use current directory (we want to initialize here)
     if [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
@@ -583,6 +716,31 @@ Examples:
   dcutil compose build
 
 Requires a devcontainer.json with dockerComposeFile and service properties.
+EOF
+}
+
+print_features_usage() {
+    cat << 'EOF'
+Usage: dcutil features <command> [options]
+
+Devcontainer Features commands for adding tools and runtimes:
+
+Commands:
+  install        Install all configured features
+  info           Show features configuration and status
+  validate       Validate features configuration
+  clean          Clean features cache and installation
+  update         Update all features (re-download and install)
+  check-updates  Check for available feature updates
+
+Examples:
+  dcutil features install
+  dcutil features info
+  dcutil features validate
+  dcutil features clean
+  dcutil features update
+
+Requires a devcontainer.json with features property containing feature specifications.
 EOF
 }
 
