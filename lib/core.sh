@@ -43,7 +43,7 @@ info() {
 # Input validation functions
 validate_command() {
     local cmd="${1:-}"
-    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes rebuild help completion test"
+    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose rebuild features lifecycle environment advanced integration merging userprobe hostrequirements shutdown schema help completion test"
 
     if [[ ! " $valid_commands " =~ $cmd ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." "$EXIT_INVALID_ARGS"
@@ -260,7 +260,17 @@ print_usage() {
     echo "  init        Initialize a devcontainer (fast or wizard)"
     echo "  install-agent <agent> Install AI agent inside the devcontainer"
     echo "  volumes <cmd> Volume management (list, add, mount, backup, etc.)"
+    echo "  compose <cmd> Docker Compose support (up, down, status, etc.)"
+    echo "  build <cmd> Custom Dockerfile build support (info, validate, clean)"
     echo "  rebuild [options]  Rebuild devcontainer with preservation options"
+    echo "  features <cmd> Devcontainer Features management"
+    echo "  advanced <cmd> Advanced devcontainer features"
+    echo "  integration <cmd> Tool integration features"
+    echo "  merging <cmd> Image metadata merging"
+    echo "  userprobe <cmd> User environment probing"
+    echo "  hostrequirements <cmd> Host system requirements validation"
+    echo "  shutdown <cmd> Container shutdown actions"
+    echo "  schema <cmd> Devcontainer configuration schema validation"
     echo "  completion  Generate completion script for bash/zsh"
     echo "  test        Test dcutil improvements and functionality"
     echo "  help        Show this help message"

@@ -1,0 +1,21 @@
+{
+    "name": "Custom Dockerfile Test",
+    "build": {
+        "dockerfile": "Dockerfile.custom",
+        "context": ".",
+        "args": {
+            "NODE_VERSION": "18",
+            "APP_ENV": "development",
+            "USERNAME": "developer"
+        },
+        "target": "development",
+
+    },
+    "containerUser": "developer",
+    "remoteUser": "developer",
+    "containerEnv": {
+        "NODE_ENV": "development",
+        "APP_VERSION": "1.0.0"
+    },
+    "postStartCommand": "echo 'Custom Dockerfile container started'"
+}

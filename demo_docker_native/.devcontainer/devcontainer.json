@@ -1,0 +1,15 @@
+{
+    "name": "User Environment Probe Test",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+    "containerUser": "vscode",
+    "remoteUser": "vscode",
+    "workspaceFolder": "/workspace",
+    
+    "userEnvProbe": "bash",
+    
+    "remoteEnv": {
+        "CUSTOM_VAR": "from-devcontainer"
+    },
+    
+    "postCreateCommand": "echo 'Environment setup completed'"
+}

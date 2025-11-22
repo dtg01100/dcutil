@@ -1,3 +1,4 @@
+echo "DEBUG: About to call print_usage"
 #!/bin/bash
 
 # Main dcutil script
@@ -35,10 +36,6 @@ fi
 # shutdown module is optional
 if [ -f "$SCRIPT_DIR/lib/shutdown.sh" ]; then
     source "$SCRIPT_DIR/lib/shutdown.sh"
-fi
-# schema validation module is optional
-if [ -f "$SCRIPT_DIR/lib/schema-validation.sh" ]; then
-    source "$SCRIPT_DIR/lib/schema-validation.sh"
 fi
 
 # Test function to verify improvements
@@ -113,7 +110,7 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
@@ -227,7 +224,6 @@ local -a commands
         'hostrequirements:Host system requirements validation'
         'shutdown:Container shutdown actions'
         'rebuild:Rebuild devcontainer with preservation options'
-        'schema:Devcontainer configuration schema validation'
         'completion:Generate completion script'
         'test:Test dcutil improvements'
         'help:Show help message'
@@ -368,7 +364,7 @@ fi
 
 validate_command "$COMMAND"
 
-# Handle help command before any other processing
+# Handle help command before project directory logic
 if [ "$COMMAND" = "help" ] || [ "$COMMAND" = "-h" ] || [ "$COMMAND" = "--help" ]; then
     print_usage
     exit $EXIT_SUCCESS
@@ -456,7 +452,7 @@ elif [ "$COMMAND" = "build" ]; then
     esac
     
     # Standard build command
-    docker_build "$@"
+    dcutil_build "$@"
     exit $EXIT_SUCCESS
 elif [ "$COMMAND" = "hostrequirements" ]; then
     # Host requirements command doesn't need project directory
@@ -497,24 +493,6 @@ elif [ "$COMMAND" = "lifecycle" ]; then
             ;;
         "")
             # Standard lifecycle execution - fall through to normal processing
-            ;;
-        "help"|"-h"|"--help")
-            cat << 'EOF'
-Usage: dcutil lifecycle <command> [options]
-
-Devcontainer lifecycle commands for container initialization and management:
-
-Commands:
-  info      Show lifecycle configuration
-  validate  Validate lifecycle configuration
-
-Examples:
-  dcutil lifecycle info
-  dcutil lifecycle validate
-
-Manages onCreateCommand, updateContentCommand, postAttachCommand, and waitFor properties.
-EOF
-            exit $EXIT_SUCCESS
             ;;
         *)
             error_exit "Unknown lifecycle subcommand: ${1:-}. Use 'dcutil lifecycle help' for usage." "$EXIT_INVALID_ARGS"
@@ -929,9 +907,49 @@ EOF
             ;;
         *)
             error_exit "Unknown features subcommand: ${1:-}. Use 'dcutil features help' for usage." "$EXIT_INVALID_ARGS"
-;;
-     esac
- elif [ "$COMMAND" = "environment" ]; then
+            ;;
+    esac
+elif [ "$COMMAND" = "lifecycle" ]; then
+    # Lifecycle command doesn't need project directory
+    determine_project_dir
+    shift 1
+    
+    # Set up environment for lifecycle modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Check for lifecycle subcommands
+    case "${1:-}" in
+        "info")
+            # Show lifecycle info
+            if command -v show_lifecycle_info >/dev/null 2>&1; then
+                show_lifecycle_info
+            else
+                error_exit "Lifecycle info not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "validate")
+            # Validate lifecycle configuration
+            if command -v validate_lifecycle_config >/dev/null 2>&1; then
+                if validate_lifecycle_config; then
+                    success "Lifecycle configuration is valid"
+                else
+                    error_exit "Lifecycle configuration validation failed" "$EXIT_CONFIG_ERROR"
+                fi
+            else
+                error_exit "Lifecycle validation not available. No lifecycle configuration found." "$EXIT_CONFIG_ERROR"
+            fi
+            exit $EXIT_SUCCESS
+            ;;
+        "")
+            # Standard lifecycle execution - fall through to normal processing
+            ;;
+        *)
+            error_exit "Unknown lifecycle subcommand: ${1:-}. Use 'dcutil lifecycle info' for usage." "$EXIT_INVALID_ARGS"
+            ;;
+    esac
+elif [ "$COMMAND" = "environment" ]; then
     # Environment command doesn't need project directory
     determine_project_dir
     shift 1
@@ -951,89 +969,7 @@ elif [ "$COMMAND" = "init" ]; then
     shift 1
     init_mode "$@"
     exit $EXIT_SUCCESS
-elif [ "$COMMAND" = "schema" ]; then
-    # Schema validation command doesn't need project directory
-    determine_project_dir
-    shift 1
-    
-    # Set up environment for schema validation modules
-    export PROJECT_DIR
-    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
-    # Check for schema subcommands
-    case "${1:-}" in
-        "validate")
-            # Validate devcontainer configuration schema
-            if command -v validate_devcontainer_schema >/dev/null 2>&1; then
-                validate_devcontainer_schema
-            else
-                error_exit "Schema validation not available. No devcontainer configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "show")
-            # Show schema validation status
-            if command -v show_schema_status >/dev/null 2>&1; then
-                show_schema_status
-            else
-                error_exit "Schema validation status not available." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "cleanup")
-            # Cleanup schema validation state
-            if command -v cleanup_schema_validation >/dev/null 2>&1; then
-                cleanup_schema_validation
-            else
-                error_exit "Schema validation cleanup not available." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-;;
-        "help"|"-h"|"--help")
-            cat << 'EOF'
-Usage: dcutil schema <command> [options]
-
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
-            exit $EXIT_SUCCESS
-            ;;
-    esac
 else
-    # Define schema usage function before command routing
-    print_schema_usage() {
-        cat << 'EOF'
-Usage: dcutil schema <command> [options]
-
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
-    }
-    
     # For up command, check for --project-home flag before determining project directory
     if [ "$COMMAND" = "up" ]; then
         # Process up command arguments
@@ -1108,8 +1044,6 @@ Commands:
   status   Show status of Docker Compose services
   build    Build Docker Compose images
   clean    Clean up Docker Compose environment (stop and remove)
-  scale    Scale services to specified replica count
-  config   Show Docker Compose configuration
 
 Examples:
   dcutil compose up
@@ -1272,45 +1206,6 @@ Supports stop, kill, none, shutdown actions and custom commands.
 EOF
 }
 
-print_lifecycle_usage() {
-    cat << 'EOF'
-Usage: dcutil lifecycle <command> [options]
-
-Devcontainer lifecycle commands for container initialization and management:
-
-Commands:
-  info      Show lifecycle configuration
-  validate  Validate lifecycle configuration
-
-Examples:
-  dcutil lifecycle info
-  dcutil lifecycle validate
-
-Manages onCreateCommand, updateContentCommand, postAttachCommand, and waitFor properties.
-EOF
-}
-
-print_schema_usage() {
-    cat << 'EOF'
-Usage: dcutil schema <command> [options]
-
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
-}
-
 # Command routing
 case "$COMMAND" in
     "up")
@@ -1445,27 +1340,6 @@ case "$COMMAND" in
                 ;;
             "logs")
                 devcontainer_compose_logs
-                ;;
-            "scale")
-                # Scale services
-                if [ $# -lt 2 ]; then
-                    error_exit "Usage: dcutil compose scale <service> <replicas>" "$EXIT_INVALID_ARGS"
-                fi
-                if command -v docker_compose_scale >/dev/null 2>&1; then
-                    docker_compose_scale "$1" "$2"
-                else
-                    error_exit "Compose scale not available. No compose configuration found." "$EXIT_CONFIG_ERROR"
-                fi
-                exit $EXIT_SUCCESS
-                ;;
-            "config")
-                # Show compose configuration
-                if command -v docker_compose_config >/dev/null 2>&1; then
-                    docker_compose_config
-                else
-                    error_exit "Compose config not available. No compose configuration found." "$EXIT_CONFIG_ERROR"
-                fi
-                exit $EXIT_SUCCESS
                 ;;
             "exec")
                 if [ $# -eq 0 ]; then
@@ -1687,7 +1561,7 @@ case "$COMMAND" in
                 error_exit "Unknown shutdown subcommand: $subcommand. Use 'dcutil shutdown help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
-;;
+        ;;
     "test")
         test_dcutil_improvements
         ;;
@@ -1697,7 +1571,7 @@ case "$COMMAND" in
     *)
         error_exit "Unknown command: $COMMAND" "$EXIT_INVALID_ARGS"
         ;;
-    esac
+esac
 
 # Print main usage help
 print_usage() {

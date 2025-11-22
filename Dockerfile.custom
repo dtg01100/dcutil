@@ -1,0 +1,31 @@
+FROM ubuntu:22.04 AS base
+
+# Build arguments
+ARG NODE_VERSION=18
+ARG APP_ENV=production
+ARG USERNAME=vscode
+
+# Set environment variables
+ENV NODE_ENV=${APP_ENV}
+ENV NODE_VERSION=${NODE_VERSION}
+
+# Install basic dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create user
+RUN useradd -m -s /bin/bash ${USERNAME} || true
+
+# Development stage
+FROM base AS development
+WORKDIR /workspace
+USER ${USERNAME}
+CMD ["sleep", "infinity"]
+
+# Production stage (default)
+FROM base AS production
+WORKDIR /workspace
+USER ${USERNAME}
+CMD ["sleep", "infinity"]
