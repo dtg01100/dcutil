@@ -351,6 +351,22 @@ EOF
             validate_json_if_available ".devcontainer/devcontainer.json"
 
             success "Fast devcontainer configuration created"
+
+            # Offer to start the container immediately
+            if [ -t 0 ] && [ -t 1 ]; then
+                echo ""
+                read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
+                start_now=${start_now:-Y}
+                if [[ "$start_now" =~ ^[Yy] ]]; then
+                    info "Starting devcontainer..."
+                    # Call the up command
+                    if command -v devcontainer_up >/dev/null 2>&1; then
+                        devcontainer_up
+                        return 0
+                    fi
+                fi
+            fi
+
             info "Run 'dcutil up' to start the container"
             ;;
         "--wizard"|"wizard"|"")
@@ -634,9 +650,22 @@ EOF
             validate_json_if_available ".devcontainer/devcontainer.json"
 
             success "Devcontainer configuration created"
-            info "Run 'dcutil up' to start the container"
 
-            success "Devcontainer configuration created"
+            # Offer to start the container immediately
+            if [ -t 0 ] && [ -t 1 ]; then
+                echo ""
+                read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
+                start_now=${start_now:-Y}
+                if [[ "$start_now" =~ ^[Yy] ]]; then
+                    info "Starting devcontainer..."
+                    # Call the up command
+                    if command -v devcontainer_up >/dev/null 2>&1; then
+                        devcontainer_up
+                        return 0
+                    fi
+                fi
+            fi
+
             info "Run 'dcutil up' to start the container"
             ;;
 
