@@ -253,21 +253,21 @@ install_agent() {
     case "$AGENT" in
         "opencode")
             local has_local_share=false
-            local has_config=false
+            local has_opencode=false
             if [ -d "$HOME/.local/share/opencode" ]; then
                 has_local_share=true
             fi
-            if [ -d "$HOME/.config/opencode" ]; then
-                has_config=true
+            if [ -d "$HOME/.opencode" ]; then
+                has_opencode=true
             fi
-            if [ "$has_local_share" = true ] || [ "$has_config" = true ]; then
+            if [ "$has_local_share" = true ] || [ "$has_opencode" = true ]; then
                 echo "1) No configuration access"
                 echo "2) Mount opencode config directories"
                 if [ "$has_local_share" = true ]; then
                     echo "   - ~/.local/share/opencode -> /home/vscode/.local/share/opencode"
                 fi
-                if [ "$has_config" = true ]; then
-                    echo "   - ~/.config/opencode -> /home/vscode/.opencode"
+                if [ "$has_opencode" = true ]; then
+                    echo "   - ~/.opencode -> /home/vscode/.opencode"
                 fi
                 echo ""
                 read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
@@ -277,8 +277,8 @@ install_agent() {
                     if [ "$has_local_share" = true ]; then
                         config_mount="$config_mount --mount type=bind,source=$HOME/.local/share/opencode,target=/home/vscode/.local/share/opencode"
                     fi
-                    if [ "$has_config" = true ]; then
-                        config_mount="$config_mount --mount type=bind,source=$HOME/.config/opencode,target=/home/vscode/.opencode"
+                    if [ "$has_opencode" = true ]; then
+                        config_mount="$config_mount --mount type=bind,source=$HOME/.opencode,target=/home/vscode/.opencode"
                     fi
                     info "Will mount opencode configuration directories"
                 fi
@@ -419,8 +419,8 @@ install_agent() {
             jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
             mounts_added=true
         fi
-        if [ -d "$HOME/.config/opencode" ]; then
-            local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.config/opencode\", \"target\": \"/home/vscode/.opencode\"}"
+        if [ -d "$HOME/.opencode" ]; then
+            local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.opencode\", \"target\": \"/home/vscode/.opencode\"}"
             jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
             mounts_added=true
         fi
@@ -458,9 +458,9 @@ install_agent() {
                         docker cp "$HOME/.local/share/opencode/." "$CONTAINER_ID:/home/vscode/.local/share/opencode/" 2>/dev/null && \
                         docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.local/share/opencode 2>/dev/null
                     fi
-                    if [ -d "$HOME/.config/opencode" ]; then
+                    if [ -d "$HOME/.opencode" ]; then
                         docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.opencode 2>/dev/null || true
-                        docker cp "$HOME/.config/opencode/." "$CONTAINER_ID:/home/vscode/.opencode/" 2>/dev/null && \
+                        docker cp "$HOME/.opencode/." "$CONTAINER_ID:/home/vscode/.opencode/" 2>/dev/null && \
                         docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.opencode 2>/dev/null
                     fi
                     ;;
