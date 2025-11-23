@@ -382,7 +382,7 @@ EOF
                 info "Devcontainer Initialization Wizard (Enhanced UI)"
                 echo ""
 
-                # Capture dialog results
+                # Get all config via dialog
                 local dialog_output
                 dialog_output=$(wizard_with_dialog "$templates_json" "$features_json")
 
@@ -407,10 +407,10 @@ EOF
                     selected_features_json="[]"
                 fi
 
-                # Set defaults for dialog path
+                # Set defaults
                 container_user_input=${container_user:-vscode}
 
-                # Validate workspace folder for dialog path
+                # Validate workspace folder
                 if [ -n "$workspace_folder" ]; then
                     validate_workspace_folder "$workspace_folder" || workspace_folder="/workspaces"
                 else
@@ -420,11 +420,46 @@ EOF
                 info "Devcontainer Initialization Wizard"
                 echo ""
 
+                # Get available templates and let user choose
                 local selected_template
                 selected_template=$(choose_template "$templates_json")
 
+                # Get available features and let user choose
                 local selected_features_json
                 selected_features_json=$(choose_features "$features_json")
+
+                # Get remaining config via text prompts
+                # Get container name
+                read -r -p "Container name [My Project]: " container_name
+                container_name=${container_name:-"My Project"}
+
+                # Prompt for workspace folder (validate)
+                while true; do
+                    read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
+                    workspace_folder=${workspace_folder:-/workspaces}
+                    validate_workspace_folder "$workspace_folder"
+                    case $? in
+                        0) break;;
+                        1) echo "Invalid input: workspace folder cannot be empty";;
+                        2) echo "Workspace folder must be an absolute path (start with /)";;
+                        3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
+                        4) echo "Workspace folder must not have leading or trailing whitespace";;
+                        *) echo "Invalid workspace folder";;
+                    esac
+                done
+
+                # Prompt for container user (supports name or numeric UID[:GID])
+                read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
+                container_user_input=${container_user_input:-vscode}
+
+                # Ask whether to set ownership of the workspace
+                read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
+                chown_choice=${chown_choice:-Y}
+
+                # Ask whether to mount host project dir into container workspace
+                read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
+                mount_choice=${mount_choice:-Y}
+            fi
 
                 # Get container name
                 read -r -p "Container name [My Project]: " container_name
