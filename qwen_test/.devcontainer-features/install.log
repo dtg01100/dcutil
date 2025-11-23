@@ -1,0 +1,7 @@
+# Devcontainer Features Installation Log
+# Date: Sun Nov 23 13:39:26 EST 2025
+# Project: /var/home/dlafreniere/bin/dcutil-files/qwen_test
+
+Sun Nov 23 13:39:26 EST 2025: Installing ghcr.io/devcontainers/features/node:1
+Script must be run as root. Use sudo, su, or add "USER root" to your Dockerfile before running this script.
+Sun Nov 23 13:39:26 EST 2025: Failed to install ghcr.io/devcontainers/features/node:1
