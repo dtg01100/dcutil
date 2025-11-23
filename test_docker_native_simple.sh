@@ -5,13 +5,20 @@ set -euo pipefail
 
 # Set up environment FIRST, before sourcing modules
 echo "Setting up environment..."
-PROJECT_DIR="/var/mnt/Disk2/projects/dcutil/test_docker_native"
+
+# Use relative paths based on script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$SCRIPT_DIR/test_docker_native"
 export PROJECT_DIR
+
+# Create test directory if it doesn't exist
+if [ ! -d "$PROJECT_DIR" ]; then
+    mkdir -p "$PROJECT_DIR"
+    echo "Created test directory: $PROJECT_DIR"
+fi
+
 cd "$PROJECT_DIR"
 echo "PROJECT_DIR set to: '$PROJECT_DIR'"
-
-# Source the modules
-SCRIPT_DIR="/var/mnt/Disk2/projects/dcutil"
 source "$SCRIPT_DIR/lib/core.sh"
 source "$SCRIPT_DIR/lib/docker.sh"
 source "$SCRIPT_DIR/lib/docker_native.sh"
