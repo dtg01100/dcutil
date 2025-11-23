@@ -55,10 +55,54 @@ CONTAINER_NAME=""
 IMAGE_NAME=""
 PROJECT_DIR=""
 
+# Helper to find the container name for a project by label; falls back to default
+get_container_name_for_project() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    if [ -z "$project_dir" ]; then
+        echo ""
+        return 1
+    fi
+
+    # Look for a container with a matching label first
+    local container_name
+    container_name=$(docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+    if [ -n "$container_name" ]; then
+        echo "$container_name"
+        return 0
+    fi
+
+    # Fallback to deterministic name
+    echo "dcutil-$(basename "$project_dir")"
+    return 0
+}
+
+# Helper to rename a conflicting container to avoid name collisions
+rename_conflicting_container() {
+    local name="$1"
+    local ts
+    ts=$(date +%s)
+    local new_name="${name}-orphan-${ts}"
+    info "Stopping existing container $name to avoid collisions"
+    if docker ps -q --filter "name=^${name}$" | grep -q .; then
+        docker stop "$name" 2>/dev/null || true
+    fi
+    info "Renaming existing container $name to $new_name to avoid name collision"
+    if docker rename "$name" "$new_name" 2>/dev/null; then
+        info "Renamed $name -> $new_name"
+        return 0
+    else
+        # If rename failed (maybe due to removal race), attempt to force remove
+        info "Failed to rename $name; attempting to remove it"
+        docker rm -f "$name" 2>/dev/null || true
+        return 0
+    fi
+    return 1
+}
+
 # Check container daemon availability (Docker or Podman)
 check_container_daemon() {
     # Check if Podman backend is enabled and available
-    if [ "$PODMAN_BACKEND_ENABLED" = true ] && command -v podman >/dev/null 2>&1; then
+    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ] && command -v podman >/dev/null 2>&1; then
         if podman info &> /dev/null; then
             info "Using Podman container engine"
             return 0
@@ -93,7 +137,7 @@ parse_devcontainer_config() {
         error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
     fi
     
-    DEVCONTAINER_CONFIG_FILE="$config_file"
+    DEVCONTAINER_CONFIG_FILE=$(realpath -m "$config_file" 2>/dev/null || echo "$config_file")
     
     # Validate JSON
     validate_json_if_available "$DEVCONTAINER_CONFIG_FILE"
@@ -138,6 +182,9 @@ parse_devcontainer_config() {
         local workspace_from_config
         workspace_from_config=$(jq -r '.workspaceFolder // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         if [ -n "$workspace_from_config" ] && [ "$workspace_from_config" != "null" ]; then
+            # Expand known placeholders in workspace folder
+            workspace_from_config="${workspace_from_config//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
+            workspace_from_config="${workspace_from_config//\$\{localWorkspaceFolderBasename\}/${PROJECT_DIR##*/}}"
             WORKSPACE_FOLDER="$workspace_from_config"
         fi
         CONTAINER_USER=$(jq -r '.containerUser // "vscode"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$CONTAINER_USER")
@@ -165,17 +212,7 @@ parse_devcontainer_config() {
             done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
         fi
 
-        # envs
-        if jq -e '.containerEnv' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-            while IFS='=' read -r key val; do
-                CONTAINER_ENV+=("$key=$val")
-            done < <(jq -r '.containerEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
-        fi
-        if jq -e '.remoteEnv' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-            while IFS='=' read -r key val; do
-                REMOTE_ENV+=("$key=$val")
-            done < <(jq -r '.remoteEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
-        fi
+
 
         # security
         if jq -e '.privileged' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
@@ -260,12 +297,26 @@ docker_up() {
     info "Starting devcontainer setup..."
     check_docker_daemon
 
+    # Debug summary
+    info "DEVCONTAINER_CONFIG_FILE: ${DEVCONTAINER_CONFIG_FILE:-<none>}"
+    info "Working dir: $PROJECT_DIR"
+    info "Looking for compose: $(command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode && echo yes || echo no)"
+
     # Parse build configuration first (if available)
     if command -v parse_build_config >/dev/null 2>&1; then
-        parse_build_config
+        info "Parsing build configuration..."
+        parse_build_config >/dev/null 2>&1 || true
+        info "parse_build_config completed"
     fi
 
+
     parse_devcontainer_config
+    info "parse_devcontainer_config completed"
+
+    info "Image: $IMAGE_NAME"
+    info "ContainerUser: $CONTAINER_USER, RemoteUser: $REMOTE_USER, Workspace: $WORKSPACE_FOLDER"
+    info "MOUNT_COUNT: ${#MOUNTS[@]}"
+    info "TMPFS_COUNT: ${#TMPFS_LIST[@]}"
     
     # Merge image metadata with devcontainer.json if needed
     if command -v merge_image_metadata >/dev/null 2>&1 && needs_metadata_merging >/dev/null 2>&1; then
@@ -299,9 +350,11 @@ docker_up() {
         success "Custom image built successfully: $IMAGE_NAME"
     fi
     
-    # Generate container name from project directory
-    CONTAINER_NAME="dcutil-$(basename "$PROJECT_DIR")"
+    # Generate container name from project directory (resolve existing container first)
+    CONTAINER_NAME=$(get_container_name_for_project "$PROJECT_DIR")
     info "Using container name: $CONTAINER_NAME"
+
+    info "Devcontainer config summary: image=$IMAGE_NAME workspace=$WORKSPACE_FOLDER containerUser=$CONTAINER_USER mounts=${#MOUNTS[@]}"
 
     # Build custom image if needed
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
@@ -359,9 +412,15 @@ docker_up() {
     
     # Build port mappings
     PORT_ARGS=()
-    # Default SSH port if not specified
-    PORT_ARGS+=("-p" "2222:2222")
-    
+    # Default SSH port mapping - publish container port 2222 to a random host port to avoid collisions
+    PORT_ARGS+=("-p" "2222")
+    # Add any app ports from devcontainer.json
+    for p in "${APP_PORTS[@]}"; do
+        if [ -n "$p" ]; then
+            PORT_ARGS+=("-p" "$p")
+        fi
+    done
+
     # Create container
     info "Creating container: $CONTAINER_NAME"
 
@@ -375,6 +434,37 @@ docker_up() {
     fi
 
     # Create container in background to avoid hanging
+    # If a container already exists with the intended name, attempt to rename it to avoid collisions
+    if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        info "Container name $CONTAINER_NAME already exists; renaming existing container to avoid collision"
+        if ! rename_conflicting_container "$CONTAINER_NAME"; then
+            warning "Failed to rename existing container; will attempt to create with a unique name"
+            CONTAINER_NAME="${CONTAINER_NAME}-new-$(date +%s)"
+            info "Using new container name: $CONTAINER_NAME"
+        fi
+    fi
+
+    # If there are any containers for this project, remove them to avoid name and port conflicts
+    local existing_cids
+    existing_cids=$(docker ps -a --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format '{{.ID}}' 2>/dev/null || true)
+    if [ -n "$existing_cids" ]; then
+        info "Removing existing container(s) for project to avoid conflicts: $existing_cids"
+        for cid in $existing_cids; do
+            docker rm -f "$cid" 2>/dev/null || true
+        done
+    fi
+
+    # Also remove stale orphan containers matching the naming pattern (free ports)
+    docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format "{{.ID}} {{.Names}} {{.Status}}" | while read -r id name status; do
+        if echo "$status" | grep -qE "Exited|Created|Dead"; then
+            info "Removing stale orphan container: $name ($id)"
+            docker rm -f "$id" 2>/dev/null || true
+        else
+            info "Stopping and removing running orphan container: $name ($id)"
+            docker rm -f "$id" 2>/dev/null || true
+        fi
+    done || true
+
     docker create \
         --name "$CONTAINER_NAME" \
         --hostname "${PROJECT_DIR##*/}" \
@@ -409,67 +499,19 @@ docker_up() {
     
     # Start container
     if ! docker start "$CONTAINER_NAME" 2>/dev/null; then
-        error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        # If start failed because container already exists and is running, consider it OK
+        if docker container inspect "$CONTAINER_NAME" &>/dev/null && docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+            warning "Container $CONTAINER_NAME is already running; proceeding"
+        else
+            error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        fi
     fi
     
     # Wait for container to be ready
     sleep 2
 
-    # Run post-create commands if specified
-    run_post_create_commands
-
-    # Run lifecycle commands (onCreateCommand, updateContentCommand)
-    if command -v execute_lifecycle_commands >/dev/null 2>&1; then
-        execute_lifecycle_commands
-    fi
-
-    # Install Devcontainer Features if configured
-    if command -v install_features >/dev/null 2>&1 && has_features >/dev/null 2>&1; then
-        info "Installing Devcontainer Features..."
-        install_features
-    fi
-
-    # Apply advanced features if configured
-    if command -v apply_advanced_features >/dev/null 2>&1 && has_advanced_features >/dev/null 2>&1; then
-        info "Applying advanced features..."
-        apply_advanced_features
-    fi
-
-    # Run post-start command if specified
-    if command -v execute_post_start_command >/dev/null 2>&1; then
-        execute_post_start_command
-    fi
-
-    # Apply remote environment variables if specified
-    if command -v apply_remote_environment >/dev/null 2>&1; then
-        parse_environment_config
-        apply_remote_environment "$CONTAINER_NAME"
-    fi
-
-    # Set up user environment if specified
-    if command -v setup_user_environment >/dev/null 2>&1; then
-        parse_environment_config
-        setup_user_environment "$CONTAINER_NAME"
-    fi
-
-    # Run post-attach commands if specified
-    if command -v execute_post_attach_command >/dev/null 2>&1; then
-        execute_post_attach_command
-    fi
-
-    # Apply tool integration features if configured
-    if command -v apply_tool_integration >/dev/null 2>&1 && has_tool_integration >/dev/null 2>&1; then
-        info "Applying tool integration features..."
-        apply_tool_integration
-    fi
-
-    # Apply user environment probing if configured
-    if command -v apply_user_env_probe >/dev/null 2>&1 && has_user_env_probe >/dev/null 2>&1; then
-        info "Applying user environment probing..."
-        apply_user_env_probe
-    fi
-
-    success "Devcontainer started successfully"
+    # Finalize container start
+    finalize_container_start "$CONTAINER_NAME" true
 }
 
 # Run post-create commands
@@ -488,6 +530,61 @@ run_post_create_commands() {
             warning "Post-create command failed (continuing anyway)"
         fi
     fi
+}
+
+finalize_container_start() {
+    local cont_name="$1"
+    local was_created="${2:-false}"
+
+    info "Finalizing container start: $cont_name (was_created=$was_created)"
+
+    if [ "$was_created" = true ]; then
+        run_post_create_commands
+    fi
+
+    if command -v execute_lifecycle_commands >/dev/null 2>&1; then
+        execute_lifecycle_commands
+    fi
+
+    if command -v install_features >/dev/null 2>&1 && has_features >/dev/null 2>&1; then
+        info "Installing Devcontainer Features..."
+        install_features
+    fi
+
+    if command -v apply_advanced_features >/dev/null 2>&1 && has_advanced_features >/dev/null 2>&1; then
+        info "Applying advanced features..."
+        apply_advanced_features
+    fi
+
+    if command -v execute_post_start_command >/dev/null 2>&1; then
+        execute_post_start_command
+    fi
+
+    if command -v apply_remote_environment >/dev/null 2>&1; then
+        parse_environment_config
+        apply_remote_environment "$cont_name"
+    fi
+
+    if command -v setup_user_environment >/dev/null 2>&1; then
+        parse_environment_config
+        setup_user_environment "$cont_name"
+    fi
+
+    if command -v execute_post_attach_command >/dev/null 2>&1; then
+        execute_post_attach_command
+    fi
+
+    if command -v apply_tool_integration >/dev/null 2>&1 && has_tool_integration >/dev/null 2>&1; then
+        info "Applying tool integration features..."
+        apply_tool_integration
+    fi
+
+    if command -v apply_user_env_probe >/dev/null 2>&1 && has_user_env_probe >/dev/null 2>&1; then
+        info "Applying user environment probing..."
+        apply_user_env_probe
+    fi
+
+    success "Devcontainer started successfully"
 }
 
 # Stop devcontainer
@@ -773,37 +870,50 @@ docker_clean() {
         return 0
     fi
     
-    # Stop container if running
-    if command -v execute_container_command >/dev/null 2>&1; then
-        if execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
-            if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-                execute_container_command stop "$CONTAINER_NAME" &>/dev/null || true
-            fi
-            
-            # Remove container
-            execute_container_command rm "$CONTAINER_NAME" &>/dev/null || true
-        fi
+    # Determine container name(s) for this project if not set
+    local container_ids
+    if [ -z "${CONTAINER_NAME:-}" ]; then
+        container_ids=$(docker ps -a --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format '{{.ID}}' 2>/dev/null || true)
     else
-        if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-            if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-                docker stop "$CONTAINER_NAME" &>/dev/null || true
-            fi
-            
-            # Remove container
-            docker rm "$CONTAINER_NAME" &>/dev/null || true
+        container_ids=$(docker ps -a --filter "name=^${CONTAINER_NAME}$" --format '{{.ID}}' 2>/dev/null || true)
+        # Also include any running orphans for this container name
+        if [ -n "$CONTAINER_NAME" ]; then
+            container_ids+=$" $(docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format '{{.ID}}' 2>/dev/null || true)"
         fi
+    fi
+
+    # Remove all found containers for this project
+    if [ -n "$container_ids" ]; then
+        for cid in $container_ids; do
+            if [ -n "$cid" ]; then
+                if docker container inspect "$cid" &>/dev/null; then
+                    if docker container inspect "$cid" | grep -q '"Running": true'; then
+                        docker stop "$cid" &>/dev/null || true
+                    fi
+                    docker rm -f "$cid" &>/dev/null || true
+                fi
+            fi
+        done
     fi
     
     # Remove volumes if requested
     if [ "${2:-}" = "--remove-volumes" ] || [ "${1:-}" = "--remove-volumes" ]; then
-        # Remove associated volumes
+        # Find volumes associated with project containers
         local volume_names
-        volume_names=$(docker inspect "$CONTAINER_NAME" -f '{{range .Mounts}}{{.Name}} {{end}}' 2>/dev/null || echo "")
+        volume_names=$(docker ps -a --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format '{{range .Mounts}}{{.Name}} {{end}}' 2>/dev/null || echo "")
         for volume in $volume_names; do
             if [ -n "$volume" ]; then
                 docker volume rm "$volume" 2>/dev/null || true
             fi
         done
+    fi
+    
+    # Remove orphan containers matching the naming scheme to keep CI clean
+    if [ -n "${CONTAINER_NAME:-}" ]; then
+        docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format "{{.ID}} {{.Names}} {{.Status}}" | while read -r id name status; do
+            info "Removing orphan container if exists: $name ($id)"
+            docker rm -f "$id" 2>/dev/null || true
+        done || true
     fi
     
     success "Devcontainer cleaned up"

@@ -220,6 +220,42 @@ test_docker_native_mode() {
 
 # Test volume management
 test_volume_management() {
+    # Additional concurrency race test: simulate concurrent add + list operations
+    test_volume_race() {
+        local script_dir="$SCRIPT_DIR"
+        local tmp_dir="/tmp/dcutil_test_race$$"
+        mkdir -p "$tmp_dir"
+
+        # Run two concurrent operations: one adds, one lists
+        PATH="/usr/bin:/bin:/usr/local/bin:/usr/sbin" "$SCRIPT_DIR/dcutil" volumes add race_vol "$tmp_dir" /workspace/race_vol  >/dev/null 2>&1 &
+        local add_pid=$!
+
+        # Poll for the list to show the new volume for up to 2 seconds
+        local list_attempts=0
+        local list_found=false
+        while [ $list_attempts -lt 40 ]; do
+            if PATH="/usr/bin:/bin:/usr/local/bin:/usr/sbin" "$SCRIPT_DIR/dcutil" volumes list | grep -q "race_vol" 2>/dev/null >/dev/null 2>&1; then
+                list_found=true
+                break
+            fi
+            sleep 0.05
+            list_attempts=$((list_attempts + 1))
+        done
+
+        wait $add_pid
+
+        # Clean up: remove the added volume
+        PATH="/usr/bin:/bin:/usr/local/bin:/usr/sbin" "$SCRIPT_DIR/dcutil" volumes remove race_vol >/dev/null 2>&1 || true
+        rm -rf "$tmp_dir" 2>/dev/null || true
+
+        if [ "$list_found" = true ]; then
+            return 0
+        else
+            return 1
+        fi
+    }
+
+
     info "=== Testing Volume Management ==="
     
     # Clean any existing containers
@@ -241,7 +277,15 @@ test_volume_management() {
         error "Volume add command failed"
         return 1
     fi
-    
+
+    info "Testing: dcutil volumes add/list race (concurrency)"
+    if test_volume_race; then
+        success "Volume add/list race: list returned added volume in concurrent add"
+    else
+        error "Volume add/list race failed"
+        return 1
+    fi
+
     info "Testing: dcutil volumes list (after add)"
     if PATH="/usr/bin:/bin:/usr/local/bin:/usr/sbin" "$SCRIPT_DIR/dcutil" volumes list | grep -q "testdata"; then
         success "Added volume appears in list"
@@ -375,7 +419,12 @@ main() {
         all_passed=false
         error "Volume management tests failed"
     fi
-    
+
+    if ! test_volume_race; then
+        all_passed=false
+        error "Volume race condition tests failed"
+    fi
+
     if ! test_mode_detection; then
         all_passed=false
         error "Mode detection tests failed"

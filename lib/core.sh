@@ -200,14 +200,20 @@ determine_project_dir() {
 
 # Initialize devcontainer configuration file path
 initialize_devcontainer_config() {
+    local cfg=""
     if [ -f "$PROJECT_DIR/.devcontainer/devcontainer.json" ]; then
-        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer/devcontainer.json"
+        cfg="$PROJECT_DIR/.devcontainer/devcontainer.json"
     elif [ -f "$PROJECT_DIR/.devcontainer.json" ]; then
-        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer.json"
+        cfg="$PROJECT_DIR/.devcontainer.json"
     elif [ -f "$PROJECT_DIR/devcontainer.json" ]; then
-        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/devcontainer.json"
+        cfg="$PROJECT_DIR/devcontainer.json"
     elif [ -f "$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json" ]; then
-        export DEVCONTAINER_CONFIG_FILE="$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json"
+        cfg="$PROJECT_DIR/.devcontainer/devcontainer/devcontainer.json"
+    fi
+
+    if [ -n "$cfg" ]; then
+        DEVCONTAINER_CONFIG_FILE=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
+        export DEVCONTAINER_CONFIG_FILE
     else
         export DEVCONTAINER_CONFIG_FILE=""
     fi

@@ -158,18 +158,33 @@ execute_lifecycle_command() {
         echo "$command_json" | jq -r '.[]' 2>/dev/null | while IFS= read -r cmd; do
             if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
                 info "[$command_name] Executing: $cmd"
-                if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"; then
-                    error "[$command_name] Command failed: $cmd"
-                    return 1
+                # If container is running, execute inside container; otherwise run locally
+                if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+                    if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"; then
+                        error "[$command_name] Command failed: $cmd"
+                        return 1
+                    fi
+                else
+                    if ! /bin/sh -c "$cmd"; then
+                        error "[$command_name] Command failed: $cmd"
+                        return 1
+                    fi
                 fi
             fi
         done
     else
         # Single command
         info "[$command_name] Executing: $command_json"
-        if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$command_json"; then
-            error "[$command_name] Command failed: $command_json"
-            return 1
+        if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$command_json"; then
+                error "[$command_name] Command failed: $command_json"
+                return 1
+            fi
+        else
+            if ! /bin/sh -c "$command_json"; then
+                error "[$command_name] Command failed: $command_json"
+                return 1
+            fi
         fi
     fi
     
@@ -209,18 +224,26 @@ execute_parallel_commands() {
             if [ -n "$cmd_value" ] && [ "$cmd_value" != "null" ]; then
                 info "[$command_name] Starting parallel command: $cmd_name"
                 
-                # Execute command in background
+                    # Execute command in background
                 (
                     if echo "$cmd_value" | jq -e 'type == "array"' >/dev/null 2>&1; then
                         # Array command
                         echo "$cmd_value" | jq -r '.[]' 2>/dev/null | while IFS= read -r cmd; do
                             if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
-                                docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"
+                                if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+                                    docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"
+                                else
+                                    /bin/sh -c "$cmd"
+                                fi
                             fi
                         done
                     else
                         # Single command
-                        docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd_value"
+                        if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+                            docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd_value"
+                        else
+                            /bin/sh -c "$cmd_value"
+                        fi
                     fi
                 ) &
                 

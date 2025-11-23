@@ -31,8 +31,17 @@ parse_environment_config() {
         if jq -e '.containerEnv' "$config_file" >/dev/null 2>&1; then
             while IFS='=' read -r key val; do
                 if [ -n "$key" ] && [ -n "$val" ]; then
-                    CONTAINER_ENV+=("$key=$val")
-                    info "containerEnv: $key=$val"
+                    # Sanitize key: allow only alphanumeric and underscores, prefix with '_' if it starts with a digit
+                    local sanitized_key
+                    sanitized_key=$(echo "$key" | sed 's/[^a-zA-Z0-9_]/_/g')
+                    if [[ "$sanitized_key" =~ ^[0-9] ]]; then
+                        sanitized_key="_$sanitized_key"
+                    fi
+                    if [ "$sanitized_key" != "$key" ]; then
+                        warning "Container env key sanitized: '$key' -> '$sanitized_key'"
+                    fi
+                    CONTAINER_ENV+=("$sanitized_key=$val")
+                    info "containerEnv: $sanitized_key=$val"
                 fi
             done < <(jq -r '.containerEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$config_file" 2>/dev/null || echo "")
         fi

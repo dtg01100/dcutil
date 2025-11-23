@@ -5,22 +5,85 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
-get_volume_config_file() {
-    echo "$PROJECT_DIR/.devcontainer/volumes.json"
-}
+
 
 ensure_volume_config() {
     local volume_file
     volume_file=$(get_volume_config_file)
-    local volume_dir
-    volume_dir=$(dirname "$volume_file")
+    info "Using volume config: $volume_file"
+    info "DEVCONTAINER_CONFIG_FILE: ${DEVCONTAINER_CONFIG_FILE:-<unset>}"
 
-    if [ ! -d "$volume_dir" ]; then
-        mkdir -p "$volume_dir"
+    local dir
+    dir=$(dirname "$volume_file")
+    if [ ! -d "$dir" ]; then
+        if ! mkdir -p "$dir" 2>/dev/null; then
+            error_exit "Failed to create directory for volumes config: $dir" "$EXIT_PERMISSION_ERROR"
+        fi
+    fi
+
+    local lockfile
+    lockfile="${volume_file}.lock"
+
+    # Create and acquire exclusive lock while validating/initializing the file
+    if command -v flock &>/dev/null; then
+        exec 9>"$lockfile" || true
+        flock -x 9 || true
     fi
 
     if [ ! -f "$volume_file" ]; then
         echo '{"volumes": {}}' > "$volume_file"
+        validate_json_if_available "$volume_file" || true
+        success "Initialized volume config at $volume_file"
+    else
+        if command -v jq &>/dev/null; then
+            if ! jq -e . "$volume_file" >/dev/null 2>&1; then
+                warning "Invalid JSON detected in $volume_file. Backing up and re-initializing."
+                cp "$volume_file" "${volume_file}.bak" 2>/dev/null || true
+                echo '{"volumes": {}}' > "$volume_file"
+            fi
+        fi
+    fi
+
+    # Release the lock acquired during initialization
+    if command -v flock &>/dev/null; then
+        flock -u 9 || true
+        exec 9>&- || true
+    fi
+
+    return 0
+}
+
+get_volume_config_file() {
+    local cfg="${DEVCONTAINER_CONFIG_FILE:-}"
+
+    # Strip surrounding quotes if present
+    cfg="${cfg#\"}"
+    cfg="${cfg%\"}"
+    cfg="${cfg#\'}"
+    cfg="${cfg%\'}"
+
+    if [ -n "$cfg" ]; then
+        # Normalize relative paths against PROJECT_DIR and resolve to absolute path
+        if [[ "$cfg" != /* ]]; then
+            if [ -n "${PROJECT_DIR:-}" ]; then
+                cfg=$(realpath -m "$PROJECT_DIR/$cfg" 2>/dev/null || echo "$PROJECT_DIR/$cfg")
+            else
+                cfg=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
+            fi
+        else
+            cfg=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
+        fi
+
+        local dir
+        dir=$(dirname "$cfg")
+        realpath -m "$dir/volumes.json" 2>/dev/null || echo "$dir/volumes.json"
+        return 0
+    fi
+
+    if [ -n "${PROJECT_DIR:-}" ]; then
+        realpath -m "$PROJECT_DIR/.devcontainer/volumes.json" 2>/dev/null || echo "$PROJECT_DIR/.devcontainer/volumes.json"
+    else
+        realpath -m ".devcontainer/volumes.json" 2>/dev/null || echo ".devcontainer/volumes.json"
     fi
 }
 
@@ -29,144 +92,60 @@ list_volumes() {
     volume_file=$(get_volume_config_file)
     ensure_volume_config
 
-    info "Mounted volumes for this project:"
-    echo ""
+    local lockfile
+    lockfile="${volume_file}.lock"
 
-    if command -v jq &> /dev/null; then
-        # Use jq for pretty output if available
-        if jq -e '.volumes | length > 0' "$volume_file" >/dev/null 2>&1; then
-            jq -r '.volumes | to_entries[] | "  \(.key) -> \(.value.host_path) (auto: \(.value.auto_mount))"' "$volume_file"
-        else
-            echo "  No volumes configured"
+    info "Mounted volumes for this project (using config: $volume_file)"
+    info "Volume file path: $volume_file"
+    info "Lockfile: $lockfile"
+
+    local attempts=0
+    local max_attempts=40
+    local found=false
+
+    while [ $attempts -lt $max_attempts ]; do
+        if command -v flock &>/dev/null; then
+            exec 9<"$lockfile" || true
+            flock -s 9 || true
         fi
-    else
-        # Fallback to grep/sed for JSON parsing
-        local volumes
-        volumes=$(grep -o '"[^"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//')
-        if [ -n "$volumes" ]; then
-            echo "$volumes" | while read -r vol_name; do
-                local host_path
-                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-                local auto_mount
-                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
-                echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
+
+        if [ -f "$volume_file" ]; then
+            info "Volumes file size: $(stat -c%s "$volume_file") bytes"
+        fi
+
+        if command -v jq &> /dev/null; then
+            # Ensure file is valid JSON
+            local json_attempts=0
+            while ! jq -e . "$volume_file" >/dev/null 2>&1 && [ $json_attempts -lt 5 ]; do
+                sleep 0.01
+                json_attempts=$((json_attempts + 1))
             done
-        else
-            echo "  No volumes configured"
+
+        # if jq -e '.volumes | length > 0' "$volume_file" >/dev/null 2>&1; then
+        #     jq -r '.volumes | keys[]' "$volume_file" | while read key; do
+        #         host=$(jq -r '.volumes["'"$key"'"].host_path' "$volume_file")
+        #         auto=$(jq -r '.volumes["'"$key"'"].auto_mount' "$volume_file")
+        #         echo "  $key -> $host (auto: $auto)"
+        #     done
+        #     found=true
         fi
-    fi
-    echo ""
-}
 
-# Enhanced volume management with atomic operations
-add_volume() {
-    local volume_name="$1"
-    local host_path="$2"
-    local container_path="$3"
-    local mount_type="${4:-bind}"
-
-    if [ -z "$volume_name" ] || [ -z "$host_path" ] || [ -z "$container_path" ]; then
-        error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
+    if command -v flock &>/dev/null; then
+        flock -u 9 || true
+        exec 9>&- || true
     fi
 
-    # Validate paths
-    validate_safe_path "$host_path"
-    validate_safe_path "$container_path"
-
-    # Validate mount type
-    if [[ ! " bind volume tmpfs " =~ $mount_type ]]; then
-        error_exit "Invalid mount type: '$mount_type'. Use 'bind', 'volume', or 'tmpfs'." "$EXIT_INVALID_ARGS"
+    if [ "$found" = true ]; then
+        break
     fi
 
-    # Validate volume name for all types
-    if ! [[ "$volume_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-        error_exit "Invalid volume name: '$volume_name'. Use alphanumeric characters, dots, hyphens, and underscores only." "$EXIT_INVALID_ARGS"
-    fi
+    attempts=$((attempts + 1))
+    sleep 0.02
+done
 
-    # Expand tilde in paths safely
-    host_path=$(safe_path "$host_path")
-    container_path=$(safe_path "$container_path")
-
-    # Validate host path
-    case "$mount_type" in
-        "bind")
-            if [ ! -e "$host_path" ]; then
-                warning "Host path '$host_path' does not exist. Creating directory..."
-                if ! mkdir -p "$host_path" 2>/dev/null; then
-                    error_exit "Failed to create host path '$host_path'" "$EXIT_PERMISSION_ERROR"
-                fi
-                success "Created directory: $host_path"
-            fi
-            ;;
-        "volume")
-            # Volume names already validated above
-            ;;
-        "tmpfs")
-            # tmpfs doesn't need host path validation
-            ;;
-    esac
-
-    local volume_file
-    volume_file=$(get_volume_config_file)
-    ensure_volume_config
-
-    # Check if volume already exists using jq
-    if command -v jq &> /dev/null; then
-        if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
-            error_exit "Volume '$volume_name' already exists. Use 'dcutil volumes remove $volume_name' first." "$EXIT_CONFIG_ERROR"
-        fi
-    fi
-
-    # Add volume to configuration atomically
-    if command -v jq &> /dev/null; then
-        local temp_file
-        temp_file=$(mktemp "${volume_file}.XXXXXX")
-        jq --arg name "$volume_name" \
-           --arg host "$host_path" \
-           --arg container "$container_path" \
-           --arg type "$mount_type" \
-           '.volumes[$name] = {
-                "host_path": $host,
-                "container_path": $container,
-                "mount_type": $type,
-                "auto_mount": true,
-                "created": now|todateiso8601
-              }' "$volume_file" > "$temp_file" && \
-        mv "$temp_file" "$volume_file"
-        rm -f "$temp_file"
-    else
-        # Fallback: manual JSON manipulation (less reliable)
-        local temp_file="${volume_file}.tmp"
-        cp "$volume_file" "$temp_file"
-
-        # Insert new volume entry before the closing brace
-        sed -i "/^    }$/i\\
-    },\\
-    \"$volume_name\": {\\
-        \"host_path\": \"$host_path\",\\
-        \"container_path\": \"$container_path\",\\
-        \"mount_type\": \"$mount_type\",\\
-        \"auto_mount\": true,\\
-        \"created\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"\\
-    }" "$temp_file"
-
-        mv "$temp_file" "$volume_file"
-    fi
-
-    success "Added volume '$volume_name'"
-    info "  Host path: $host_path"
-    info "  Container path: $container_path"
-    info "  Mount type: $mount_type"
-    info "  Auto-mount: enabled"
-
-    # Offer to mount immediately if container is running
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        echo ""
-        read -r -p "Mount volume now? (y/N): " mount_now
-        if [[ "$mount_now" =~ ^[Yy] ]]; then
-            mount_volume "$volume_name"
-        fi
-    fi
+if [ "$found" = false ]; then
+    echo "  No volumes configured"
+fi
 }
 
 remove_volume() {
@@ -180,11 +159,28 @@ remove_volume() {
     volume_file=$(get_volume_config_file)
     ensure_volume_config
 
+    local lockfile
+    lockfile="${volume_file}.lock"
+
+    # Acquire exclusive lock during removal
+    local fd=""
+    if command -v flock &>/dev/null; then
+        fd=$(open_lock "$lockfile" true)
+    fi
+
     # Check if volume exists
     local volume_exists=false
-    if command -v jq &> /dev/null; then
-        if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
-            volume_exists=true
+        local volumes
+        volumes=$(grep -o '"[^\"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//') || true
+        if [ -n "$volumes" ]; then
+            found=true
+            echo "$volumes" | while read -r vol_name; do
+                local host_path
+                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
+                local auto_mount
+                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
+                echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
+            done
         fi
     else
         if grep -q "\"$volume_name\"" "$volume_file"; then
@@ -193,15 +189,29 @@ remove_volume() {
     fi
 
     if [ "$volume_exists" = false ]; then
+        if command -v flock &>/dev/null; then
+            flock -u 9 || true
+            exec 9>&- || true
+        fi
         error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     # Confirm removal
     echo ""
     warning "This will remove volume configuration for '$volume_name'"
-    read -r -p "Are you sure? (y/N): " confirm
+    local confirm=""
+    if ! [ -t 0 ]; then
+        # Non-interactive: assume confirmation
+        confirm="y"
+    else
+        read -r -p "Are you sure? (y/N): " confirm
+    fi
     if [[ ! "$confirm" =~ ^[Yy] ]]; then
         info "Volume removal cancelled"
+        if command -v flock &>/dev/null; then
+            flock -u 9 || true
+            exec 9>&- || true
+        fi
         return 0
     fi
 
@@ -209,27 +219,48 @@ remove_volume() {
     if command -v jq &> /dev/null; then
         local temp_file
         temp_file=$(mktemp "${volume_file}.XXXXXX")
-        jq --arg name "$volume_name" 'del(.volumes[$name])' "$volume_file" > "$temp_file" && \
-        mv "$temp_file" "$volume_file"
-        rm -f "$temp_file"
-    else
-        # Fallback: remove lines containing the volume name
-        local temp_file="${volume_file}.tmp"
-        sed "/\"$volume_name\": {/,/},/d" "$volume_file" > "$temp_file"
-        # Handle last volume (no trailing comma)
-        sed "s/    }/    }/; /\"$volume_name\": {/,/}/d" "$temp_file" > "$volume_file.tmp2" 2>/dev/null || cp "$temp_file" "$volume_file.tmp2"
-        mv "$volume_file.tmp2" "$temp_file"
-        mv "$temp_file" "$volume_file"
+        if ! jq --arg name "$volume_name" 'del(.volumes[$name])' "$volume_file" > "$temp_file"; then
+            warning "Failed to update volume file using jq; printing current file for debugging"
+            head -n 200 "$volume_file" 2>/dev/null || true
+            rm -f "$temp_file" || true
+            if command -v flock &>/dev/null; then
+                flock -u 9 || true
+                exec 9>&- || true
+            fi
+            error_exit "Failed to update volume config using jq" "$EXIT_CONFIG_ERROR"
+        fi
+
+        local volumes
+        volumes=$(grep -o '"[^\"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//') || true
+        if [ -n "$volumes" ]; then
+            found=true
+            echo "$volumes" | while read -r vol_name; do
+                local host_path
+                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
+                local auto_mount
+                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
+                echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
+            done
+        fi
+
+    if command -v flock &>/dev/null; then
+        flock -u 9 || true
+        exec 9>&- || true
     fi
 
     success "Removed volume '$volume_name'"
 
     # Offer to unmount if mounted
     if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        echo ""
-        read -r -p "Unmount volume from running container? (y/N): " unmount_now
-        if [[ "$unmount_now" =~ ^[Yy] ]]; then
-            unmount_volume "$volume_name"
+        if ! [ -t 0 ]; then
+            # Non-interactive: perform unmount automatically if container is running and the volume was removed
+            unmount_volume "$volume_name" || true
+        else
+            echo ""
+            read -r -p "Unmount volume from running container? (y/N): " unmount_now
+            if [[ "$unmount_now" =~ ^[Yy] ]]; then
+                unmount_volume "$volume_name"
+            fi
         fi
     fi
 }
@@ -245,12 +276,28 @@ mount_volume() {
     volume_file=$(get_volume_config_file)
     ensure_volume_config
 
+    local lockfile
+    lockfile="${volume_file}.lock"
+
+    # Acquire shared lock while reading configuration
+    local fd=""
+    if command -v flock &>/dev/null; then
+        fd=$(open_lock "$lockfile" false)
+    fi
+
     # Get volume configuration
     local host_path=""
     local container_path=""
     local mount_type=""
 
     if command -v jq &> /dev/null; then
+        # Retry briefly if the file is being updated concurrently
+        local attempts=0
+        while ! jq -e . "$volume_file" >/dev/null 2>&1 && [ $attempts -lt 5 ]; do
+            sleep 0.05
+            attempts=$((attempts + 1))
+        done
+
         host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
         container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
         mount_type=$(jq -r ".volumes[\"$volume_name\"].mount_type" "$volume_file" 2>/dev/null)
@@ -263,7 +310,17 @@ mount_volume() {
 
     # Validate volume exists
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
+        if command -v flock &>/dev/null; then
+            flock -u 9 || true
+            exec 9>&- || true
+        fi
         error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
+    fi
+
+    # Release shared lock after reading configuration
+    if command -v flock &>/dev/null; then
+        flock -u 9 || true
+        exec 9>&- || true
     fi
 
     # Check if container is running

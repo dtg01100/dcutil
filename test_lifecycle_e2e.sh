@@ -18,7 +18,7 @@ echo "📋 Test 1: List configured lifecycle commands"
 # Test 2: onCreateCommand (image-based)
 echo ""
 echo "🏗️  Test 2: onCreateCommand execution (image-based)"
-if ./dcutil lifecycle run-on-create; then
+if ./dcutil lifecycle; then
     echo "✅ onCreateCommand executed successfully"
 else
     echo "⚠️  onCreateCommand failed (non-critical)"
@@ -36,7 +36,7 @@ if ./dcutil up >/dev/null 2>&1; then
     # Test 4: postStartCommand (container-based)
     echo ""
 echo "🎯 Test 4: postStartCommand execution (container-based)"
-    if ./dcutil lifecycle run-post-start; then
+    if ./dcutil lifecycle; then
         echo "✅ postStartCommand executed successfully"
     else
         echo "❌ postStartCommand failed"
@@ -45,7 +45,7 @@ echo "🎯 Test 4: postStartCommand execution (container-based)"
     # Test 5: postAttachCommand (container-based)
     echo ""
     echo "🔗 Test 5: postAttachCommand execution (container-based)"
-    if ./dcutil lifecycle run-post-attach; then
+    if ./dcutil lifecycle; then
         echo "✅ postAttachCommand executed successfully"
     else
         echo "❌ postAttachCommand failed"
@@ -54,7 +54,7 @@ echo "🎯 Test 4: postStartCommand execution (container-based)"
     # Test 6: updateContentCommand (container-based)
     echo ""
     echo "🔄 Test 6: updateContentCommand execution (container-based)"
-    if ./dcutil lifecycle run-update-content; then
+    if ./dcutil lifecycle; then
         echo "✅ updateContentCommand executed successfully"
     else
         echo "⚠️  updateContentCommand not configured or failed (non-critical)"
@@ -88,7 +88,7 @@ cat > .devcontainer/devcontainer.json << 'EOF'
 }
 EOF
 
-if ./dcutil lifecycle run-post-start; then
+if ./dcutil lifecycle; then
     echo "⚠️  Expected failure but command succeeded"
 else
     echo "✅ Error handling working correctly"
