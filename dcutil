@@ -7,42 +7,47 @@ set -euo pipefail
 
 # Source all modules
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-source "$SCRIPT_DIR/lib/core.sh"
-source "$SCRIPT_DIR/lib/docker.sh"
-source "$SCRIPT_DIR/lib/volumes.sh"
-source "$SCRIPT_DIR/lib/security.sh"
-source "$SCRIPT_DIR/lib/init.sh"
+if [ -d "$LIB_DIR" ]; then
+    LIB_DIR="$LIB_DIR"
+else
+    LIB_DIR="$SCRIPT_DIR/../lib"
+fi
+source "$LIB_DIR/core.sh"
+source "$LIB_DIR/docker.sh"
+source "$LIB_DIR/volumes.sh"
+source "$LIB_DIR/security.sh"
+source "$LIB_DIR/init.sh"
 # features module is optional
-if [ -f "$SCRIPT_DIR/lib/features.sh" ]; then
-    source "$SCRIPT_DIR/lib/features.sh"
+if [ -f "$LIB_DIR/features.sh" ]; then
+    source "$LIB_DIR/features.sh"
 fi
 # lifecycle module is optional
-if [ -f "$SCRIPT_DIR/lib/lifecycle.sh" ]; then
-    source "$SCRIPT_DIR/lib/lifecycle.sh"
+if [ -f "$LIB_DIR/lifecycle.sh" ]; then
+    source "$LIB_DIR/lifecycle.sh"
 fi
 # environment module is optional
-if [ -f "$SCRIPT_DIR/lib/environment.sh" ]; then
-    source "$SCRIPT_DIR/lib/environment.sh"
+if [ -f "$LIB_DIR/environment.sh" ]; then
+    source "$LIB_DIR/environment.sh"
 fi
 # userprobe module is optional
-if [ -f "$SCRIPT_DIR/lib/userprobe.sh" ]; then
-    source "$SCRIPT_DIR/lib/userprobe.sh"
+if [ -f "$LIB_DIR/userprobe.sh" ]; then
+    source "$LIB_DIR/userprobe.sh"
 fi
 # hostrequirements module is optional
-if [ -f "$SCRIPT_DIR/lib/hostrequirements.sh" ]; then
-    source "$SCRIPT_DIR/lib/hostrequirements.sh"
+if [ -f "$LIB_DIR/hostrequirements.sh" ]; then
+    source "$LIB_DIR/hostrequirements.sh"
 fi
 # shutdown module is optional
-if [ -f "$SCRIPT_DIR/lib/shutdown.sh" ]; then
-    source "$SCRIPT_DIR/lib/shutdown.sh"
+if [ -f "$LIB_DIR/shutdown.sh" ]; then
+    source "$LIB_DIR/shutdown.sh"
 fi
 # schema validation module is optional
-if [ -f "$SCRIPT_DIR/lib/schema-validation.sh" ]; then
-    source "$SCRIPT_DIR/lib/schema-validation.sh"
+if [ -f "$LIB_DIR/schema-validation.sh" ]; then
+    source "$LIB_DIR/schema-validation.sh"
 fi
 # podman backend module is optional
-if [ -f "$SCRIPT_DIR/lib/podman.sh" ]; then
-    source "$SCRIPT_DIR/lib/podman.sh"
+if [ -f "$LIB_DIR/podman.sh" ]; then
+    source "$LIB_DIR/podman.sh"
 fi
 
 # Initialize backend system
@@ -89,14 +94,14 @@ test_dcutil_improvements() {
     fi
     
     # Test 4: Check for atomic operations
-    if grep -q "mktemp" "$SCRIPT_DIR/lib/volumes.sh"; then
+    if grep -q "mktemp" "$LIB_DIR/volumes.sh"; then
         echo "✅ Atomic operations implemented"
     else
         echo "❌ Atomic operations not found"
     fi
     
     # Test 5: Check for rate limiting
-    if grep -q "sleep 1" "$SCRIPT_DIR/lib/security.sh"; then
+    if grep -q "sleep 1" "$LIB_DIR/security.sh"; then
         echo "✅ Rate limiting implemented"
     else
         echo "❌ Rate limiting not found"
