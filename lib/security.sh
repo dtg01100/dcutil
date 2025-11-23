@@ -231,16 +231,16 @@ install_agent() {
             ;;
         "aider")
             echo "1) No configuration access"
-            echo "2) Mount ~/.aider.toml file (recommended)"
+            echo "2) Mount ~/.aider.conf.yml file (recommended)"
             echo ""
-            read -r -p "Enter choice [1-None, 2-Mount ~/.aider.toml] [1]: " user_config_choice
+            read -r -p "Enter choice [1-None, 2-Mount ~/.aider.conf.yml] [1]: " user_config_choice
             user_config_choice=${user_config_choice:-1}
             if [ "$user_config_choice" = "2" ]; then
-                if [ -f "$HOME/.aider.toml" ]; then
-                    config_mount="--mount type=bind,source=$HOME/.aider.toml,target=/home/vscode/.aider.toml"
+                if [ -f "$HOME/.aider.conf.yml" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.aider.conf.yml,target=/home/vscode/.aider.conf.yml"
                     info "Will mount aider configuration"
                 else
-                    warning "$HOME/.aider.toml file not found, skipping configuration mount"
+                    warning "$HOME/.aider.conf.yml file not found, skipping configuration mount"
                 fi
             fi
             ;;
