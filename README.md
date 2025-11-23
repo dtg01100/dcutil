@@ -48,7 +48,7 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 - `restart` - Restart the devcontainer
 - `enter` - Enter the container shell (offers to start if stopped)
 - `build` - Build the devcontainer image
-- `clean` - Remove the devcontainer and clean up
+- `clean` - Remove containers, volumes, and configuration files
 - `status` - Show container status
 - `logs` - Show container logs
 - `list` - List running devcontainers

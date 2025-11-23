@@ -748,14 +748,24 @@ docker_enter() {
 
 # Check devcontainer status
 docker_status() {
+    local project_dir="${1:-}"
     info "Checking container status..."
-    
+
+    # Set project directory
+    if [ -z "$project_dir" ]; then
+        project_dir="$(pwd)"
+    fi
+    PROJECT_DIR="$project_dir"
+
+    # Set container name for this project
+    CONTAINER_NAME=$(get_container_name_for_project "$project_dir")
+
     # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_status
         return 0
     fi
-    
+
 # Check if container exists
     if command -v execute_container_command >/dev/null 2>&1; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
@@ -945,6 +955,22 @@ docker_clean() {
                 docker volume rm "$volume" 2>/dev/null || true
             fi
         done
+    fi
+
+    # Remove devcontainer configuration files
+    if [ -d "$PROJECT_DIR/.devcontainer" ]; then
+        info "Removing devcontainer configuration directory..."
+        rm -rf "$PROJECT_DIR/.devcontainer" 2>/dev/null || true
+    fi
+
+    if [ -f "$PROJECT_DIR/devcontainer.json" ]; then
+        info "Removing devcontainer.json file..."
+        rm -f "$PROJECT_DIR/devcontainer.json" 2>/dev/null || true
+    fi
+
+    if [ -f "$PROJECT_DIR/.devcontainer.json" ]; then
+        info "Removing .devcontainer.json file..."
+        rm -f "$PROJECT_DIR/.devcontainer.json" 2>/dev/null || true
     fi
     
     # Remove orphan containers matching the naming scheme to keep CI clean

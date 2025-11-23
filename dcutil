@@ -218,7 +218,7 @@ local -a commands
         'restart:Restart the devcontainer'
         'enter:Enter the container shell'
         'build:Build the devcontainer image'
-        'clean:Remove the devcontainer and clean up'
+        'clean:Remove containers, volumes, and configuration files'
         'status:Show container status'
         'logs:Show container logs'
         'list:List running devcontainers'
@@ -1856,7 +1856,7 @@ Commands:
   restart     Restart the devcontainer
   enter       Enter the running devcontainer
   build       Build the devcontainer image
-  clean       Clean up devcontainer resources
+   clean       Remove containers, volumes, and configuration files
   status      Show devcontainer status
   logs        Show devcontainer logs
   list        List available devcontainers
