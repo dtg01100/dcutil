@@ -232,10 +232,13 @@ wizard_with_dialog() {
         info "wizard_with_dialog: parsed $(echo "$parsed_templates" | wc -l) templates"
 
         while IFS= read -r template; do
-            if [ -n "$template" ] && [ $i -le 20 ]; then  # Limit to 20 templates for menu
-                template_list="$template_list $i '$template'"
-                template_names="$template_names $template"
-                i=$((i + 1))
+            if [ -n "$template" ] && [ $i -le 10 ]; then  # Limit to 10 templates for testing
+                # Skip templates with hyphens that might cause issues
+                if [[ "$template" != *-* ]]; then
+                    template_list="$template_list $i '$template'"
+                    template_names="$template_names $template"
+                    i=$((i + 1))
+                fi
             fi
         done <<< "$parsed_templates"
     fi
