@@ -224,19 +224,24 @@ wizard_with_dialog() {
     local template_names=""
     local i=1
 
+    info "wizard_with_dialog: templates_json length: $(echo "$templates_json" | wc -c)"
+
     if command -v jq >/dev/null 2>&1; then
+        local parsed_templates
+        parsed_templates=$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null | head -20)
+        info "wizard_with_dialog: parsed $(echo "$parsed_templates" | wc -l) templates"
+
         while IFS= read -r template; do
             if [ -n "$template" ] && [ $i -le 20 ]; then  # Limit to 20 templates for menu
                 template_list="$template_list $i \"$template\""
                 template_names="$template_names $template"
                 i=$((i + 1))
             fi
-        done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null | head -20)"
+        done <<< "$parsed_templates"
     fi
 
     template_list="$template_list $i \"Custom image\""
-
-    info "Loaded $((i-1)) templates from API"
+    info "wizard_with_dialog: final template_list: $template_list"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 15 50 4 \
