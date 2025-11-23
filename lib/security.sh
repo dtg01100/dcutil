@@ -399,18 +399,37 @@ install_agent() {
 
     # If config mounting requested, set it up before installation
     if [ -n "$config_mount" ]; then
-        info "Setting up configuration pass-through..."
-        # Parse the mount specification to add to devcontainer.json
-        # config_mount is like "--mount type=bind,source=/home/user/.config/opencode,target=/home/vscode/.opencode"
-        # We need to convert it to JSON format for devcontainer.json
-
-        # Extract the mount details
-        local mount_source=""
-        local mount_target=""
-        if [[ "$config_mount" == *"--mount type=bind,source="* ]]; then
-            mount_source=$(echo "$config_mount" | sed 's/.*--mount type=bind,source=\([^,]*\).*/\1/')
-            mount_target=$(echo "$config_mount" | sed 's/.*target=\([^"]*\).*/\1/')
+        # Add mounts for opencode directories
+        local mounts_added=false
+        if [ -d "$HOME/.local/share/opencode" ]; then
+            local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.local/share/opencode\", \"target\": \"/home/vscode/.local/share/opencode\"}"
+            jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            mounts_added=true
         fi
+        if [ -d "$HOME/.opencode" ]; then
+            local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.opencode\", \"target\": \"/home/vscode/.opencode\"}"
+            jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            mounts_added=true
+        fi
+        if [ "$mounts_added" = true ]; then
+            info "Added configuration mounts to $config_file"
+
+            # Stop and remove the current container so it gets recreated with the new mount
+            CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+            if [ -n "$CONTAINER_ID" ]; then
+                info "Stopping and removing current container to apply new configuration..."
+                docker stop "$CONTAINER_ID" 2>/dev/null || true
+                docker rm "$CONTAINER_ID" 2>/dev/null || true
+            fi
+
+            # Recreate the container with the updated configuration
+            info "Recreating container with configuration pass-through..."
+            docker_up "$PROJECT_DIR"
+
+            # Configuration mounts are now active
+            info "Configuration pass-through enabled"
+        fi
+    fi
 
         # Add mounts for opencode directories
         local mounts_added=false
