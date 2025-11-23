@@ -378,6 +378,64 @@ fi
 
 validate_command "$COMMAND"
 
+# Print usage information
+print_usage() {
+    cat << 'EOF'
+Usage: dcutil <command> [options]
+
+Devcontainer management tool for enhanced development environments.
+
+Quick Start:
+  dcutil up                    Start devcontainer
+  dcutil enter                 Enter running devcontainer
+  dcutil down                  Stop devcontainer
+  dcutil restart               Restart devcontainer
+
+Commands:
+  up          Start the devcontainer (build if needed)
+  down        Stop and clean up the devcontainer
+  restart     Restart the devcontainer
+  enter       Enter the running devcontainer
+  build       Build the devcontainer image
+   clean       Remove containers, volumes, and configuration files
+  status      Show devcontainer status
+  logs        Show devcontainer logs
+  list        List available devcontainers
+  run         Run a command in the devcontainer
+  init        Initialize devcontainer setup
+  install-agent Install authentication agent in container
+  ssh         SSH key management
+  volumes     Volume management commands
+  compose     Docker Compose environment commands
+  features    Devcontainer Features management
+  advanced    Advanced devcontainer features
+  integration Tool integration features
+  merging     Image metadata merging
+  userprobe   User environment probing
+  hostrequirements Host system requirements validation
+  shutdown    Container shutdown actions
+  hostrequirements Host system requirements validation
+  shutdown    Container shutdown actions
+  rebuild     Rebuild devcontainer with options
+  help        Show this help message
+  completion  Setup shell completion
+  test        Test dcutil improvements
+
+Examples:
+  dcutil up                    # Start devcontainer
+  dcutil enter                 # Enter container
+  dcutil volumes list          # List volumes
+  dcutil features install      # Install features
+  dcutil compose up            # Start compose environment
+  dcutil hostrequirements validate  # Validate system requirements
+
+For more information on specific commands, use:
+  dcutil <command> help
+
+Documentation: https://github.com/microsoft/devcontainer-spec
+EOF
+}
+
 # Handle help command before any other processing
 if [ "$COMMAND" = "help" ] || [ "$COMMAND" = "-h" ] || [ "$COMMAND" = "--help" ]; then
     print_usage
@@ -1777,7 +1835,6 @@ case "$COMMAND" in
 
         case "$subcommand" in
             "execute")
-                local container_name
                 container_name=$(determine_container_name 2>/dev/null || echo "")
                 if [ -z "$container_name" ]; then
                     error_exit "No container name determined. Use 'dcutil shutdown help' for usage." "$EXIT_CONFIG_ERROR"
@@ -1838,61 +1895,4 @@ case "$COMMAND" in
     esac
 
 # Print main usage help
-print_usage() {
-    cat << 'EOF'
-Usage: dcutil <command> [options]
-
-Devcontainer management tool for enhanced development environments.
-
-Quick Start:
-  dcutil up                    Start devcontainer
-  dcutil enter                 Enter running devcontainer
-  dcutil down                  Stop devcontainer
-  dcutil restart               Restart devcontainer
-
-Commands:
-  up          Start the devcontainer (build if needed)
-  down        Stop and clean up the devcontainer
-  restart     Restart the devcontainer
-  enter       Enter the running devcontainer
-  build       Build the devcontainer image
-   clean       Remove containers, volumes, and configuration files
-  status      Show devcontainer status
-  logs        Show devcontainer logs
-  list        List available devcontainers
-  run         Run a command in the devcontainer
-  init        Initialize devcontainer setup
-  install-agent Install authentication agent in container
-  ssh         SSH key management
-  volumes     Volume management commands
-  compose     Docker Compose environment commands
-  features    Devcontainer Features management
-  advanced    Advanced devcontainer features
-  integration Tool integration features
-  merging     Image metadata merging
-  userprobe   User environment probing
-  hostrequirements Host system requirements validation
-  shutdown    Container shutdown actions
-  hostrequirements Host system requirements validation
-  shutdown    Container shutdown actions
-  rebuild     Rebuild devcontainer with options
-  help        Show this help message
-  completion  Setup shell completion
-  test        Test dcutil improvements
-
-Examples:
-  dcutil up                    # Start devcontainer
-  dcutil enter                 # Enter container
-  dcutil volumes list          # List volumes
-  dcutil features install      # Install features
-  dcutil compose up            # Start compose environment
-  dcutil hostrequirements validate  # Validate system requirements
-
-For more information on specific commands, use:
-  dcutil <command> help
-
-Documentation: https://github.com/microsoft/devcontainer-spec
-EOF
-}
-
 exit $EXIT_SUCCESS

@@ -151,34 +151,41 @@ choose_features() {
     echo "0) No additional features" >&2
     echo "" >&2
 
-    local selected_features=()
+    local selected_features=""
     while true; do
-        read -r -p "Choose features (comma-separated numbers, or 0 for none): " choices >&2
+        read -r -p "Choose features (comma-separated numbers, or 0 for none): " choices
         if [ "$choices" = "0" ] || [ -z "$choices" ]; then
+            selected_features=""
             break
         fi
 
         # Parse comma-separated choices
         local valid=true
+        local feature_list=""
         IFS=',' read -ra choice_array <<< "$choices"
         for choice in "${choice_array[@]}"; do
             choice=$(echo "$choice" | xargs)  # trim whitespace
             if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$i" ]; then
-                selected_features+=("${feature_array[$((choice-1))]}")
+                if [ -n "$feature_list" ]; then
+                    feature_list="$feature_list ${feature_array[$((choice-1))]}"
+                else
+                    feature_list="${feature_array[$((choice-1))]}"
+                fi
             else
-                echo "Invalid choice: $choice. Please enter numbers between 1 and $((i-1))." >&2
+                echo "Invalid choice: $choice. Please enter numbers between 1 and $((i-1))."
                 valid=false
                 break
             fi
         done
 
         if [ "$valid" = true ]; then
+            selected_features="$feature_list"
             break
         fi
     done
 
-    # Return JSON array of selected features
-    printf '%s\n' "${selected_features[@]}" | jq -R . | jq -s .
+    # Return space-separated list (will be converted to JSON later)
+    echo "$selected_features"
 }
 
 # Check if dialog is available for enhanced UI
@@ -212,7 +219,7 @@ wizard_with_dialog() {
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 25 70 20 \
-        $template_list 2>/dev/null)
+        "$template_list" 2>/dev/null)
     local dialog_exit=$?
     info "DEBUG: Template dialog exit code: $dialog_exit, selected: '$selected_template_num'"
 
@@ -265,7 +272,6 @@ mount_choice=1
 chown_choice=1
 EOF
         return 1
-    fi
     fi
 
     # Container name
@@ -492,28 +498,7 @@ EOF
                 mount_choice=${mount_choice:-Y}
             fi
 
-            # Map template to project choice for backward compatibility
-            case "$selected_template" in
-                "basic"|"ubuntu")
-                    project_choice=1
-                    ;;
-                "javascript-node"|"typescript-node"|*node*)
-                    project_choice=2
-                    ;;
-                "python"|*python*)
-                    project_choice=3
-                    ;;
-                "go"|*go*)
-                    project_choice=4
-                    ;;
-                "custom")
-                    project_choice=5
-                    ;;
-                *)
-                    # For unknown templates, treat as custom
-                    project_choice=5
-                    ;;
-            esac
+            # selected_template is used directly in the dialog path
 
             # Get container name
             read -r -p "Container name [My Project]: " container_name
@@ -635,7 +620,7 @@ EOF
                     read -r -p "Continue and write configuration anyway? (y/N): " cont_choice
                     if [[ ! "$cont_choice" =~ ^[Yy] ]]; then
                         info "Cancelling init"
-                        exit $EXIT_SUCCESS
+                        exit "$EXIT_SUCCESS"
                     fi
                 fi
             fi
