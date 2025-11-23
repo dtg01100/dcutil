@@ -235,7 +235,7 @@ wizard_with_dialog() {
             if [ -n "$template" ] && [ $i -le 10 ]; then  # Limit to 10 templates for testing
                 # Skip templates with hyphens that might cause issues
                 if [[ "$template" != *-* ]]; then
-                    template_list="$template_list $i '$template'"
+                    template_list="$template_list $i $template"
                     template_names="$template_names $template"
                     i=$((i + 1))
                 fi
@@ -243,7 +243,7 @@ wizard_with_dialog() {
         done <<< "$parsed_templates"
     fi
 
-    template_list="$template_list $i 'Custom image'"
+    template_list="$template_list $i Custom-image"
     info "wizard_with_dialog: final template_list: $template_list"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
