@@ -257,6 +257,53 @@ wizard_with_dialog() {
     fi
     info "Selected template: $selected_template"
 
+    # Feature selection
+    local feature_list=""
+    i=1
+
+    if command -v jq >/dev/null 2>&1; then
+        while IFS= read -r feature; do
+            if [ -n "$feature" ] && [ $i -le 15 ]; then  # Limit to 15 features for dialog
+                feature_list="$feature_list $i $feature off"
+                i=$((i + 1))
+            fi
+        done <<< "$(echo "$features_json" | jq -r '.[].name' 2>/dev/null | head -15)"
+    fi
+
+    if [ -n "$feature_list" ]; then
+        local selected_feature_nums
+        selected_feature_nums=$(dialog --stdout --title "Devcontainer Features" \
+            --checklist "Select additional features to install:" 20 70 10 \
+            $feature_list 2>/dev/null)
+        dialog_exit=$?
+
+        if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
+            # User cancelled
+            return 1
+        elif [ $dialog_exit -ne 0 ]; then
+            # Error
+            return 1
+        fi
+
+        # Convert selected feature numbers to feature names
+        local feature_names=""
+        if command -v jq >/dev/null 2>&1; then
+            feature_names=$(echo "$features_json" | jq -r '.[].name' 2>/dev/null | head -15)
+        fi
+
+        selected_features=""
+        for num in $selected_feature_nums; do
+            if [ "$num" -gt 0 ] && [ "$num" -le 15 ]; then
+                local feature_name
+                feature_name=$(echo "$feature_names" | sed -n "${num}p")
+                if [ -n "$feature_name" ]; then
+                    selected_features="$selected_features $feature_name"
+                fi
+            fi
+        done
+        selected_features=$(echo "$selected_features" | sed 's/^ *//')  # Trim leading space
+    fi
+
     # Container name
     local container_name
     container_name=$(dialog --stdout --title "Container Configuration" \
