@@ -199,20 +199,10 @@ install_agent() {
     check_devcontainer_cli
     check_docker_daemon
 
-    # Get container name for this project
-    local CONTAINER_NAME
-    CONTAINER_NAME=$(get_container_name_for_project "$PROJECT_DIR")
-    info "Using container: $CONTAINER_NAME"
-
     # Check if container is running
-    local container_running=false
-    if docker container inspect "$CONTAINER_NAME" &>/dev/null && docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-        container_running=true
-    fi
-
-    if [ "$container_running" = false ]; then
+    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
         warning "Container is not running. Starting it first..."
-        if ! docker start "$CONTAINER_NAME" 2>/dev/null; then
+        if ! devcontainer up --workspace-folder . 2>/dev/null; then
             error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
@@ -305,7 +295,7 @@ install_agent() {
 
         USE_PORTABLE=false
         # Try to set up portable Python
-        if docker exec "$CONTAINER_NAME" /bin/bash -c "PLATFORM=\$PLATFORM;
+        if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=\$PLATFORM;
             if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
                 exit 0
             fi
@@ -341,7 +331,7 @@ install_agent() {
 
         if [ "$USE_PORTABLE" = "true" ]; then
             # Create venv with portable Python
-            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+            if ! devcontainer exec --workspace-folder . /bin/bash -c "
                 mkdir -p $VENV_DIR
                 $PYTHON_BIN_DIR/bin/python3 -m venv $VENV_DIR
             " 2>/dev/null; then
@@ -352,7 +342,7 @@ install_agent() {
 
         if [ "$USE_PORTABLE" != "true" ]; then
             # Fallback to system Python virtual environment
-            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+            if ! devcontainer exec --workspace-folder . /bin/bash -c "
                 if ! python3 -m venv --help > /dev/null 2>&1; then
                     apt-get update && apt-get install -y python3-venv
                 fi
@@ -376,7 +366,7 @@ install_agent() {
     fi
     
     # Enhanced security: use restricted shell for installations
-    if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+    if ! devcontainer exec --workspace-folder . /bin/bash -c "
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
         exec $INSTALL_CMD
@@ -384,66 +374,24 @@ install_agent() {
         error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
-# Apply configuration mounts if specified
+    # Apply configuration mounts if specified
     if [ -n "$config_mount" ]; then
-        info "Setting up configuration pass-through..."
-        
-        # Parse the mount specifications and add to devcontainer.json
-        local config_file=""
-        if [ -f ".devcontainer/devcontainer.json" ]; then
-            config_file=".devcontainer/devcontainer.json"
-        elif [ -f ".devcontainer.json" ]; then
-            config_file=".devcontainer.json"
-        fi
-
-        if [ -n "$config_file" ] && command -v jq &> /dev/null; then
-            # Check if mounts already exist to avoid duplicates
-            if echo "$config_mount" | grep -q "opencode"; then
-                # Remove any existing opencode mounts
-                jq '.mounts = (.mounts // [] | map(select(if type == "object" then (.target | test("/opencode$")) | not else true end)))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            if echo "$config_mount" | grep -q "aider"; then
-                # Remove any existing aider mounts
-                jq '.mounts = (.mounts // [] | map(select(if type == "object" then (.target | test("/aider")) | not else true end)))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            if echo "$config_mount" | grep -q "config"; then
-                # Remove any existing config mounts
-                jq '.mounts = (.mounts // [] | map(select(if type == "object" then (.target | test("/config$")) | not else true end)))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            
-            # Add new mounts
-            if echo "$config_mount" | grep -q "/home/vscode/.local/share/opencode"; then
-                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.local/share/opencode\", \"target\": \"/home/vscode/.local/share/opencode\"}"
-                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            if echo "$config_mount" | grep -q "/home/vscode/.opencode"; then
-                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.opencode\", \"target\": \"/home/vscode/.opencode\"}"
-                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            if echo "$config_mount" | grep -q "/home/vscode/.aider.conf.yml"; then
-                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.aider.conf.yml\", \"target\": \"/home/vscode/.aider.conf.yml\"}"
-                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            if echo "$config_mount" | grep -q "/home/vscode/.config"; then
-                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.config\", \"target\": \"/home/vscode/.config\"}"
-                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-            fi
-            info "Added configuration mounts to $config_file"
-        fi
-
-        # Stop and remove the current container so it gets recreated with the new mount
+        info "Mounting configuration files..."
+        # Get container ID and apply mount
         CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
         if [ -n "$CONTAINER_ID" ]; then
-            info "Stopping and removing current container to apply new configuration..."
-            docker stop "$CONTAINER_ID" 2>/dev/null || true
-            docker rm "$CONTAINER_ID" 2>/dev/null || true
+            # Note: Docker mount options would need to be applied at container creation time
+            # For now, we'll copy configuration files
+            case "$AGENT" in
+                "aider")
+                    if [ -f "$HOME/.aider.toml" ]; then
+                        docker cp "$HOME/.aider.toml" "$CONTAINER_ID:/home/vscode/.aider.toml" 2>/dev/null && \
+                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null
+                    fi
+                    ;;
+            esac
+            info "Configuration files copied to container"
         fi
-
-        # Recreate the container with the updated configuration
-        info "Recreating container with configuration pass-through..."
-        docker_up "$PROJECT_DIR"
-
-        info "Configuration pass-through enabled"
     fi
 
     info "Installation completed, running security scans..."
