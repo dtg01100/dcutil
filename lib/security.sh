@@ -252,10 +252,17 @@ install_agent() {
                     echo ""
                     read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
                     user_config_choice=${user_config_choice:-1}
-                    if [ "$user_config_choice" = "2" ]; then
+                if [ "$user_config_choice" = "2" ]; then
+                    warning "⚠️  SECURITY WARNING: Mounting config directories may expose sensitive information (API keys, auth tokens) to the container."
+                    read -r -p "Do you understand the security implications and want to proceed? (y/N): " security_confirm
+                    security_confirm=${security_confirm:-N}
+                    if [[ "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
                         config_mount="--mount type=bind,source=$opencode_config_dir,target=/home/vscode/.opencode"
                         info "Will mount opencode configuration"
+                    else
+                        info "Config mounting cancelled for security reasons"
                     fi
+                fi
                 fi
             fi
             ;;
@@ -267,8 +274,15 @@ install_agent() {
                 read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
                 user_config_choice=${user_config_choice:-1}
                 if [ "$user_config_choice" = "2" ]; then
-                    config_mount="--mount type=bind,source=$HOME/.aider.conf.yml,target=/home/vscode/.aider.conf.yml"
-                    info "Will mount aider configuration"
+                    warning "⚠️  SECURITY WARNING: The aider config file contains API keys and sensitive authentication data."
+                    read -r -p "Do you understand the security implications and want to proceed? (y/N): " security_confirm
+                    security_confirm=${security_confirm:-N}
+                    if [[ "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+                        config_mount="--mount type=bind,source=$HOME/.aider.conf.yml,target=/home/vscode/.aider.conf.yml"
+                        info "Will mount aider configuration"
+                    else
+                        info "Config mounting cancelled for security reasons"
+                    fi
                 fi
             fi
             ;;
@@ -280,8 +294,15 @@ install_agent() {
                 read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
                 user_config_choice=${user_config_choice:-1}
                 if [ "$user_config_choice" = "2" ]; then
-                    config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
-                    info "Will mount configuration directory"
+                    warning "⚠️  SECURITY WARNING: The ~/.config directory may contain sensitive information including API keys, authentication tokens, and personal data from various applications."
+                    read -r -p "Do you understand the security implications and want to proceed? (y/N): " security_confirm
+                    security_confirm=${security_confirm:-N}
+                    if [[ "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+                        config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
+                        info "Will mount configuration directory"
+                    else
+                        info "Config mounting cancelled for security reasons"
+                    fi
                 fi
             fi
             ;;
