@@ -3,6 +3,8 @@
 # Main dcutil script
 # Routes commands to appropriate modules
 
+VERSION="v1.0.5"
+
 set -euo pipefail
 
 # Source all modules
@@ -1900,7 +1902,7 @@ case "$COMMAND" in
         test_dcutil_improvements
         ;;
     "version")
-        echo "dcutil $(git describe --tags 2>/dev/null || echo 'unknown')"
+        echo "dcutil $VERSION"
         ;;
     "help"|"-h"|"--help")
         print_usage
