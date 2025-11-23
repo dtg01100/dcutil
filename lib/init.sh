@@ -211,6 +211,9 @@ wizard_with_dialog() {
     local templates_json="$1"
     local features_json="$2"
 
+    # Initialize variables
+    local selected_features=""
+
     # Template selection - simplified for testing
     local template_list="1 alpine 2 python 3 javascript-node 4 Custom"
     local template_names="alpine python javascript-node Custom"
