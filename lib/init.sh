@@ -224,33 +224,22 @@ wizard_with_dialog() {
     local template_names=""
     local i=1
 
-    info "wizard_with_dialog: templates_json length: $(echo "$templates_json" | wc -c)"
-
     if command -v jq >/dev/null 2>&1; then
-        local parsed_templates
-        parsed_templates=$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null | head -20)
-        info "wizard_with_dialog: parsed $(echo "$parsed_templates" | wc -l) templates"
-
         while IFS= read -r template; do
-            if [ -n "$template" ] && [ $i -le 10 ]; then  # Limit to 10 templates for testing
-                # Skip templates with hyphens that might cause issues
-                if [[ "$template" != *-* ]]; then
-                    template_list="$template_list $i $template"
-                    template_names="$template_names $template"
-                    i=$((i + 1))
-                fi
+            if [ -n "$template" ] && [ $i -le 20 ]; then  # Limit to 20 templates for menu
+                template_list="$template_list $i $template"
+                template_names="$template_names $template"
+                i=$((i + 1))
             fi
-        done <<< "$parsed_templates"
+        done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null | head -20)"
     fi
 
     template_list="$template_list $i Custom-image"
-    info "wizard_with_dialog: final template_list: $template_list"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 25 70 12 \
-        $template_list)
+        $template_list 2>/dev/null)
     local dialog_exit=$?
-    info "Template dialog exit code: $dialog_exit, selected: '$selected_template_num'"
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
         # User cancelled or pressed ESC
@@ -389,14 +378,11 @@ EOF
             ;;
         "--wizard"|"wizard"|"")
     # Get available templates and features
-    info "Fetching templates and features..."
     local templates_json
     templates_json=$(fetch_available_templates)
-    info "Templates JSON length: $(echo "$templates_json" | wc -c)"
 
     local features_json
     features_json=$(fetch_available_features)
-    info "Features JSON length: $(echo "$features_json" | wc -c)"
 
             # Use dialog interface if available, otherwise fallback to text
             if has_dialog; then
