@@ -182,6 +182,116 @@ choose_features() {
     printf '%s\n' "${selected_features[@]}" | jq -R . | jq -s .
 }
 
+# Check if dialog is available for enhanced UI
+has_dialog() {
+    command -v dialog >/dev/null 2>&1
+}
+
+# Enhanced wizard with dialog interface
+wizard_with_dialog() {
+    local templates_json="$1"
+    local features_json="$2"
+
+    # Template selection
+    local template_list=""
+    local template_names=""
+    local i=1
+
+    if command -v jq >/dev/null 2>&1; then
+        while IFS= read -r template; do
+            if [ -n "$template" ]; then
+                template_list="$template_list $i \"$template\""
+                template_names="$template_names $template"
+                i=$((i + 1))
+            fi
+        done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null || echo "")"
+    fi
+
+    template_list="$template_list $i \"Custom image\""
+
+    local selected_template_num
+    selected_template_num=$(dialog --title "Devcontainer Template Selection" \
+        --menu "Choose a devcontainer template:" 20 60 15 \
+        $template_list \
+        2>&1 >/dev/tty)
+
+    local selected_template=""
+    if [ "$selected_template_num" = "$i" ]; then
+        selected_template="custom"
+    elif [ -n "$selected_template_num" ] && [ "$selected_template_num" -gt 0 ] && [ "$selected_template_num" -le $((i-1)) ]; then
+        # Convert space-separated template_names to array and get the selected one
+        local template_array=($template_names)
+        selected_template="${template_array[$((selected_template_num-1))]}"
+    fi
+
+    # Feature selection
+    local feature_list=""
+    i=1
+
+    if command -v jq >/dev/null 2>&1; then
+        while IFS= read -r feature; do
+            if [ -n "$feature" ]; then
+                feature_list="$feature_list $i \"$feature\" off"
+                i=$((i + 1))
+            fi
+        done <<< "$(echo "$features_json" | jq -r '.[].name' 2>/dev/null || echo "")"
+    fi
+
+    local selected_features=""
+    if [ -n "$feature_list" ]; then
+        selected_features=$(dialog --title "Devcontainer Features" \
+            --checklist "Select additional features to install:" 20 60 10 \
+            $feature_list \
+            2>&1 >/dev/tty)
+    fi
+
+    # Container name
+    local container_name
+    container_name=$(dialog --title "Container Configuration" \
+        --inputbox "Container name:" 8 40 "My Project" \
+        2>&1 >/dev/tty)
+
+    # Workspace folder
+    local workspace_folder
+    workspace_folder=$(dialog --title "Container Configuration" \
+        --inputbox "Workspace folder inside container:" 8 40 "/workspaces" \
+        2>&1 >/dev/tty)
+
+    # Container user
+    local container_user
+    container_user=$(dialog --title "Container Configuration" \
+        --inputbox "Container user (name or UID[:GID]):" 8 40 "vscode" \
+        2>&1 >/dev/tty)
+
+    # Mount options
+    local mount_choice
+    dialog --title "Mount Options" \
+        --yesno "Map host project directory to container workspace?" 6 50 \
+        2>&1 >/dev/tty
+    mount_choice=$?
+
+    # Chown options
+    local chown_choice
+    dialog --title "Permissions" \
+        --yesno "Set ownership of workspace to container user?" 6 50 \
+        2>&1 >/dev/tty
+    chown_choice=$?
+
+    # Clear dialog artifacts
+    clear
+
+    # Output results for capture
+    cat << EOF
+selected_template="$selected_template"
+selected_features="$selected_features"
+container_name="$container_name"
+workspace_folder="$workspace_folder"
+container_user="$container_user"
+mount_choice=$mount_choice
+chown_choice=$chown_choice
+EOF
+}
+
 # Parse init options
 init_mode() {
     local INIT_MODE="${1:-wizard}"
@@ -244,22 +354,93 @@ EOF
             info "Run 'dcutil up' to start the container"
             ;;
         "--wizard"|"wizard"|"")
-            info "Devcontainer Initialization Wizard"
-            echo ""
-
-            # Get available templates and let user choose
+            # Get available templates and features
             local templates_json
             templates_json=$(fetch_available_templates)
 
-            local selected_template
-            selected_template=$(choose_template "$templates_json")
-
-            # Get available features and let user choose
             local features_json
             features_json=$(fetch_available_features)
 
-            local selected_features_json
-            selected_features_json=$(choose_features "$features_json")
+            # Use dialog interface if available, otherwise fallback to text
+            if has_dialog && [ -t 0 ] && [ -t 1 ]; then
+                info "Devcontainer Initialization Wizard (Enhanced UI)"
+                echo ""
+
+                # Capture dialog results
+                local dialog_output
+                dialog_output=$(wizard_with_dialog "$templates_json" "$features_json")
+
+                # Parse the output
+                eval "$dialog_output"
+
+                # Convert dialog results to expected format
+                case $mount_choice in
+                    0) mount_choice="Y" ;;
+                    *) mount_choice="n" ;;
+                esac
+
+                case $chown_choice in
+                    0) chown_choice="Y" ;;
+                    *) chown_choice="n" ;;
+                esac
+
+                # Convert selected features to JSON array
+                if [ -n "$selected_features" ]; then
+                    selected_features_json=$(echo "$selected_features" | tr ' ' '\n' | jq -R . | jq -s .)
+                else
+                    selected_features_json="[]"
+                fi
+
+                # Set defaults for dialog path
+                container_user_input=${container_user:-vscode}
+
+                # Validate workspace folder for dialog path
+                if [ -n "$workspace_folder" ]; then
+                    validate_workspace_folder "$workspace_folder" || workspace_folder="/workspaces"
+                else
+                    workspace_folder="/workspaces"
+                fi
+            else
+                info "Devcontainer Initialization Wizard"
+                echo ""
+
+                local selected_template
+                selected_template=$(choose_template "$templates_json")
+
+                local selected_features_json
+                selected_features_json=$(choose_features "$features_json")
+
+                # Get container name
+                read -r -p "Container name [My Project]: " container_name
+                container_name=${container_name:-"My Project"}
+
+                # Prompt for workspace folder (validate)
+                while true; do
+                    read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
+                    workspace_folder=${workspace_folder:-/workspaces}
+                    validate_workspace_folder "$workspace_folder"
+                    case $? in
+                        0) break;;
+                        1) echo "Invalid input: workspace folder cannot be empty";;
+                        2) echo "Workspace folder must be an absolute path (start with /)";;
+                        3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
+                        4) echo "Workspace folder must not have leading or trailing whitespace";;
+                        *) echo "Invalid workspace folder";;
+                    esac
+                done
+
+                # Prompt for container user (supports name or numeric UID[:GID])
+                read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
+                container_user_input=${container_user_input:-vscode}
+
+                # Ask whether to set ownership of the workspace
+                read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
+                chown_choice=${chown_choice:-Y}
+
+                # Ask whether to mount host project dir into container workspace
+                read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
+                mount_choice=${mount_choice:-Y}
+            fi
 
             # Map template to project choice for backward compatibility
             case "$selected_template" in
