@@ -232,72 +232,66 @@ download_feature() {
     local feature_spec="$1"
     local parsed_spec
     parsed_spec=$(parse_feature_spec "$feature_spec")
-    
+
     local feature_id="${parsed_spec%:*}"
     local feature_version="${parsed_spec#*:}"
-    
+
     info "Downloading feature: $feature_id@$feature_version"
-    
-    # Construct download URL
+
+    # Extract feature name from the ID
     local feature_name="${feature_id##*/}"
-    local registry_path="${feature_id%/*}"
-    local registry="${registry_path%/*}"
-    local namespace="${registry_path#*/}"
-    
-    local download_url="https://$registry/v2/$namespace/$feature_name/manifests/$feature_version"
-    
+
     # Check if feature is already cached
     local cache_key="${feature_id//\//_}_${feature_version}"
     local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
-    
+
     if [ -d "$cache_dir" ]; then
         info "Feature cached: $feature_id@$feature_version"
         echo "$cache_dir"
         return 0
     fi
-    
+
     # Create cache directory
     mkdir -p "$cache_dir"
-    
-    # Download feature manifest
-    local manifest_file="$cache_dir/manifest.json"
-    if curl -fsSL "$download_url" -o "$manifest_file"; then
-        success "Feature manifest downloaded: $feature_id@$feature_version"
+
+    # Download feature definition from GitHub
+    local feature_json_url="https://raw.githubusercontent.com/devcontainers/features/main/src/$feature_name/devcontainer-feature.json"
+    local feature_json_file="$cache_dir/devcontainer-feature.json"
+
+    if curl -fsSL "$feature_json_url" -o "$feature_json_file"; then
+        success "Feature definition downloaded: $feature_id@$feature_version"
     else
-        error "Failed to download feature manifest: $feature_id@$feature_version"
+        error "Failed to download feature definition: $feature_id@$feature_version"
+        error "URL: $feature_json_url"
         return 1
     fi
-    
-    # Extract feature files
-    local feature_files_url="https://$registry/v2/$namespace/$feature_name/blobs/"
-    
-    # For now, we'll create a basic feature structure
-    # In a full implementation, this would download the actual feature files
-    mkdir -p "$cache_dir/src"
-    
-    # Create a basic feature.json
-    cat > "$cache_dir/feature.json" << EOF
-{
-    "id": "$feature_id",
-    "version": "$feature_version",
-    "name": "$feature_name",
-    "description": "Devcontainer feature: $feature_name",
-    "documentationURL": "https://github.com/devcontainers/features/tree/main/src/$feature_name"
-}
-EOF
 
-    # Create a basic install script if none provided (fallback for local testing)
-    if [ ! -f "$cache_dir/src/install.sh" ]; then
-        cat > "$cache_dir/src/install.sh" << 'FEATURE_INSTALL_SCRIPT'
+    # Create src directory and download install.sh if it exists
+    mkdir -p "$cache_dir/src"
+
+    local install_script_url="https://raw.githubusercontent.com/devcontainers/features/main/src/$feature_name/install.sh"
+    local install_script_file="$cache_dir/src/install.sh"
+
+    if curl -fsSL "$install_script_url" -o "$install_script_file"; then
+        chmod +x "$install_script_file"
+        info "Install script downloaded for feature: $feature_name"
+    else
+        warning "No install script found for feature: $feature_name, using fallback"
+        # Create a basic install script as fallback
+        cat > "$install_script_file" << 'FEATURE_INSTALL_SCRIPT'
 #!/usr/bin/env bash
 # Default fallback install script for features
 # This script simply prints DCUTIL_INPUT_* environment variables for testing
+echo "Feature $FEATURE_NAME installed (fallback script)"
 env | sed -n 's/^DCUTIL_INPUT_/DCUTIL_INPUT_/p' | sed 's/^/DCUTIL_INPUT: /'
 env | sed -n 's/^DCUTIL_FEATURE_INPUT_/DCUTIL_FEATURE_INPUT_/p' | sed 's/^/DCUTIL_FEATURE_INPUT: /'
 exit 0
 FEATURE_INSTALL_SCRIPT
-        chmod +x "$cache_dir/src/install.sh"
+        chmod +x "$install_script_file"
     fi
+
+    # Copy the feature definition as feature.json for compatibility
+    cp "$feature_json_file" "$cache_dir/feature.json"
     
     success "Feature cached: $feature_id@$feature_version"
     echo "$cache_dir"
