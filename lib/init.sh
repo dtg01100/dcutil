@@ -426,6 +426,12 @@ EOF
             info "Run 'dcutil up' to start the container"
             ;;
         "--wizard"|"wizard"|"")
+    # Check if running interactively
+    if ! [ -t 0 ] || ! [ -t 1 ]; then
+        warning "Non-interactive environment detected. Use 'dcutil init fast' for automated setup."
+        exit $EXIT_INVALID_ARGS
+    fi
+
     # Get available templates and features
     local templates_json
     templates_json=$(fetch_available_templates)
