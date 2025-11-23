@@ -244,11 +244,8 @@ wizard_with_dialog() {
     info "wizard_with_dialog: final template_list: $template_list"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
-        --menu "Choose a devcontainer template:" 15 50 4 \
-        1 alpine \
-        2 python \
-        3 javascript-node \
-        4 Custom)
+        --menu "Choose a devcontainer template:" 25 70 12 \
+        $template_list)
     local dialog_exit=$?
     info "Template dialog exit code: $dialog_exit, selected: '$selected_template_num'"
 
