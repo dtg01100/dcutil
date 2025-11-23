@@ -127,7 +127,7 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman version help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
@@ -242,10 +242,11 @@ local -a commands
         'shutdown:Container shutdown actions'
         'rebuild:Rebuild devcontainer with preservation options'
         'schema:Devcontainer configuration schema validation'
-        'podman:Podman backend configuration and status'
-        'completion:Generate completion script'
-        'test:Test dcutil improvements'
-        'help:Show help message'
+         'podman:Podman backend configuration and status'
+         'version:Show version information'
+         'completion:Generate completion script'
+         'test:Test dcutil improvements'
+         'help:Show help message'
     )
 
     local -a init_commands
@@ -422,10 +423,11 @@ Commands:
    shutdown    Container shutdown actions
    rebuild     Rebuild devcontainer with options
    schema      Devcontainer configuration schema validation
-   podman      Podman backend configuration and status
-   completion  Setup shell completion
-   test        Test dcutil improvements
-   help        Show this help message
+    podman      Podman backend configuration and status
+    version     Show version information
+    completion  Setup shell completion
+    test        Test dcutil improvements
+    help        Show this help message
   completion  Setup shell completion
   test        Test dcutil improvements
 
@@ -1896,6 +1898,9 @@ case "$COMMAND" in
         ;;
     "test")
         test_dcutil_improvements
+        ;;
+    "version")
+        echo "dcutil $(git describe --tags 2>/dev/null || echo 'unknown')"
         ;;
     "help"|"-h"|"--help")
         print_usage
