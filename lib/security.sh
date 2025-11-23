@@ -399,7 +399,7 @@ install_agent() {
             if [ -n "$config_file" ] && command -v jq &> /dev/null; then
                 # Add the mount to the devcontainer.json mounts array
                 local mount_json="{\"type\": \"bind\", \"source\": \"$mount_source\", \"target\": \"$mount_target\"}"
-                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+                jq --argjson mount "$mount_json" '.mounts = (.mounts // []) | map(select(.target != $mount.target)) + [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
                 info "Added configuration mount to $config_file"
             fi
         fi
