@@ -183,7 +183,20 @@ choose_features() {
 
 # Check if dialog is available for enhanced UI
 has_dialog() {
-    command -v dialog >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ] && [ -n "$TERM" ]
+    # Basic checks
+    if ! command -v dialog >/dev/null 2>&1; then
+        return 1
+    fi
+    if ! [ -t 0 ] || ! [ -t 1 ] || ! [ -n "$TERM" ]; then
+        return 1
+    fi
+
+    # Test if dialog can actually run (try a simple command)
+    if echo "" | dialog --stdout --msgbox "Testing dialog" 5 20 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Enhanced wizard with dialog interface
