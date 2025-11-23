@@ -651,12 +651,8 @@ docker_restart() {
 
 # Enter devcontainer
 docker_enter() {
-    local project_dir="$1"
+    local project_dir="${1:-}"
     info "Entering container..."
-
-    # Set container name for this project
-    CONTAINER_NAME=$(get_container_name_for_project "$project_dir")
-    info "Using container name: $CONTAINER_NAME"
 
 # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
@@ -667,37 +663,85 @@ docker_enter() {
         fi
         return 0
     fi
-    
+
+    # Set container name for this project
+    CONTAINER_NAME=$(get_container_name_for_project "$project_dir")
+    info "Using container name: $CONTAINER_NAME"
+
     # Check if container exists and is running
+    local container_exists=false
+    local container_running=false
+
     if command -v execute_container_command >/dev/null 2>&1; then
-        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
-        fi
-        
-        if ! execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-            error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
-        fi
-        
-        # Enter container
-        if [ -t 0 ]; then
-            execute_container_command exec -it "$CONTAINER_NAME" /bin/bash
-        else
-            execute_container_command exec -i "$CONTAINER_NAME" /bin/sh
+        if execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
+            container_exists=true
+            if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+                container_running=true
+            fi
         fi
     else
-        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+        if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
+            container_exists=true
+            if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+                container_running=true
+            fi
+        fi
+    fi
+
+    # If container doesn't exist, offer to create it
+    if [ "$container_exists" = false ]; then
+        if [ -t 0 ]; then
+            echo ""
+            warning "No devcontainer found for this project."
+            read -r -p "Would you like to start the devcontainer first? (y/N): " start_container
+            if [[ "$start_container" =~ ^[Yy] ]]; then
+                info "Starting devcontainer..."
+                docker_up "$project_dir"
+                # After starting, the container should exist and be running
+                container_exists=true
+                container_running=true
+            else
+                info "Devcontainer not started. Run 'dcutil up' to start it."
+                return 0
+            fi
+        else
             error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
-        
-        if ! docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+    fi
+
+    # If container exists but is not running, offer to start it
+    if [ "$container_exists" = true ] && [ "$container_running" = false ]; then
+        if [ -t 0 ]; then
+            echo ""
+            warning "Devcontainer exists but is not running."
+            read -r -p "Would you like to start it? (y/N): " start_container
+            if [[ "$start_container" =~ ^[Yy] ]]; then
+                info "Starting devcontainer..."
+                devcontainer_restart
+                container_running=true
+            else
+                info "Devcontainer not started. Run 'dcutil up' to start it."
+                return 0
+            fi
+        else
             error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
-        
-        # Enter container
-        if [ -t 0 ]; then
-            docker exec -it "$CONTAINER_NAME" /bin/bash
+    fi
+
+    # Now enter the running container
+    if [ "$container_running" = true ]; then
+        if command -v execute_container_command >/dev/null 2>&1; then
+            if [ -t 0 ]; then
+                execute_container_command exec -it "$CONTAINER_NAME" /bin/bash
+            else
+                execute_container_command exec -i "$CONTAINER_NAME" /bin/sh
+            fi
         else
-            docker exec -i "$CONTAINER_NAME" /bin/sh
+            if [ -t 0 ]; then
+                docker exec -it "$CONTAINER_NAME" /bin/bash
+            else
+                docker exec -i "$CONTAINER_NAME" /bin/sh
+            fi
         fi
     fi
 }
