@@ -310,7 +310,6 @@ install_agent() {
     " 2>/dev/null; then
         error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
     fi
-    fi
 
     # Ask about configuration pass-through
     config_mount=""
