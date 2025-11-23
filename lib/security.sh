@@ -335,7 +335,11 @@ install_agent() {
         # Create isolated virtual environment
         if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
             mkdir -p $VENV_DIR
-            python3 -m venv $VENV_DIR
+            if ! python3 -m venv $VENV_DIR 2>/dev/null; then
+                echo 'Installing python3-venv package...'
+                sudo apt-get update && sudo apt-get install -y python3-venv
+                python3 -m venv $VENV_DIR
+            fi
         " 2>/dev/null; then
             error_exit "Failed to create Python virtual environment" "$EXIT_DEVCONTAINER_ERROR"
         fi
