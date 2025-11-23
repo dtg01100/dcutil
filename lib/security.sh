@@ -267,12 +267,12 @@ install_agent() {
                     config_file=".devcontainer.json"
                 fi
 
-                local mount_exists=false
-                if [ -n "$config_file" ] && command -v jq &> /dev/null; then
-                    if jq -e '.mounts // [] | any(.target == "/home/vscode/.opencode")' "$config_file" >/dev/null 2>&1; then
-                        mount_exists=true
-                    fi
-                fi
+        local mount_exists=false
+        if [ -n "$config_file" ] && command -v jq &> /dev/null; then
+            if jq -e '.mounts // [] | any(if type == "object" then .target == "/home/vscode/.opencode" else false end)' "$config_file" >/dev/null 2>&1; then
+                mount_exists=true
+            fi
+        fi
 
                 if [ "$mount_exists" = true ]; then
                     info "Configuration mount is already configured, proceeding with installation"
@@ -399,7 +399,7 @@ install_agent() {
             if [ -n "$config_file" ] && command -v jq &> /dev/null; then
                 # Add the mount to the devcontainer.json mounts array
                 local mount_json="{\"type\": \"bind\", \"source\": \"$mount_source\", \"target\": \"$mount_target\"}"
-                jq --argjson mount "$mount_json" '.mounts = (.mounts // []) | map(select(.target != $mount.target)) + [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+                jq --argjson mount "$mount_json" '.mounts = (.mounts // [] | map(select(if type == "object" and .target == "/home/vscode/.opencode" then empty else . end) | select(. != null))) + [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
                 info "Added configuration mount to $config_file"
             fi
         fi
