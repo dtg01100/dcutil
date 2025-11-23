@@ -147,51 +147,51 @@ docker_build_enhanced() {
         error_exit "Build context directory not found: $BUILD_CONTEXT" "$EXIT_CONFIG_ERROR"
     fi
     
-    # Build docker build command
-    local build_cmd="docker build"
-    
+    # Build docker build command as array for safe execution
+    local build_cmd=("docker" "build")
+
     # Add build args
     for arg in "${BUILD_ARGS[@]}"; do
-        build_cmd="$build_cmd --build-arg $arg"
+        build_cmd+=("--build-arg" "$arg")
     done
-    
+
     # Add cache-from
     for cache_image in "${BUILD_CACHE_FROM[@]}"; do
-        build_cmd="$build_cmd --cache-from $cache_image"
+        build_cmd+=("--cache-from" "$cache_image")
     done
-    
+
     # Add target
     if [ -n "$BUILD_TARGET" ]; then
-        build_cmd="$build_cmd --target $BUILD_TARGET"
+        build_cmd+=("--target" "$BUILD_TARGET")
     fi
-    
+
     # Add no-cache option
     if [ "$BUILD_NO_CACHE" = "true" ]; then
-        build_cmd="$build_cmd --no-cache"
+        build_cmd+=("--no-cache")
     fi
-    
+
     # Add squash option (if supported)
     if [ "$BUILD_SQUASH" = "true" ]; then
-        build_cmd="$build_cmd --squash"
+        build_cmd+=("--squash")
     fi
-    
+
     # Add dockerfile path
     if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "Dockerfile" ]; then
-        build_cmd="$build_cmd -f $BUILD_DOCKERFILE"
+        build_cmd+=("-f" "$BUILD_DOCKERFILE")
     fi
-    
+
     # Add image name
     if [ -n "${IMAGE_NAME:-}" ]; then
-        build_cmd="$build_cmd -t $IMAGE_NAME"
+        build_cmd+=("-t" "$IMAGE_NAME")
     fi
 
     # Add context
-    build_cmd="$build_cmd $BUILD_CONTEXT"
-    
-    info "Executing: $build_cmd"
-    
-    # Execute build command
-    if eval $build_cmd; then
+    build_cmd+=("$BUILD_CONTEXT")
+
+    info "Executing: ${build_cmd[*]}"
+
+    # Execute build command safely
+    if "${build_cmd[@]}"; then
         success "Docker image built successfully: $IMAGE_NAME"
     else
         error_exit "Failed to build Docker image" "$EXIT_DEVCONTAINER_ERROR"

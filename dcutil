@@ -55,7 +55,7 @@ test_dcutil_improvements() {
     echo "Testing dcutil improvements..."
     
     # Test 1: Verify set -euo pipefail is active
-    local test_result=0
+
     if [[ $- == *e* ]] && [[ $- == *u* ]]; then
         # Test pipefail functionality
         set +e  # Temporarily disable exit on error
@@ -74,8 +74,8 @@ test_dcutil_improvements() {
     
     # Test 2: Test safe_path function
     local test_path
-    test_path=$(safe_path "~/test")
-    if [[ "$test_path" != "~/test" ]]; then
+    test_path=$(safe_path "$HOME/test")
+    if [[ "$test_path" != "$HOME/test" ]]; then
         echo "✅ safe_path function working"
     else
         echo "❌ safe_path function not expanding paths"

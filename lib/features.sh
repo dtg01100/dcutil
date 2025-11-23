@@ -18,7 +18,7 @@ declare -A INPUTS_DEFAULTS=()
 declare -A INPUTS_DESCRIPTIONS=()
 declare -A INPUTS_VALUES=()
 # Track per-feature environment variables set during installation
-declare -A FEATURE_ENV_VARS=()
+
 
 # Load inputs values interactively if not already set
 load_input_values() {
@@ -121,7 +121,9 @@ parse_features_config() {
                 done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
             elif jq -e '.features | type == "array"' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
                 # If it's an array, read entries as feature specs
-                jq -c '.features[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null | while IFS= read -r entry; do
+                local entries
+                entries=$(jq -c '.features[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                while IFS= read -r entry; do
                     if [ -z "$entry" ] || [ "$entry" = "null" ]; then
                         continue
                     fi
@@ -142,6 +144,7 @@ parse_features_config() {
                                 FEATURES_CONFIG_MAP["$id"]="$cfg"
                             fi
                         else
+                            # Check if it's a single-key object like {"feature-id": {...}}
                             local key
                             key=$(jq -r 'keys[0]' <<< "$entry" 2>/dev/null || echo "")
                             if [ -n "$key" ]; then
@@ -152,7 +155,7 @@ parse_features_config() {
                             fi
                         fi
                     fi
-                done
+                done <<< "$entries"
             fi
         fi
 

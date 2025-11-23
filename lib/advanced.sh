@@ -11,7 +11,6 @@ UPDATE_REMOTE_USER_UID=false
 ENTRYPOINT_OVERRIDE=""
 OVERRIDE_COMMAND=false
 FORWARD_PORTS=()
-PORTS_ATTRIBUTES=()
 WORKSPACE_MOUNT=""
 
 # Check if advanced features are configured

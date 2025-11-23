@@ -132,10 +132,16 @@ apply_probed_environment() {
         
         # Apply environment variable to container
         if [ -n "$CONTAINER_NAME" ]; then
-            if docker exec "$CONTAINER_NAME" sh -c "export $var_name='$var_value'" 2>/dev/null; then
-                info "Applied: $var_name"
+            # Validate variable name contains only valid identifier characters
+            if [[ "$var_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
+                # Use printf %q to safely quote the value
+                if docker exec "$CONTAINER_NAME" sh -c "export $var_name=$(printf '%q' "$var_value")" 2>/dev/null; then
+                    info "Applied: $var_name"
+                else
+                    warning "Failed to apply: $var_name"
+                fi
             else
-                warning "Failed to apply: $var_name"
+                warning "Skipping invalid environment variable name: $var_name"
             fi
         else
             warning "CONTAINER_NAME not set, cannot apply environment variables to container"
