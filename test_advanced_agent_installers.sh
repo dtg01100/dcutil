@@ -254,7 +254,6 @@ test_all_agents_comprehensive() {
         "aider:Aider AI coding assistant"
         "copilot-cli:GitHub Copilot CLI"  
         "cody:Sourcegraph Cody"
-        "tabnine:Tabnine AI"
         "qwen-cli:Qwen CLI"
         "gemini:Google Gemini"
         "claude-cli:Claude CLI"

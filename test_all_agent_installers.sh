@@ -122,7 +122,7 @@ test_single_agent() {
                 fi
             fi
             ;;
-        "copilot-cli"|"cody"|"tabnine")
+        "copilot-cli"|"cody")
             # NPM-based agents
             if echo "n" | DCUTIL_TEST_SKIP_PORTABLE=true "$DCUTIL" install-agent "$agent"; then
                 success "$agent installation completed successfully"
@@ -156,7 +156,6 @@ test_all_agents() {
         "aider:Aider AI coding assistant"
         "copilot-cli:GitHub Copilot CLI"
         "cody:Sourcegraph Cody"
-        "tabnine:Tabnine AI"
         "qwen-cli:Qwen CLI"
         "gemini:Google Gemini"
         "claude-cli:Claude CLI"

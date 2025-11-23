@@ -21,7 +21,6 @@ cd "$PROJECT_DIR"
 echo "PROJECT_DIR set to: '$PROJECT_DIR'"
 source "$SCRIPT_DIR/lib/core.sh"
 source "$SCRIPT_DIR/lib/docker.sh"
-source "$SCRIPT_DIR/lib/docker_native.sh"
 
 echo "Testing docker_native functionality..."
 echo "PROJECT_DIR: $PROJECT_DIR"

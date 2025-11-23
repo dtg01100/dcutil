@@ -1,0 +1,17 @@
+{
+    "name": "Basic Dev Container",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "mounts": ["source=/var/home/dlafreniere/bin/dcutil-files/qwen_test,target=/workspaces/qwen_test,type=bind,consistency=cached"],
+    "workspaceFolder": "/workspaces/qwen_test",
+    "remoteUser": "vscode",
+    "containerUser": "vscode",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.vscode-json",
+                "ms-vscode.vscode-git"
+            ]
+        }
+    },
+    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git; else apt-get update && apt-get install -y --no-install-recommends curl git; fi; mkdir -p /workspaces/qwen_test; if id -u vscode >/dev/null 2>&1; then if command -v sudo >/dev/null; then sudo chown -R vscode:vscode /workspaces/qwen_test || true; else chown -R vscode:vscode /workspaces/qwen_test || true; fi; else echo 'User vscode not found in image, skipping chown'; fi'"
+}

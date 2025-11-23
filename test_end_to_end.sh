@@ -130,7 +130,7 @@ test_complete_installation_flow() {
     
     # Test that the agent command is available (for agents with existing npm packages)
     case "$agent" in
-        "copilot-cli"|"cody"|"tabnine")
+        "copilot-cli"|"cody")
             info "Testing $agent command availability..."
             if "$DCUTIL" run "command -v $agent" 2>/dev/null || "$DCUTIL" run "npm list -g | grep -i $agent" 2>/dev/null; then
                 success "$agent command is available"
@@ -275,7 +275,7 @@ test_backwards_compatibility() {
     source "$SCRIPT_DIR/lib/security.sh"
     
     # All original agents should still be supported
-    local original_agents=("aider" "copilot-cli" "cody" "tabnine" "qwen-cli" "gemini" "claude-cli" "openai-cli" "opencode")
+    local original_agents=("aider" "copilot-cli" "cody" "qwen-cli" "gemini" "claude-cli" "openai-cli" "opencode")
     local all_supported=true
     
     for agent in "${original_agents[@]}"; do
@@ -400,7 +400,7 @@ main() {
     fi
     
     # Test a couple of agents with container (non-blocking for missing packages)
-    for agent_desc in "copilot-cli:GitHub Copilot CLI" "tabnine:Tabnine AI"; do
+    for agent_desc in "copilot-cli:GitHub Copilot CLI"; do
         IFS=':' read -r agent name <<< "$agent_desc"
         test_complete_installation_flow "$agent" "$name" || true  # Don't fail test suite for missing npm packages
     done

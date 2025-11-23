@@ -150,7 +150,7 @@ test_current_pip_agents() {
 test_current_npm_agents() {
     info "=== Testing Current NPM-based Agent Installations ==="
     
-    local npm_agents=("copilot-cli" "cody" "tabnine")
+    local npm_agents=("copilot-cli" "cody")
     local successful=()
     local failed=()
     

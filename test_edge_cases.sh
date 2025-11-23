@@ -116,7 +116,7 @@ test_get_command_error_handling() {
     for name in "${special_names[@]}"; do
         if get_agent_install_command "$name" 2>/dev/null; then
             # If it doesn't exist in our case statement, it should fail
-            if [[ " aider copilot-cli cody tabnine qwen-cli gemini claude-cli openai-cli opencode " != *" $name "* ]]; then
+            if [[ " aider copilot-cli cody qwen-cli gemini claude-cli openai-cli opencode " != *" $name "* ]]; then
                 error "❌ Agent '$name' should have failed since it's not a valid agent"
                 return 1
             fi
@@ -138,7 +138,7 @@ test_function_inputs() {
     source "$SCRIPT_DIR/lib/security.sh"
     
     # Test normal agent names
-    local normal_agents=("aider" "copilot-cli" "cody" "tabnine" "qwen-cli" "gemini" "claude-cli" "openai-cli" "opencode")
+    local normal_agents=("aider" "copilot-cli" "cody" "qwen-cli" "gemini" "claude-cli" "openai-cli" "opencode")
     
     for agent in "${normal_agents[@]}"; do
         local cmd

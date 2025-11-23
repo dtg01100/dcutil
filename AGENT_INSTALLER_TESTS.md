@@ -6,7 +6,7 @@ This directory contains multiple test scripts for thoroughly testing the agent i
 
 ### 1. `test_all_agent_installers.sh`
 - Tests installation of all supported AI agents
-- Supports: aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli, opencode
+- Supports: aider, copilot-cli, cody, qwen-cli, gemini, claude-cli, openai-cli, opencode
 - Each agent is tested in a clean environment
 - Handles high-risk agents like opencode appropriately
 
@@ -54,7 +54,6 @@ The dcutil agent installer currently supports the following agents (all using np
 - **aider**: AI coding assistant (now using npm)
 - **copilot-cli**: GitHub Copilot CLI (npm-based)
 - **cody**: Sourcegraph Cody (npm-based)
-- **tabnine**: Tabnine AI (npm-based)
 - **qwen-cli**: Qwen CLI (now using npm)
 - **gemini**: Google Gemini CLI (now using npm)
 - **claude-cli**: Claude CLI (now using npm)

@@ -106,7 +106,7 @@ test_single_agent_installation() {
         
         # For agents that might have real npm packages, try to verify installation
         case "$agent" in
-            "copilot-cli"|"cody"|"tabnine")
+            "copilot-cli"|"cody")
                 # These had npm packages before too
                 if "$DCUTIL" run "command -v $agent" 2>/dev/null || "$DCUTIL" run "npm list -g $agent" 2>/dev/null; then
                     success "$agent appears to be installed"
@@ -173,11 +173,10 @@ test_installation_commands_format() {
         "aider:npm install -g aider-chat"
         "copilot-cli:npm install -g @github/copilot"
         "cody:npm install -g @sourcegraph/cody"
-        "tabnine:npm install -g tabnine"
         "qwen-cli:npm install -g @qwen/cli"
         "gemini:npm install -g @google/gemini"
         "claude-cli:npm install -g @anthropic/claude"
-        "openai-cli:npm install -g @openai/cli"
+        "openai-cli:npm install -g @openai/codex"
     )
     
     local all_correct=true
@@ -254,11 +253,10 @@ test_all_agent_installations() {
         "aider:Aider (converted to npm)"
         "copilot-cli:GitHub Copilot CLI (already npm-based)"
         "cody:Sourcegraph Cody (already npm-based)"
-        "tabnine:Tabnine (already npm-based)"
         "qwen-cli:Qwen CLI (converted to npm)"
         "gemini:Google Gemini (converted to npm)"
         "claude-cli:Claude CLI (converted to npm)"
-        "openai-cli:OpenAI CLI (converted to npm)"
+        "openai-cli:OpenAI Codex (converted to npm)"
     )
     
     local total_tests=${#agents_to_test[@]}

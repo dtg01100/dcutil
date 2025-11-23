@@ -2,7 +2,7 @@
 
 ## New State
 dcutil now supports installation of all AI agents using npm consistently:
-- **npm-based**: All agents (aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli, opencode)
+- **npm-based**: All agents (aider, copilot-cli, cody, qwen-cli, gemini, claude-cli, openai-cli, opencode)
 
 ## Implemented Changes
 - All agents now use npm for installation
@@ -26,9 +26,6 @@ All agents now use these npm commands:
 - Previous: `npm install -g @sourcegraph/cody` (already using npm)
 - Current: `npm install -g @sourcegraph/cody`
 
-### tabnine
-- Previous: `npm install -g tabnine` (already using npm)
-- Current: `npm install -g tabnine`
 
 ### qwen-cli
 - Previous: `pip install qwen-cli`

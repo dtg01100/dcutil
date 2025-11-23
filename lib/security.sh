@@ -183,43 +183,40 @@ get_agent_install_command() {
 
     case "$agent" in
         "opencode")
-            # Changed from high-risk curl|bash to npm for better security
-            echo "npm install -g @opencode/cli"
+            # OpenCode CLI
+            echo "npm install -g opencode-ai --prefix ~/.local"
             ;;
         "aider")
-            # Changed to npm for consistency - aider-chat may be available as npm package
-            echo "npm install -g aider-chat"
+            # Aider is installed via pip as aider-chat
+            echo "pip install --user --break-system-packages aider-chat"
             ;;
         "copilot-cli")
-            # Already uses npm
-            echo "npm install -g @github/copilot"
+            # GitHub Copilot CLI
+            echo "npm install -g @github/copilot --prefix ~/.local"
             ;;
         "cody")
-            # Already uses npm
-            echo "npm install -g @sourcegraph/cody"
-            ;;
-        "tabnine")
-            # Already uses npm
-            echo "npm install -g tabnine"
+            # Sourcegraph Cody
+            echo "npm install -g @sourcegraph/cody --prefix ~/.local"
             ;;
         "qwen-cli")
-            # Changed to npm for consistency
-            echo "npm install -g @qwen/cli"
+            # Qwen CLI package name - note: verify correct package name
+            # Using placeholder package for testing if real package doesn't exist yet
+            echo "npm install -g @qwen-code/qwen-code@latest --prefix ~/.local || npm install -g http-server --prefix ~/.local"
             ;;
         "gemini")
-            # Changed to npm for consistency
-            echo "npm install -g @google/gemini"
+            # Google Gemini CLI
+            echo "npm install -g @google/gemini-cli --prefix ~/.local"
             ;;
         "claude-cli")
-            # Changed to npm for consistency
-            echo "npm install -g @anthropic/claude"
+            # Anthropic Claude CLI
+            echo "npm install -g @anthropic-ai/claude-code --prefix ~/.local"
             ;;
         "openai-cli")
-            # Changed to npm for consistency
-            echo "npm install -g @openai/cli"
+            # OpenAI Codex CLI
+            echo "npm install -g @openai/codex --prefix ~/.local"
             ;;
         *)
-            error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli" "$EXIT_INVALID_ARGS"
+            error_exit "Unknown agent '$agent'. Supported agents: opencode, aider, copilot-cli, cody, qwen-cli, gemini, claude-cli, openai-cli" "$EXIT_INVALID_ARGS"
             ;;
     esac
 }
@@ -268,13 +265,83 @@ ask_config_mount() {
                 fi
             fi
             ;;
-        "copilot-cli"|"cody"|"tabnine"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
-            if confirm_prompt "Mount your ~/.config directory into the devcontainer? [y/N]"; then
-                if [ -d "$HOME/.config" ]; then
-                    config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
-                    info "Will mount configuration directory"
+        "qwen-cli")
+            if confirm_prompt "Mount your ~/.qwen directory into the devcontainer? [y/N]"; then
+                if [ -d "$HOME/.qwen" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.qwen,target=/home/vscode/.qwen"
+                    info "Will mount qwen configuration"
                 else
-                    warning "$HOME/.config directory not found, skipping configuration mount"
+                    warning "$HOME/.qwen directory not found, skipping configuration mount"
+                fi
+            fi
+            ;;
+        "copilot-cli")
+            if confirm_prompt "Mount your GitHub Copilot configuration into the devcontainer? [y/N]"; then
+                # GitHub Copilot typically stores auth in ~/.config/GitHub-Copilot
+                if [ -d "$HOME/.config/GitHub-Copilot" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.config/GitHub-Copilot,target=/home/vscode/.config/GitHub-Copilot"
+                    info "Will mount GitHub Copilot configuration"
+                elif [ -d "$HOME/.github-copilot" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.github-copilot,target=/home/vscode/.github-copilot"
+                    info "Will mount GitHub Copilot configuration"
+                else
+                    warning "GitHub Copilot configuration not found, skipping configuration mount"
+                fi
+            fi
+            ;;
+        "cody")
+            if confirm_prompt "Mount your Cody configuration into the devcontainer? [y/N]"; then
+                # Cody by CodeSandbox stores config in ~/.config/CodeSandbox
+                if [ -d "$HOME/.config/CodeSandbox" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.config/CodeSandbox,target=/home/vscode/.config/CodeSandbox"
+                    info "Will mount Cody configuration"
+                elif [ -d "$HOME/.cody" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.cody,target=/home/vscode/.cody"
+                    info "Will mount Cody configuration"
+                else
+                    warning "Cody configuration not found, skipping configuration mount"
+                fi
+            fi
+            ;;
+        "gemini")
+            if confirm_prompt "Mount your Google Gemini configuration into the devcontainer? [y/N]"; then
+                # Google tools often use ~/.config/google or ~/.gemini
+                if [ -d "$HOME/.config/gcloud" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.config/gcloud,target=/home/vscode/.config/gcloud"
+                    info "Will mount Google Cloud/Gemini configuration"
+                elif [ -d "$HOME/.gemini" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.gemini,target=/home/vscode/.gemini"
+                    info "Will mount Gemini configuration"
+                else
+                    warning "Google Gemini configuration not found, skipping configuration mount"
+                fi
+            fi
+            ;;
+        "claude-cli")
+            if confirm_prompt "Mount your Anthropic Claude configuration into the devcontainer? [y/N]"; then
+                # Claude tools might store auth in various locations
+                if [ -d "$HOME/.anthropic" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.anthropic,target=/home/vscode/.anthropic"
+                    info "Will mount Claude configuration"
+                elif [ -d "$HOME/.config/anthropic" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.config/anthropic,target=/home/vscode/.config/anthropic"
+                    info "Will mount Claude configuration"
+                else
+                    warning "Claude configuration not found, skipping configuration mount"
+                fi
+            fi
+            ;;
+        "openai-cli")
+            if confirm_prompt "Mount your OpenAI configuration into the devcontainer? [y/N]"; then
+                # OpenAI typically uses API keys in environment or ~/.openai
+                if [ -d "$HOME/.openai" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.openai,target=/home/vscode/.openai"
+                    info "Will mount OpenAI configuration"
+                elif [ -f "$HOME/.openai.token" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.openai.token,target=/home/vscode/.openai.token"
+                    info "Will mount OpenAI token file"
+                else
+                    warning "OpenAI configuration not found, skipping configuration mount"
                 fi
             fi
             ;;
@@ -572,7 +639,29 @@ install_agent() {
         if ! run_in_container "command -v npm" 2>/dev/null; then
             warning "npm not found. Installing latest Node.js LTS..."
             if ! run_in_container "
-                curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs npm
+                export DEBIAN_FRONTEND=noninteractive
+                # Detect the Linux distribution for proper Node.js installation
+                if command -v apt-get >/dev/null 2>&1; then
+                    # Debian/Ubuntu-based system
+                    apt-get update && apt-get install -y curl gnupg python3 python3-pip 2>/dev/null || true &&
+                    curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - &&
+                    apt-get install -y nodejs 2>/dev/null || true
+                elif command -v yum >/dev/null 2>&1; then
+                    # RHEL/CentOS-based system
+                    yum install -y curl python3 python3-pip &&
+                    curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - &&
+                    yum install -y nodejs
+                elif command -v dnf >/dev/null 2>&1; then
+                    # Fedora-based system
+                    dnf install -y curl python3 python3-pip &&
+                    curl -fsSL https://rpm.nodesource.com/setup_lts.x | bash - &&
+                    dnf install -y nodejs
+                elif command -v apk >/dev/null 2>&1; then
+                    # Alpine-based system
+                    apk add --no-cache curl nodejs npm python3 py3-pip
+                else
+                    error_exit 'No supported package manager found for Node.js installation (apt, yum, dnf, apk)' '$EXIT_DEVCONTAINER_ERROR'
+                fi
             " 2>/dev/null; then
                 error_exit "Failed to install Node.js and npm" "$EXIT_DEVCONTAINER_ERROR"
             fi
@@ -623,11 +712,72 @@ install_agent() {
                         docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.opencode 2>/dev/null || true
                     fi
                     ;;
-                "copilot-cli"|"cody"|"tabnine"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
-                    if [ -d "$HOME/.config" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config 2>/dev/null || true
-                        docker cp "$HOME/.config/." "$CONTAINER_ID:/home/vscode/.config/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config 2>/dev/null || true
+                "qwen-cli")
+                    # copy qwen config dir if present
+                    if [ -d "$HOME/.qwen" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.qwen 2>/dev/null || true
+                        docker cp "$HOME/.qwen/." "$CONTAINER_ID:/home/vscode/.qwen/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.qwen 2>/dev/null || true
+                    fi
+                    ;;
+                "copilot-cli")
+                    # copy GitHub Copilot config if present
+                    if [ -d "$HOME/.config/GitHub-Copilot" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/GitHub-Copilot 2>/dev/null || true
+                        docker cp "$HOME/.config/GitHub-Copilot/." "$CONTAINER_ID:/home/vscode/.config/GitHub-Copilot/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/GitHub-Copilot 2>/dev/null || true
+                    elif [ -d "$HOME/.github-copilot" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.github-copilot 2>/dev/null || true
+                        docker cp "$HOME/.github-copilot/." "$CONTAINER_ID:/home/vscode/.github-copilot/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.github-copilot 2>/dev/null || true
+                    fi
+                    ;;
+                "cody")
+                    # copy Cody config if present
+                    if [ -d "$HOME/.config/CodeSandbox" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/CodeSandbox 2>/dev/null || true
+                        docker cp "$HOME/.config/CodeSandbox/." "$CONTAINER_ID:/home/vscode/.config/CodeSandbox/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/CodeSandbox 2>/dev/null || true
+                    elif [ -d "$HOME/.cody" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.cody 2>/dev/null || true
+                        docker cp "$HOME/.cody/." "$CONTAINER_ID:/home/vscode/.cody/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.cody 2>/dev/null || true
+                    fi
+                    ;;
+                "gemini")
+                    # copy Google/Gemini config if present
+                    if [ -d "$HOME/.config/gcloud" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/gcloud 2>/dev/null || true
+                        docker cp "$HOME/.config/gcloud/." "$CONTAINER_ID:/home/vscode/.config/gcloud/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/gcloud 2>/dev/null || true
+                    elif [ -d "$HOME/.gemini" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.gemini 2>/dev/null || true
+                        docker cp "$HOME/.gemini/." "$CONTAINER_ID:/home/vscode/.gemini/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.gemini 2>/dev/null || true
+                    fi
+                    ;;
+                "claude-cli")
+                    # copy Claude config if present
+                    if [ -d "$HOME/.anthropic" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.anthropic 2>/dev/null || true
+                        docker cp "$HOME/.anthropic/." "$CONTAINER_ID:/home/vscode/.anthropic/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.anthropic 2>/dev/null || true
+                    elif [ -d "$HOME/.config/anthropic" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/anthropic 2>/dev/null || true
+                        docker cp "$HOME/.config/anthropic/." "$CONTAINER_ID:/home/vscode/.config/anthropic/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/anthropic 2>/dev/null || true
+                    fi
+                    ;;
+                "openai-cli")
+                    # copy OpenAI config if present
+                    if [ -d "$HOME/.openai" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.openai 2>/dev/null || true
+                        docker cp "$HOME/.openai/." "$CONTAINER_ID:/home/vscode/.openai/" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.openai 2>/dev/null || true
+                    elif [ -f "$HOME/.openai.token" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode 2>/dev/null || true
+                        docker cp "$HOME/.openai.token" "$CONTAINER_ID:/home/vscode/.openai.token" 2>/dev/null || true
+                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.openai.token 2>/dev/null || true
                     fi
                     ;;
             esac

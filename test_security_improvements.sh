@@ -120,7 +120,6 @@ test_no_high_risk_agents() {
         "aider"
         "copilot-cli"
         "cody"
-        "tabnine"
         "qwen-cli"
         "gemini"
         "claude-cli"

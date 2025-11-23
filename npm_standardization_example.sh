@@ -21,10 +21,6 @@ get_agent_install_command_npm_only() {
             # Already uses npm
             echo "npm install -g @sourcegraph/cody"
             ;;
-        "tabnine")
-            # Already uses npm
-            echo "npm install -g tabnine"
-            ;;
         "qwen-cli")
             # Would need to find npm equivalent
             echo "npm install -g @qwen/cli"  # hypothetical
@@ -38,15 +34,15 @@ get_agent_install_command_npm_only() {
             echo "npm install -g @anthropic/claude"  # hypothetical
             ;;
         "openai-cli")
-            # Would need to find npm equivalent
-            echo "npm install -g @openai/cli"  # hypothetical
+            # OpenAI Codex
+            echo "npm install -g @openai/codex"
             ;;
         "opencode")
             # This is the big win - replace high-risk curl with safe npm
             echo "npm install -g @opencode/cli"  # hypothetical but would solve security issue!
             ;;
         *)
-            error_exit "Unknown agent '$agent'. Supported agents: aider, copilot-cli, cody, tabnine, qwen-cli, gemini, claude-cli, openai-cli, opencode" "$EXIT_INVALID_ARGS"
+            error_exit "Unknown agent '$agent'. Supported agents: aider, copilot-cli, cody, qwen-cli, gemini, claude-cli, openai-cli, opencode" "$EXIT_INVALID_ARGS"
             ;;
     esac
 }

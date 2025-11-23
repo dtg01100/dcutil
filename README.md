@@ -317,7 +317,6 @@ Currently supported agents:
 - `aider` - Installs aider-chat AI coding assistant
 - `copilot-cli` - Installs GitHub Copilot CLI
 - `cody` - Installs Sourcegraph Cody CLI
-- `tabnine` - Installs Tabnine CLI
 - `qwen-cli` - Installs Qwen CLI
 - `gemini` - Installs Gemini CLI
 - `claude-cli` - Installs Claude CLI

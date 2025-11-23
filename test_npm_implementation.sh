@@ -42,7 +42,6 @@ test_get_agent_install_command() {
         "aider"
         "copilot-cli"
         "cody"
-        "tabnine"
         "qwen-cli"
         "gemini"
         "claude-cli"
