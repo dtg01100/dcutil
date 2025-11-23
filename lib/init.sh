@@ -209,10 +209,39 @@ wizard_with_dialog() {
     template_list="$template_list $i \"Custom image\""
 
     local selected_template_num
+    exec 3>&1
     selected_template_num=$(dialog --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 20 60 15 \
         $template_list \
-        2>&1 >/dev/tty)
+        2>&1 1>&3)
+    local dialog_exit=$?
+    exec 3>&-
+
+    if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
+        # User cancelled or pressed ESC
+        cat << EOF
+selected_template="cancelled"
+selected_features=""
+container_name=""
+workspace_folder=""
+container_user=""
+mount_choice=1
+chown_choice=1
+EOF
+        return 0
+    elif [ $dialog_exit -ne 0 ]; then
+        # Error
+        cat << EOF
+selected_template="error"
+selected_features=""
+container_name=""
+workspace_folder=""
+container_user=""
+mount_choice=1
+chown_choice=1
+EOF
+        return 1
+    fi
 
     local selected_template=""
     if [ "$selected_template_num" = "$i" ]; then
@@ -238,10 +267,39 @@ wizard_with_dialog() {
 
     local selected_features=""
     if [ -n "$feature_list" ]; then
+        exec 3>&1
         selected_features=$(dialog --title "Devcontainer Features" \
             --checklist "Select additional features to install:" 20 60 10 \
             $feature_list \
-            2>&1 >/dev/tty)
+            2>&1 1>&3)
+        local dialog_exit=$?
+        exec 3>&-
+
+        if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
+            # User cancelled
+            cat << EOF
+selected_template="cancelled"
+selected_features=""
+container_name=""
+workspace_folder=""
+container_user=""
+mount_choice=1
+chown_choice=1
+EOF
+            return 0
+        elif [ $dialog_exit -ne 0 ]; then
+            # Error
+            cat << EOF
+selected_template="error"
+selected_features=""
+container_name=""
+workspace_folder=""
+container_user=""
+mount_choice=1
+chown_choice=1
+EOF
+            return 1
+        fi
     fi
 
     # Container name
@@ -384,6 +442,14 @@ EOF
                 # Get all config via dialog
                 local dialog_output
                 dialog_output=$(wizard_with_dialog "$templates_json" "$features_json")
+
+                # Check if user cancelled
+                if [ "$dialog_output" = "cancelled" ]; then
+                    info "Wizard cancelled by user"
+                    exit 0
+                elif [ "$dialog_output" = "error" ]; then
+                    error_exit "Dialog error occurred" "$EXIT_CONFIG_ERROR"
+                fi
 
                 # Parse the output
                 eval "$dialog_output"
