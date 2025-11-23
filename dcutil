@@ -7,8 +7,8 @@ set -euo pipefail
 
 # Source all modules
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
-if [ -d "$LIB_DIR" ]; then
-    LIB_DIR="$LIB_DIR"
+if [ -d "$SCRIPT_DIR/lib" ]; then
+    LIB_DIR="$SCRIPT_DIR/lib"
 else
     LIB_DIR="$SCRIPT_DIR/../lib"
 fi
