@@ -226,18 +226,18 @@ wizard_with_dialog() {
 
     if command -v jq >/dev/null 2>&1; then
         while IFS= read -r template; do
-            if [ -n "$template" ] && [ $i -le 20 ]; then  # Limit to 20 templates for menu
+            if [ -n "$template" ]; then
                 template_list="$template_list $i $template"
                 template_names="$template_names $template"
                 i=$((i + 1))
             fi
-        done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null | head -20)"
+        done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null)"
     fi
 
     template_list="$template_list $i Custom-image"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
-        --menu "Choose a devcontainer template:" 25 70 12 \
+        --menu "Choose a devcontainer template:" 30 80 20 \
         $template_list 2>/dev/null)
     local dialog_exit=$?
 
