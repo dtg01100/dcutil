@@ -219,27 +219,9 @@ wizard_with_dialog() {
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
         # User cancelled or pressed ESC
-        cat << EOF
-selected_template="cancelled"
-selected_features=""
-container_name=""
-workspace_folder=""
-container_user=""
-mount_choice=1
-chown_choice=1
-EOF
-        return 0
+        return 1
     elif [ $dialog_exit -ne 0 ]; then
         # Error
-        cat << EOF
-selected_template="error"
-selected_features=""
-container_name=""
-workspace_folder=""
-container_user=""
-mount_choice=1
-chown_choice=1
-EOF
         return 1
     fi
 
@@ -277,27 +259,9 @@ EOF
 
         if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
             # User cancelled
-            cat << EOF
-selected_template="cancelled"
-selected_features=""
-container_name=""
-workspace_folder=""
-container_user=""
-mount_choice=1
-chown_choice=1
-EOF
-            return 0
+            return 1
         elif [ $dialog_exit -ne 0 ]; then
             # Error
-            cat << EOF
-selected_template="error"
-selected_features=""
-container_name=""
-workspace_folder=""
-container_user=""
-mount_choice=1
-chown_choice=1
-EOF
             return 1
         fi
     fi
@@ -337,16 +301,16 @@ EOF
     # Clear dialog artifacts
     clear
 
-    # Output results for capture
-    cat << EOF
-selected_template="$selected_template"
-selected_features="$selected_features"
-container_name="$container_name"
-workspace_folder="$workspace_folder"
-container_user="$container_user"
-mount_choice=$mount_choice
-chown_choice=$chown_choice
-EOF
+    # Set global variables for the caller
+    SELECTED_TEMPLATE="$selected_template"
+    SELECTED_FEATURES="$selected_features"
+    CONTAINER_NAME="$container_name"
+    WORKSPACE_FOLDER="$workspace_folder"
+    CONTAINER_USER="$container_user"
+    MOUNT_CHOICE=$mount_choice
+    CHOWN_CHOICE=$chown_choice
+
+    return 0
 }
 
 # Parse init options
@@ -440,19 +404,26 @@ EOF
                 echo ""
 
                 # Get all config via dialog
-                local dialog_output
-                dialog_output=$(wizard_with_dialog "$templates_json" "$features_json")
-
-                # Check if user cancelled
-                if [ "$dialog_output" = "cancelled" ]; then
+                if ! wizard_with_dialog "$templates_json" "$features_json"; then
                     info "Wizard cancelled by user"
                     exit 0
-                elif [ "$dialog_output" = "error" ]; then
-                    error_exit "Dialog error occurred" "$EXIT_CONFIG_ERROR"
                 fi
 
-                # Parse the output
-                eval "$dialog_output"
+                # Extract results from global variables
+                selected_template="$SELECTED_TEMPLATE"
+                selected_features="$SELECTED_FEATURES"
+                container_name="$CONTAINER_NAME"
+                workspace_folder="$WORKSPACE_FOLDER"
+                container_user_input="$CONTAINER_USER"
+                mount_choice=$MOUNT_CHOICE
+                chown_choice=$CHOWN_CHOICE
+
+                # Convert selected features to JSON array
+                if [ -n "$selected_features" ]; then
+                    selected_features_json=$(echo "$selected_features" | tr ' ' '\n' | jq -R . | jq -s .)
+                else
+                    selected_features_json="[]"
+                fi
 
                 # Convert dialog results to expected format
                 case $mount_choice in
