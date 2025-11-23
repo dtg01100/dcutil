@@ -49,17 +49,48 @@ check_agent_security_risk() {
     local agent="$1"
     local install_cmd="$2"
 
+    # General security warning for all installations
+    warning "⚠️  SECURITY NOTICE: Installing third-party software in your devcontainer."
+    echo "This may introduce security risks including:"
+    echo "  - Execution of untrusted code"
+    echo "  - Access to your files and network"
+    echo "  - Potential malware or backdoors"
+    echo ""
+
     case "$agent" in
         "opencode")
             warning "⚠️  HIGH RISK: $agent installation runs remote scripts that could execute arbitrary code."
             echo -e "${YELLOW}Installation command: $install_cmd${NC}"
-            read -p "Do you trust the source (opencode.ai) and want to proceed? (yes/no): " -r confirm
-            if [[ ! "$confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
-                info "Installation cancelled by user"
-                exit $EXIT_SUCCESS
+            ;;
+        *)
+            if [[ "$install_cmd" == pip* ]]; then
+                warning "⚠️  MEDIUM RISK: Installing Python package that may execute code during installation."
+            elif [[ "$install_cmd" == npm* ]]; then
+                warning "⚠️  MEDIUM RISK: Installing Node.js package that may execute scripts during installation."
+            elif [[ "$install_cmd" == curl* ]]; then
+                warning "⚠️  HIGH RISK: Downloading and executing remote scripts."
             fi
             ;;
     esac
+
+    echo -e "${YELLOW}Agent: $agent${NC}"
+    echo -e "${YELLOW}Command: $install_cmd${NC}"
+    echo ""
+
+    if [ "$agent" = "opencode" ] || [[ "$install_cmd" == curl* ]]; then
+        read -p "Do you trust this installation and want to proceed? (yes/no): " -r confirm
+        if [[ ! "$confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+            info "Installation cancelled by user"
+            exit $EXIT_SUCCESS
+        fi
+    else
+        read -p "Do you want to proceed with the installation? (Y/n): " -r confirm
+        confirm=${confirm:-Y}
+        if [[ ! "$confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+            info "Installation cancelled by user"
+            exit $EXIT_SUCCESS
+        fi
+    fi
 }
 
 scan_vulnerabilities() {
