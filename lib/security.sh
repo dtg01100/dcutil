@@ -287,7 +287,7 @@ install_agent() {
                     warning "⚠️  SECURITY WARNING: Mounting config directories may expose sensitive information (API keys, auth tokens) to the container."
                     read -r -p "Do you understand the security implications and want to proceed? (Y/n): " security_confirm
                     security_confirm=${security_confirm:-Y}
-                    if [[ "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+                    if [[ "$security_confirm" =~ ^[Yy] ]]; then
                         config_mount="--mount type=bind,source=$opencode_config_dir,target=/home/vscode/.opencode"
                         info "Will mount opencode configuration"
                     else
@@ -308,7 +308,7 @@ install_agent() {
                     warning "⚠️  SECURITY WARNING: The aider config file contains API keys and sensitive authentication data."
                     read -r -p "Do you understand the security implications and want to proceed? (Y/n): " security_confirm
                     security_confirm=${security_confirm:-Y}
-                    if [[ "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+                    if [[ "$security_confirm" =~ ^[Yy] ]]; then
                         config_mount="--mount type=bind,source=$HOME/.aider.conf.yml,target=/home/vscode/.aider.conf.yml"
                         info "Will mount aider configuration"
                     else
@@ -328,7 +328,7 @@ install_agent() {
                     warning "⚠️  SECURITY WARNING: The ~/.config directory may contain sensitive information including API keys, authentication tokens, and personal data from various applications."
                     read -r -p "Do you understand the security implications and want to proceed? (Y/n): " security_confirm
                     security_confirm=${security_confirm:-Y}
-                    if [[ "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+                    if [[ "$security_confirm" =~ ^[Yy] ]]; then
                         config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
                         info "Will mount configuration directory"
                     else
