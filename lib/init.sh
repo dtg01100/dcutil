@@ -203,8 +203,10 @@ has_dialog() {
 
     # Test if dialog can actually run (try a simple command)
     if echo "" | dialog --stdout --msgbox "Testing dialog" 5 20 2>/dev/null; then
+        info "Dialog test passed"
         return 0
     else
+        info "Dialog test failed"
         return 1
     fi
 }
@@ -224,11 +226,11 @@ wizard_with_dialog() {
     info "Using simplified template selection (4 options)"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
-        --radiolist "Choose a devcontainer template:" 15 50 4 \
-        1 alpine on \
-        2 python off \
-        3 javascript-node off \
-        4 Custom off)
+        --menu "Choose a devcontainer template:" 15 50 4 \
+        1 alpine \
+        2 python \
+        3 javascript-node \
+        4 Custom)
     local dialog_exit=$?
     info "Template dialog exit code: $dialog_exit, selected: '$selected_template_num'"
 
