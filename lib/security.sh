@@ -305,7 +305,7 @@ install_agent() {
 
         USE_PORTABLE=false
         # Try to set up portable Python
-        if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=\$PLATFORM;
+        if docker exec "$CONTAINER_NAME" /bin/bash -c "PLATFORM=\$PLATFORM;
             if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
                 exit 0
             fi
@@ -341,7 +341,7 @@ install_agent() {
 
         if [ "$USE_PORTABLE" = "true" ]; then
             # Create venv with portable Python
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
                 mkdir -p $VENV_DIR
                 $PYTHON_BIN_DIR/bin/python3 -m venv $VENV_DIR
             " 2>/dev/null; then
@@ -352,7 +352,7 @@ install_agent() {
 
         if [ "$USE_PORTABLE" != "true" ]; then
             # Fallback to system Python virtual environment
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
                 if ! python3 -m venv --help > /dev/null 2>&1; then
                     apt-get update && apt-get install -y python3-venv
                 fi
@@ -376,7 +376,7 @@ install_agent() {
     fi
     
     # Enhanced security: use restricted shell for installations
-    if ! devcontainer exec --workspace-folder . /bin/bash -c "
+    if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
         exec $INSTALL_CMD
