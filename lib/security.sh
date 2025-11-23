@@ -200,9 +200,14 @@ install_agent() {
     check_docker_daemon
 
     # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+    local container_running=false
+    if docker container inspect "$CONTAINER_NAME" &>/dev/null && docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+        container_running=true
+    fi
+
+    if [ "$container_running" = false ]; then
         warning "Container is not running. Starting it first..."
-        if ! devcontainer up --workspace-folder . 2>/dev/null; then
+        if ! docker start "$CONTAINER_NAME" 2>/dev/null; then
             error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
