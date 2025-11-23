@@ -374,20 +374,67 @@ install_agent() {
         error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
-    # Apply configuration mounts if specified
+# Apply configuration mounts if specified
     if [ -n "$config_mount" ]; then
-        info "Mounting configuration files..."
-        # Get container ID and apply mount
+        info "Setting up configuration pass-through..."
+        
+        # Parse the mount specifications and add to devcontainer.json
+        local config_file=""
+        if [ -f ".devcontainer/devcontainer.json" ]; then
+            config_file=".devcontainer/devcontainer.json"
+        elif [ -f ".devcontainer.json" ]; then
+            config_file=".devcontainer.json"
+        fi
+
+        if [ -n "$config_file" ] && command -v jq &> /dev/null; then
+            # Check if mounts already exist to avoid duplicates
+            if echo "$config_mount" | grep -q "opencode"; then
+                # Remove any existing opencode mounts
+                jq '.mounts = (.mounts // [] | map(select(if type == "object" then (.target | test("/opencode$")) | not else true end)))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            if echo "$config_mount" | grep -q "aider"; then
+                # Remove any existing aider mounts
+                jq '.mounts = (.mounts // [] | map(select(if type == "object" then (.target | test("/aider")) | not else true end)))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            if echo "$config_mount" | grep -q "config"; then
+                # Remove any existing config mounts
+                jq '.mounts = (.mounts // [] | map(select(if type == "object" then (.target | test("/config$")) | not else true end)))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            
+            # Add new mounts
+            if echo "$config_mount" | grep -q "/home/vscode/.local/share/opencode"; then
+                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.local/share/opencode\", \"target\": \"/home/vscode/.local/share/opencode\"}"
+                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            if echo "$config_mount" | grep -q "/home/vscode/.opencode"; then
+                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.opencode\", \"target\": \"/home/vscode/.opencode\"}"
+                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            if echo "$config_mount" | grep -q "/home/vscode/.aider.conf.yml"; then
+                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.aider.conf.yml\", \"target\": \"/home/vscode/.aider.conf.yml\"}"
+                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            if echo "$config_mount" | grep -q "/home/vscode/.config"; then
+                local mount_json="{\"type\": \"bind\", \"source\": \"$HOME/.config\", \"target\": \"/home/vscode/.config\"}"
+                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+            fi
+            info "Added configuration mounts to $config_file"
+        fi
+
+        # Stop and remove the current container so it gets recreated with the new mount
         CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
         if [ -n "$CONTAINER_ID" ]; then
-            # Note: Docker mount options would need to be applied at container creation time
-            # For now, we'll copy configuration files
-            case "$AGENT" in
-                "aider")
-                    if [ -f "$HOME/.aider.toml" ]; then
-                        docker cp "$HOME/.aider.toml" "$CONTAINER_ID:/home/vscode/.aider.toml" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null
-                    fi
+            info "Stopping and removing current container to apply new configuration..."
+            docker stop "$CONTAINER_ID" 2>/dev/null || true
+            docker rm "$CONTAINER_ID" 2>/dev/null || true
+        fi
+
+        # Recreate the container with the updated configuration
+        info "Recreating container with configuration pass-through..."
+        docker_up "$PROJECT_DIR"
+
+        info "Configuration pass-through enabled"
+    fi
                     ;;
             esac
             info "Configuration files copied to container"
