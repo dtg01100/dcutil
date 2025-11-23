@@ -183,7 +183,7 @@ choose_features() {
 
 # Check if dialog is available for enhanced UI
 has_dialog() {
-    command -v dialog >/dev/null 2>&1
+    command -v dialog >/dev/null 2>&1 && [ -t 0 ] && [ -t 1 ] && [ -n "$TERM" ]
 }
 
 # Enhanced wizard with dialog interface
@@ -209,13 +209,10 @@ wizard_with_dialog() {
     template_list="$template_list $i \"Custom image\""
 
     local selected_template_num
-    exec 3>&1
-    selected_template_num=$(dialog --title "Devcontainer Template Selection" \
+    selected_template_num=$(dialog --stdout --no-cancel --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 20 60 15 \
-        $template_list \
-        2>&1 1>&3)
+        $template_list 2>/dev/null)
     local dialog_exit=$?
-    exec 3>&-
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
         # User cancelled or pressed ESC
@@ -249,13 +246,10 @@ wizard_with_dialog() {
 
     local selected_features=""
     if [ -n "$feature_list" ]; then
-        exec 3>&1
-        selected_features=$(dialog --title "Devcontainer Features" \
+        selected_features=$(dialog --stdout --title "Devcontainer Features" \
             --checklist "Select additional features to install:" 20 60 10 \
-            $feature_list \
-            2>&1 1>&3)
+            $feature_list 2>/dev/null)
         local dialog_exit=$?
-        exec 3>&-
 
         if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
             # User cancelled
@@ -268,34 +262,27 @@ wizard_with_dialog() {
 
     # Container name
     local container_name
-    container_name=$(dialog --title "Container Configuration" \
-        --inputbox "Container name:" 8 40 "My Project" \
-        2>&1 >/dev/tty)
+    container_name=$(dialog --stdout --title "Container Configuration" \
+        --inputbox "Container name:" 8 40 "My Project" 2>/dev/null)
 
     # Workspace folder
     local workspace_folder
-    workspace_folder=$(dialog --title "Container Configuration" \
-        --inputbox "Workspace folder inside container:" 8 40 "/workspaces" \
-        2>&1 >/dev/tty)
+    workspace_folder=$(dialog --stdout --title "Container Configuration" \
+        --inputbox "Workspace folder inside container:" 8 40 "/workspaces" 2>/dev/null)
 
     # Container user
     local container_user
-    container_user=$(dialog --title "Container Configuration" \
-        --inputbox "Container user (name or UID[:GID]):" 8 40 "vscode" \
-        2>&1 >/dev/tty)
+    container_user=$(dialog --stdout --title "Container Configuration" \
+        --inputbox "Container user (name or UID[:GID]):" 8 40 "vscode" 2>/dev/null)
 
     # Mount options
-    local mount_choice
     dialog --title "Mount Options" \
-        --yesno "Map host project directory to container workspace?" 6 50 \
-        2>&1 >/dev/tty
+        --yesno "Map host project directory to container workspace?" 6 50 2>/dev/null
     mount_choice=$?
 
     # Chown options
-    local chown_choice
     dialog --title "Permissions" \
-        --yesno "Set ownership of workspace to container user?" 6 50 \
-        2>&1 >/dev/tty
+        --yesno "Set ownership of workspace to container user?" 6 50 2>/dev/null
     chown_choice=$?
 
     # Clear dialog artifacts
@@ -399,7 +386,7 @@ EOF
             features_json=$(fetch_available_features)
 
             # Use dialog interface if available, otherwise fallback to text
-            if has_dialog && [ -t 0 ] && [ -t 1 ]; then
+            if has_dialog; then
                 info "Devcontainer Initialization Wizard (Enhanced UI)"
                 echo ""
 
