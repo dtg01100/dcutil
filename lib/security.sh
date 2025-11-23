@@ -315,37 +315,74 @@ install_agent() {
         fi
     elif [[ "$INSTALL_CMD" == pip* ]]; then
         INSTALL_TYPE="pip"
-        info "Setting up Python environment for isolated installation..."
+        info "Setting up hermetic Python environment for isolated installation..."
         PYTHON_BIN_DIR="/home/vscode/.dcutil/python"
         VENV_DIR="/home/vscode/.dcutil/agents/$AGENT"
 
-        # Ensure Python and pip are available
-        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "command -v python3" 2>/dev/null; then
-            error_exit "Python3 not found in container" "$EXIT_DEVCONTAINER_ERROR"
+        # Determine platform architecture for portable Python
+        PLATFORM=$(docker exec "$CONTAINER_NAME" /bin/bash -c "ARCH=\$(uname -m); OS=\$(uname -s); if [ \"\$OS\" = \"Linux\" ]; then OS_PREFIX=\"linux\"; elif [ \"\$OS\" = \"Darwin\" ]; then OS_PREFIX=\"macos\"; else OS_PREFIX=\"linux\"; fi; if [ \"\$ARCH\" = \"x86_64\" ]; then echo \"\$OS_PREFIX-x86_64\"; elif [ \"\$ARCH\" = \"aarch64\" ] || [ \"\$ARCH\" = \"arm64\" ]; then echo \"\$OS_PREFIX-aarch64\"; else echo \"linux-x86_64\"; fi" 2>/dev/null || echo "linux-x86_64")
+
+        USE_PORTABLE=false
+        # Try to set up portable Python
+        if docker exec "$CONTAINER_NAME" /bin/bash -c "
+            PLATFORM=\$PLATFORM
+            if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
+                exit 0
+            fi
+            mkdir -p $PYTHON_BIN_DIR
+            case \$PLATFORM in
+                linux-x86_64) ARCH='x86_64-unknown-linux-gnu' ;;
+                linux-aarch64) ARCH='aarch64-unknown-linux-gnu' ;;
+                macos-x86_64) ARCH='x86_64-apple-darwin' ;;
+                macos-aarch64) ARCH='aarch64-apple-darwin' ;;
+                *) exit 1 ;;
+            esac
+            sleep 1  # Rate limiting for GitHub API
+            LATEST_TAG=\$(curl -fsSL https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"tag_name\": \"\\([^\"]*\\)\".*/\\1/p')
+            ASSET_NAME=\$(curl -fsSL https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest | sed -n 's/.*\"name\": \"\\(cpython-3\\.1[23]\\.[0-9]+\\+'\"\\$LATEST_TAG\"'-'\"\\$ARCH\"'-install_only\\.tar\\.gz\\)\".*/\\1/p' | sort -V | tail -1)
+            URL=\"https://github.com/astral-sh/python-build-standalone/releases/download/\\$LATEST_TAG/\\$ASSET_NAME\"
+            if [ -n \"\\$ASSET_NAME\" ] && curl -fsSL \"\\$URL\" | tar -xz -C $PYTHON_BIN_DIR && [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
+                exit 0
+            else
+                exit 1
+            fi
+        " 2>/dev/null; then
+            info "Using hermetic portable Python environment for $AGENT"
+            USE_PORTABLE=true
+        else
+            warning "Failed to set up portable Python, falling back to system Python"
+            echo -e "${YELLOW}⚠️  Use system Python for installation? [y/N]${NC}"
+            read -r confirm_fallback
+            if [[ ! "$confirm_fallback" =~ ^[Yy] ]]; then
+                error_exit "Aborted by user" "$EXIT_INVALID_ARGS"
+            fi
+            USE_PORTABLE=false
         fi
-        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "python3 -m pip --version" 2>/dev/null; then
-            warning "pip not found. Installing pip..."
+
+        if [ "$USE_PORTABLE" = "true" ]; then
+            # Create venv with portable Python
             if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
-                sudo apt-get update && sudo apt-get install -y python3-pip
+                mkdir -p $VENV_DIR
+                $PYTHON_BIN_DIR/bin/python3 -m venv $VENV_DIR
             " 2>/dev/null; then
-                error_exit "Failed to install pip" "$EXIT_DEVCONTAINER_ERROR"
+                warning "Failed to create venv with portable Python, falling back to system Python"
+                USE_PORTABLE=false
             fi
         fi
 
-        # Create isolated virtual environment
-        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
-            mkdir -p $VENV_DIR
-            if ! python3 -m venv $VENV_DIR 2>/dev/null; then
-                echo 'Installing python3-venv package...'
-                sudo apt-get update && sudo apt-get install -y python3-venv
+        if [ "$USE_PORTABLE" != "true" ]; then
+            # Fallback to system Python virtual environment
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+                if ! python3 -m venv --help > /dev/null 2>&1; then
+                    apt-get update && apt-get install -y python3-venv
+                fi
+                mkdir -p $VENV_DIR
                 python3 -m venv $VENV_DIR
+            " 2>/dev/null; then
+                error_exit "Failed to set up system Python venv" "$EXIT_DEVCONTAINER_ERROR"
             fi
-        " 2>/dev/null; then
-            error_exit "Failed to create Python virtual environment" "$EXIT_DEVCONTAINER_ERROR"
+            info "Using system Python environment for $AGENT"
         fi
-        
-        info "Using isolated Python environment for $AGENT"
-        INSTALL_CMD="source $VENV_DIR/bin/activate && $INSTALL_CMD"
     elif [[ "$INSTALL_CMD" == curl* ]]; then
         # Special handling for high-risk curl|bash installations
         INSTALL_TYPE="curl"
