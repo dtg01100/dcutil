@@ -304,10 +304,11 @@ wizard_with_dialog() {
         selected_features=$(echo "$selected_features" | sed 's/^ *//')  # Trim leading space
     fi
 
-    # Container name
+    # Container name (auto-generate from project directory)
     local container_name
+    local default_name="dcutil-$(basename "$PROJECT_DIR" 2>/dev/null || echo "project")"
     container_name=$(dialog --stdout --title "Container Configuration" \
-        --inputbox "Container name:" 8 40 "My Project" 2>/dev/null)
+        --inputbox "Container name:" 8 40 "$default_name" 2>/dev/null)
 
     # Workspace folder
     local workspace_folder
