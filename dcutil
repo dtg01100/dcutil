@@ -408,7 +408,7 @@ elif [ "$COMMAND" = "ssh" ]; then
     determine_project_dir
     shift 1
 elif [ "$COMMAND" = "volumes" ]; then
-    # Volumes command doesn't need project directory
+    # Volumes command can take an optional project directory
     determine_project_dir
     shift 1
 elif [ "$COMMAND" = "compose" ]; then
@@ -1485,11 +1485,24 @@ case "$COMMAND" in
 
         case "$subcommand" in
             "list")
+                # Check if a project path was provided
+                if [ -n "${1:-}" ] && [ -d "$1" ]; then
+                    PROJECT_DIR="$1"
+                    initialize_devcontainer_config
+                    shift  # Remove the project path from arguments
+                fi
                 list_volumes
                 ;;
             "add")
                 if [ $# -lt 3 ]; then
-                    error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
+                    error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type] [project_path]" "$EXIT_INVALID_ARGS"
+                fi
+                # Check if last argument is a project path
+                if [ $# -gt 3 ] && [ -d "${!#}" ]; then
+                    PROJECT_DIR="${!#}"
+                    initialize_devcontainer_config
+                    # Remove the project path from arguments
+                    set -- "${@:1:$#-1}"
                 fi
                 add_volume "$1" "$2" "$3" "${4:-}"
                 ;;

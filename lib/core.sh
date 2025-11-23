@@ -186,7 +186,7 @@ determine_project_dir() {
     elif [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
         PROJECT_DIR="$(pwd)"
     else
-        PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        PROJECT_DIR="$SCRIPT_DIR"
     fi
 
     # Final validation
