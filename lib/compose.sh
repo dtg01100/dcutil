@@ -165,13 +165,13 @@ docker_compose_build() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd $build_args -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
+            "$compose_cmd" "${build_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
         else
             # Single compose file
-            $compose_cmd $build_args -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
+            "$compose_cmd" "${build_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
         fi
     else
-        $compose_cmd $build_args -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
+        "$compose_cmd" "${build_args[@]}" -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
     fi
     
     if [ $? -eq 0 ]; then
@@ -207,7 +207,7 @@ docker_compose_up() {
         info "Starting dependencies first: ${COMPOSE_DEPENDENCIES[*]}"
         if [ -n "$DOCKER_COMPOSE_FILE" ]; then
             if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
-                $compose_cmd "${up_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
+                "$compose_cmd" "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
             else
                 $compose_cmd "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
             fi

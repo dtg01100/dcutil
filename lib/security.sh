@@ -221,6 +221,7 @@ try:
     esac
 }
 
+# shellcheck disable=SC1009,SC1073
 install_agent() {
     local AGENT="$1"
     local INSTALL_CMD
