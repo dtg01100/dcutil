@@ -215,13 +215,16 @@ wizard_with_dialog() {
     local template_list="1 alpine 2 python 3 javascript-node 4 Custom"
     local template_names="alpine python javascript-node Custom"
 
-    info "DEBUG: Using simplified template_list: $template_list"
+    info "Using simplified template selection (4 options)"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
-        --menu "Choose a devcontainer template:" 25 70 20 \
-        "$template_list" 2>/dev/null)
+        --radiolist "Choose a devcontainer template:" 15 50 4 \
+        1 alpine on \
+        2 python off \
+        3 javascript-node off \
+        4 Custom off)
     local dialog_exit=$?
-    info "DEBUG: Template dialog exit code: $dialog_exit, selected: '$selected_template_num'"
+    info "Template dialog exit code: $dialog_exit, selected: '$selected_template_num'"
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
         # User cancelled or pressed ESC
@@ -232,47 +235,22 @@ wizard_with_dialog() {
     fi
 
     local selected_template=""
+    info "Processing selection: '$selected_template_num'"
     case "$selected_template_num" in
         1) selected_template="alpine" ;;
         2) selected_template="python" ;;
         3) selected_template="javascript-node" ;;
         4) selected_template="custom" ;;
+        "") 
+            info "No selection made, cancelling"
+            return 1
+            ;;
+        *)
+            info "Invalid selection: $selected_template_num"
+            return 1
+            ;;
     esac
-
-    # Feature selection - simplified for testing
-    local selected_features=""
-    selected_features=$(dialog --stdout --title "Devcontainer Features" \
-        --checklist "Select additional features to install:" 15 50 5 \
-        1 git off 2 node off 3 python off 2>/dev/null)
-    local dialog_exit=$?
-
-    if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
-        # User cancelled
-        info "DEBUG: Feature dialog cancelled with exit code $dialog_exit"
-        cat << EOF
-selected_template="cancelled"
-selected_features=""
-container_name=""
-workspace_folder=""
-container_user=""
-mount_choice=1
-chown_choice=1
-EOF
-        return 0
-    elif [ $dialog_exit -ne 0 ]; then
-        # Error
-        info "DEBUG: Feature dialog error with exit code $dialog_exit"
-        cat << EOF
-selected_template="error"
-selected_features=""
-container_name=""
-workspace_folder=""
-container_user=""
-mount_choice=1
-chown_choice=1
-EOF
-        return 1
-    fi
+    info "Selected template: $selected_template"
 
     # Container name
     local container_name
