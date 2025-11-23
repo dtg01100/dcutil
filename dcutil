@@ -438,7 +438,7 @@ Examples:
   dcutil hostrequirements validate  # Validate system requirements
 
 For more information on specific commands, use:
-  dcutil <command> help
+   dcutil <command> --help
 
 Documentation: https://github.com/microsoft/devcontainer-spec
 EOF
