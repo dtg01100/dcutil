@@ -305,12 +305,13 @@ install_agent() {
 
         USE_PORTABLE=false
         # Try to set up portable Python
-        if docker exec "$CONTAINER_NAME" /bin/bash -c "PLATFORM=\$PLATFORM;
+        if docker exec "$CONTAINER_NAME" /bin/bash -c "
+            PLATFORM=\$PLATFORM
             if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
                 exit 0
             fi
             mkdir -p $PYTHON_BIN_DIR
-            case \\$PLATFORM in
+            case \$PLATFORM in
                 linux-x86_64) ARCH='x86_64-unknown-linux-gnu' ;;
                 linux-aarch64) ARCH='aarch64-unknown-linux-gnu' ;;
                 macos-x86_64) ARCH='x86_64-apple-darwin' ;;
