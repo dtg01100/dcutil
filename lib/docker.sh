@@ -330,24 +330,14 @@ docker_up() {
         return 0
     fi
     
-# Override image name for custom builds
+    # Override image name for custom builds
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
         # Generate image name from project directory
         IMAGE_NAME="dcutil-${PWD##*/}:custom"
         info "Using custom build image: $IMAGE_NAME"
-        
-        # Build the custom image first
-        info "Building custom devcontainer image..."
-        if command -v execute_container_command >/dev/null 2>&1; then
-            if ! execute_container_command build -t "$IMAGE_NAME" .; then
-                error_exit "Failed to build custom devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
-            fi
-        else
-            if ! docker build -t "$IMAGE_NAME" .; then
-                error_exit "Failed to build custom devcontainer image" "$EXIT_DEVCONTAINER_ERROR"
-            fi
-        fi
-        success "Custom image built successfully: $IMAGE_NAME"
+
+        # Build the custom image using enhanced build logic
+        docker_build "$PROJECT_DIR"
     fi
     
     # Generate container name from project directory (resolve existing container first)

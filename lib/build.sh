@@ -34,20 +34,44 @@ parse_build_config() {
     info "Parsing build configuration..."
     
     if command -v jq &> /dev/null; then
-        # Parse build.dockerfile
-        BUILD_DOCKERFILE=$(jq -r '.build.dockerfile // "Dockerfile"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
-        if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "null" ]; then
-            # Expand variables in dockerfile path
-            BUILD_DOCKERFILE=$(echo "$BUILD_DOCKERFILE" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
-            info "Using Dockerfile: $BUILD_DOCKERFILE"
-        fi
-        
-        # Parse build.context
+        # Parse build.context first
         BUILD_CONTEXT=$(jq -r '.build.context // "."' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         if [ -n "$BUILD_CONTEXT" ] && [ "$BUILD_CONTEXT" != "null" ]; then
             # Expand variables in context path
             BUILD_CONTEXT=$(echo "$BUILD_CONTEXT" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
             info "Using build context: $BUILD_CONTEXT"
+        fi
+
+        # Parse build.dockerfile
+        BUILD_DOCKERFILE=$(jq -r '.build.dockerfile // "Dockerfile"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "null" ]; then
+            # Expand variables in dockerfile path
+            BUILD_DOCKERFILE=$(echo "$BUILD_DOCKERFILE" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+
+            # If dockerfile path is relative and devcontainer.json is in a subdirectory,
+            # make it relative to the build context
+            if [[ "$BUILD_DOCKERFILE" != /* ]]; then
+                local devcontainer_dir
+                devcontainer_dir=$(dirname "$DEVCONTAINER_CONFIG_FILE")
+                local context_dir
+                if [[ "$BUILD_CONTEXT" == "." ]]; then
+                    context_dir="$PROJECT_DIR"
+                else
+                    context_dir=$(realpath -m "$BUILD_CONTEXT" 2>/dev/null || echo "$BUILD_CONTEXT")
+                fi
+                devcontainer_dir=$(realpath -m "$devcontainer_dir" 2>/dev/null || echo "$devcontainer_dir")
+
+                if [ "$devcontainer_dir" != "$context_dir" ]; then
+                    # Calculate relative path from context to devcontainer directory
+                    local rel_path
+                    rel_path=$(realpath -m --relative-to="$context_dir" "$devcontainer_dir" 2>/dev/null || echo "")
+                    if [ -n "$rel_path" ] && [ "$rel_path" != "." ]; then
+                        BUILD_DOCKERFILE="$rel_path/$BUILD_DOCKERFILE"
+                    fi
+                fi
+            fi
+
+            info "Using Dockerfile: $BUILD_DOCKERFILE"
         fi
         
         # Parse build.target
@@ -108,7 +132,7 @@ docker_build_enhanced() {
     if ! is_custom_build; then
         error_exit "No build configuration found. Use 'dcutil build' for standard builds." "$EXIT_CONFIG_ERROR"
     fi
-    
+
     info "Building Docker image with enhanced configuration..."
     check_docker_daemon
     
@@ -156,13 +180,13 @@ docker_build_enhanced() {
         build_cmd="$build_cmd -f $BUILD_DOCKERFILE"
     fi
     
-    # Add context
-    build_cmd="$build_cmd $BUILD_CONTEXT"
-    
     # Add image name
     if [ -n "${IMAGE_NAME:-}" ]; then
         build_cmd="$build_cmd -t $IMAGE_NAME"
     fi
+
+    # Add context
+    build_cmd="$build_cmd $BUILD_CONTEXT"
     
     info "Executing: $build_cmd"
     
