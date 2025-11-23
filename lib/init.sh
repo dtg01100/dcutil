@@ -65,6 +65,8 @@ fetch_available_features() {
 choose_template() {
     local templates_json="$1"
 
+    info "choose_template called with JSON length: $(echo "$templates_json" | wc -c)"
+
     if ! command -v jq >/dev/null 2>&1; then
         warning "jq not available, using basic template selection"
         echo "basic"
@@ -74,6 +76,7 @@ choose_template() {
     # Parse template names
     local template_names
     template_names=$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null || echo "")
+    info "Parsed template names: '$template_names'"
 
     if [ -z "$template_names" ]; then
         warning "Could not fetch templates, using basic template"
@@ -373,12 +376,15 @@ EOF
             info "Run 'dcutil up' to start the container"
             ;;
         "--wizard"|"wizard"|"")
-            # Get available templates and features
-            local templates_json
-            templates_json=$(fetch_available_templates)
+    # Get available templates and features
+    info "Fetching templates and features..."
+    local templates_json
+    templates_json=$(fetch_available_templates)
+    info "Templates JSON length: $(echo "$templates_json" | wc -c)"
 
-            local features_json
-            features_json=$(fetch_available_features)
+    local features_json
+    features_json=$(fetch_available_features)
+    info "Features JSON length: $(echo "$features_json" | wc -c)"
 
             # Use dialog interface if available, otherwise fallback to text
             if has_dialog; then
