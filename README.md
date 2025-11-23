@@ -29,6 +29,8 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 - **Comprehensive validation** for all configurations and inputs
 - **Colored output** for better visibility and debugging
 - **Automatic project detection** with multiple fallback strategies
+- **Interactive container entry** with smart startup prompts
+- **Cross-platform portability** with env-based shebangs and relative paths
 
 #### Container Backend Support
 - **Docker Backend**: Full Docker CLI compatibility with all features
@@ -44,7 +46,7 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 - `up [options]` - Start the devcontainer (with optional --project-home)
 - `down` - Stop the devcontainer
 - `restart` - Restart the devcontainer
-- `enter` - Enter the container shell
+- `enter` - Enter the container shell (offers to start if stopped)
 - `build` - Build the devcontainer image
 - `clean` - Remove the devcontainer and clean up
 - `status` - Show container status
@@ -226,6 +228,35 @@ dcutil provides comprehensive volume management with atomic operations and race 
 - **Mount Type Validation**: Ensures correct mount configuration
 - **Path Expansion**: Automatic tilde (~) and relative path resolution
 
+### Interactive Container Entry
+
+The `enter` command provides intelligent container access with automatic startup:
+
+```bash
+# If container is running - enters directly
+$ dcutil enter
+
+# If container exists but is stopped - offers to start it
+$ dcutil enter
+⚠️  Devcontainer exists but is not running.
+Would you like to start it? (y/N): y
+ℹ️  Starting devcontainer...
+✅ Devcontainer restarted successfully
+# (enters container)
+
+# If no container exists - offers to create one
+$ dcutil enter
+⚠️  No devcontainer found for this project.
+Would you like to start the devcontainer first? (y/N): y
+# Creates and starts container, then enters
+```
+
+#### Interactive Entry Features
+- **Smart Detection**: Automatically detects container state
+- **User-Friendly Prompts**: Clear options for different scenarios
+- **Non-Intrusive**: Non-interactive mode maintains script compatibility
+- **Seamless Experience**: No need to manually check/start containers
+
 ### Installing AI Agents
 
 Use the `install-agent` command to install AI coding assistants inside your devcontainer. Agents are installed hermetically using portable Python binaries, ensuring no conflicts with system packages:
@@ -381,9 +412,11 @@ dcutil implements **100% of the Devcontainer Specification** including:
 ## Requirements
 
 - **Container Runtime**: Docker or Podman
-- **Devcontainer CLI**: Optional - `npm install -g @devcontainers/cli` (required for devcontainer CLI mode)
-- **Bash or Zsh**: For auto-completion support
-- **jq**: For JSON processing (optional, enhances some features)
+- **Devcontainer CLI**: Optional - `npm install -g @devcontainers/cli` (only needed for legacy devcontainer CLI mode)
+- **Bash or Zsh**: For auto-completion support (optional)
+- **jq**: For JSON processing and volume management (optional, enhances some features)
+
+**Note**: dcutil works out-of-the-box with just Docker/Podman installed. No additional dependencies required for core functionality.
 
 ## Testing & Validation
 

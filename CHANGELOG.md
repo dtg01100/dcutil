@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Added
+- **Docker-Native Mode**: Complete container management without devcontainer CLI dependency
+- **Interactive Container Entry**: Smart `dcutil enter` command that offers to start stopped containers
+- **Advanced Volume Management**: Atomic JSON operations with file locking and race condition prevention
+- **Cross-Platform Portability**: Portable bash shebangs (`#!/usr/bin/env bash`) and relative paths
+- **Path Resolution Fixes**: Proper handling of symlinks and relative Dockerfile paths
+
+### Fixed
+- **Logging Output Contamination**: Fixed stdout/stderr redirection to prevent log messages from interfering with command output
+- **Symlink Path Resolution**: Script directory detection now works correctly with symlinked dcutil installations
+- **Dockerfile Path Resolution**: Custom Dockerfiles in subdirectories now build correctly
+- **Container Entry Detection**: Fixed CONTAINER_NAME initialization in docker_enter function
 - **Hermetic Portable Python Installation**: True isolation with portable Python binaries from python-build-standalone
 - **Enhanced Security Scanning**: Multi-layered vulnerability detection including Safety, dependency conflict checking, and core package validation
 - **Robust Portable Python Downloads**: Hardcoded checksums and fallback to system Python for reliability

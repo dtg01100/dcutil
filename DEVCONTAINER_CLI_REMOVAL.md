@@ -2,17 +2,18 @@
 
 ## Overview
 
-This implementation removes the dependency on the `@devcontainers/cli` npm package by providing a Docker-native fallback that uses direct Docker operations. The system automatically detects available tools and uses the best option.
+This implementation provides **complete Docker-native container management** with optional devcontainer CLI support. The system prioritizes Docker-native operations for enhanced performance and reliability, with seamless fallback to devcontainer CLI when available.
 
 ## Architecture
 
-### Hybrid System Design
+### Docker-Native First Design
 
-The system uses a hybrid approach that maintains full backward compatibility:
+The system uses a Docker-native first approach with backward compatibility:
 
-1. **Primary Mode**: Uses `devcontainer CLI` when available (preferred)
-2. **Fallback Mode**: Uses Docker-native operations when CLI is not available
+1. **Primary Mode**: Docker-native operations (no external dependencies)
+2. **Enhanced Mode**: Uses `devcontainer CLI` when available for advanced features
 3. **Automatic Detection**: Seamlessly switches between modes based on availability
+4. **Zero Dependencies**: Works out-of-the-box with just Docker/Podman installed
 
 ### Module Structure
 
