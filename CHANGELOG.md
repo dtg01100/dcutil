@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.8] - 2025-11-23
+
+### Added
+- Comprehensive completion files for bash, zsh, and fish shells with support for all commands and options
+
 ## [1.0.7] - 2025-11-23
 
 ### Added
