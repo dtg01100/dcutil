@@ -5,6 +5,183 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Fetch available devcontainer templates from GitHub
+fetch_available_templates() {
+    local cache_file="$HOME/.cache/dcutil/templates.json"
+    local cache_age=86400  # 24 hours
+
+    # Check if cache exists and is recent
+    if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0))) -lt $cache_age ]; then
+        cat "$cache_file" 2>/dev/null || echo "[]"
+        return
+    fi
+
+    # Create cache directory
+    mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
+
+    # Fetch templates from GitHub API
+    if command -v curl >/dev/null 2>&1; then
+        local templates
+        templates=$(curl -s --max-time 10 "https://api.github.com/repos/devcontainers/templates/contents/src" 2>/dev/null || echo "[]")
+
+        # Cache the result
+        echo "$templates" > "$cache_file" 2>/dev/null || true
+
+        echo "$templates"
+    else
+        echo "[]"
+    fi
+}
+
+# Fetch available devcontainer features from GitHub
+fetch_available_features() {
+    local cache_file="$HOME/.cache/dcutil/features.json"
+    local cache_age=86400  # 24 hours
+
+    # Check if cache exists and is recent
+    if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0))) -lt $cache_age ]; then
+        cat "$cache_file" 2>/dev/null || echo "[]"
+        return
+    fi
+
+    # Create cache directory
+    mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
+
+    # Fetch features from GitHub API
+    if command -v curl >/dev/null 2>&1; then
+        local features
+        features=$(curl -s --max-time 10 "https://api.github.com/repos/devcontainers/features/contents/src" 2>/dev/null || echo "[]")
+
+        # Cache the result
+        echo "$features" > "$cache_file" 2>/dev/null || true
+
+        echo "$features"
+    else
+        echo "[]"
+    fi
+}
+
+# Display available templates and let user choose
+choose_template() {
+    local templates_json="$1"
+
+    if ! command -v jq >/dev/null 2>&1; then
+        warning "jq not available, using basic template selection"
+        echo "basic"
+        return
+    fi
+
+    # Parse template names
+    local template_names
+    template_names=$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null || echo "")
+
+    if [ -z "$template_names" ]; then
+        warning "Could not fetch templates, using basic template"
+        echo "basic"
+        return
+    fi
+
+    echo -e "${YELLOW}📋 Available Devcontainer Templates:${NC}"
+    echo ""
+
+    local i=1
+    local template_array=()
+    while IFS= read -r template; do
+        if [ -n "$template" ]; then
+            template_array+=("$template")
+            echo "$i) $template"
+            i=$((i + 1))
+        fi
+    done <<< "$template_names"
+
+    echo ""
+    echo "0) Custom (specify your own image)"
+    echo ""
+
+    local choice
+    while true; do
+        read -r -p "Choose template [1-$((i-1)), 0 for custom]: " choice
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 0 ] && [ "$choice" -lt "$i" ]; then
+            break
+        fi
+        echo "Invalid choice. Please enter a number between 0 and $((i-1))."
+    done
+
+    if [ "$choice" -eq 0 ]; then
+        echo "custom"
+    else
+        echo "${template_array[$((choice-1))]}"
+    fi
+}
+
+# Display available features and let user choose
+choose_features() {
+    local features_json="$1"
+
+    if ! command -v jq >/dev/null 2>&1; then
+        warning "jq not available, skipping feature selection"
+        echo "[]"
+        return
+    fi
+
+    # Parse feature names
+    local feature_names
+    feature_names=$(echo "$features_json" | jq -r '.[].name' 2>/dev/null || echo "")
+
+    if [ -z "$feature_names" ]; then
+        warning "Could not fetch features, skipping feature selection"
+        echo "[]"
+        return
+    fi
+
+    echo -e "${YELLOW}🔧 Available Devcontainer Features:${NC}"
+    echo "Features add tools and runtimes to your container."
+    echo ""
+
+    local i=1
+    local feature_array=()
+    while IFS= read -r feature; do
+        if [ -n "$feature" ]; then
+            feature_array+=("$feature")
+            echo "$i) $feature"
+            i=$((i + 1))
+        fi
+    done <<< "$feature_names"
+
+    echo ""
+    echo "0) No additional features"
+    echo ""
+
+    local selected_features=()
+    while true; do
+        read -r -p "Choose features (comma-separated numbers, or 0 for none): " choices
+        if [ "$choices" = "0" ] || [ -z "$choices" ]; then
+            break
+        fi
+
+        # Parse comma-separated choices
+        local valid=true
+        IFS=',' read -ra choice_array <<< "$choices"
+        for choice in "${choice_array[@]}"; do
+            choice=$(echo "$choice" | xargs)  # trim whitespace
+            if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$i" ]; then
+                selected_features+=("${feature_array[$((choice-1))]}")
+            else
+                echo "Invalid choice: $choice. Please enter numbers between 1 and $((i-1))."
+                valid=false
+                break
+            fi
+        done
+
+        if [ "$valid" = true ]; then
+            break
+        fi
+    done
+
+    # Return JSON array of selected features
+    printf '%s\n' "${selected_features[@]}" | jq -R . | jq -s .
+}
+
 # Parse init options
 init_mode() {
     local INIT_MODE="${1:-wizard}"
@@ -70,20 +247,42 @@ EOF
             info "Devcontainer Initialization Wizard"
             echo ""
 
-            # Get project type
-            echo -e "${YELLOW}📋 Choose project type:${NC}"
-            echo "1) Basic (Ubuntu + common tools)"
-            echo "2) Node.js"
-            echo "3) Python"
-            echo "4) Go"
-            echo "5) Custom image"
-            echo ""
-            read -r -p "Enter choice [1-5]: " project_choice
+            # Get available templates and let user choose
+            local templates_json
+            templates_json=$(fetch_available_templates)
 
-            # Validate project choice
-            if [[ ! "$project_choice" =~ ^[1-5]$ ]]; then
-                error_exit "Invalid choice. Please enter a number between 1-5." "$EXIT_INVALID_ARGS"
-            fi
+            local selected_template
+            selected_template=$(choose_template "$templates_json")
+
+            # Get available features and let user choose
+            local features_json
+            features_json=$(fetch_available_features)
+
+            local selected_features_json
+            selected_features_json=$(choose_features "$features_json")
+
+            # Map template to project choice for backward compatibility
+            case "$selected_template" in
+                "basic"|"ubuntu")
+                    project_choice=1
+                    ;;
+                "javascript-node"|"typescript-node"|*node*)
+                    project_choice=2
+                    ;;
+                "python"|*python*)
+                    project_choice=3
+                    ;;
+                "go"|*go*)
+                    project_choice=4
+                    ;;
+                "custom")
+                    project_choice=5
+                    ;;
+                *)
+                    # For unknown templates, treat as custom
+                    project_choice=5
+                    ;;
+            esac
 
             # Get container name
             read -r -p "Container name [My Project]: " container_name
@@ -159,28 +358,26 @@ EOF
                 error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
             fi
 
-            case "$project_choice" in
-                "1")
+            # Determine image based on selected template
+            case "$selected_template" in
+                "basic"|"ubuntu"|"alpine")
                     image="mcr.microsoft.com/devcontainers/base:ubuntu"
                     ;;
-                "2")
+                "javascript-node"|"typescript-node"|*node*)
                     image="mcr.microsoft.com/devcontainers/javascript-node:18"
                     ;;
-                "3")
+                "python"|*python*)
                     image="mcr.microsoft.com/devcontainers/python:3.10"
                     ;;
-                "4")
+                "go"|*go*)
                     image="mcr.microsoft.com/devcontainers/go:1.21"
                     ;;
-                "5")
-                    read -r -p "Enter Docker image name: " custom_image
-                    if [ -z "$custom_image" ]; then
-                        error_exit "Docker image name cannot be empty" "$EXIT_INVALID_ARGS"
-                    fi
-                    image="$custom_image"
+                "custom")
+                    read -r -p "Enter custom Docker image: " image
                     ;;
                 *)
-                    error_exit "Invalid choice" "$EXIT_INVALID_ARGS"
+                    # For unknown templates, try to use the template name as the image
+                    image="mcr.microsoft.com/devcontainers/${selected_template}:latest"
                     ;;
             esac
 
@@ -212,11 +409,29 @@ EOF
                 fi
             fi
 
+            # Generate features JSON if any features were selected
+            local features_snippet=""
+            if [ "$selected_features_json" != "[]" ] && [ -n "$selected_features_json" ]; then
+                # Convert feature names to feature objects
+                local features_objects=""
+                local first=true
+                for feature in $(echo "$selected_features_json" | jq -r '.[]'); do
+                    if [ "$first" = true ]; then
+                        first=false
+                    else
+                        features_objects="$features_objects, "
+                    fi
+                    features_objects="$features_objects\"ghcr.io/devcontainers/features/$feature\": {}"
+                done
+                features_snippet="\"features\": {$features_objects},"
+            fi
+
             # Create devcontainer.json depending on image and selected options
             if ! cat > .devcontainer/devcontainer.json << EOF
 {
     "name": "$container_name",
     "image": "$image",
+    $features_snippet
     $mounts_snippet
     "workspaceFolder": "$workspace_folder",
     "remoteUser": "$remote_user",
