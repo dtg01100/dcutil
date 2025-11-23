@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.7] - 2025-11-23
+
+### Added
+- Automated Homebrew formula updates via GitHub Actions
+- Repository dispatch workflows for cross-repo automation
+
 ## [1.0.6] - 2025-11-23
 
 ### Added
