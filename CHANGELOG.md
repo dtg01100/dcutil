@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.0.6] - 2025-11-23
+
+### Added
+- Embed version in script for better version detection
+
+## [1.0.5] - 2025-11-23
+
+### Added
+- `dcutil version` command to show current version
+- Version command support in bash/zsh completion
+
+## [1.0.4] - 2025-11-23
+
+### Changed
+- Update help text to use `--help` convention instead of `help`
+
+## [1.0.3] - 2025-11-23
+
+### Fixed
+- Fix `dcutil init` exiting immediately in non-interactive environments
+- Add check for interactive terminal before running wizard mode
+
+## [1.0.2] - 2025-11-23
+
+### Added
+- Initial release with full devcontainer specification compliance
+
 ## [Unreleased]
 
 ### Added
