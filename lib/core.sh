@@ -44,6 +44,27 @@ info() {
     echo -e "${BLUE}ℹ️  $1${NC}" >&2
 }
 
+confirm_prompt() {
+    local prompt_text="${1:-}"
+    local default="${2:-N}"
+
+    if [ -n "${DCUTIL_ASSUME_YES:-}" ]; then
+        return 0
+    fi
+
+    if [ -n "${CI:-}" ] || [ ! -t 0 ]; then
+        return 1
+    fi
+
+    local ans
+    read -r -p "$prompt_text " ans
+    ans="${ans:-$default}"
+    if [[ "$ans" =~ ^[Yy] ]]; then
+        return 0
+    fi
+    return 1
+}
+
 # Input validation functions
 validate_command() {
     local cmd="${1:-}"

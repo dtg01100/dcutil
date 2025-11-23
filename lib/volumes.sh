@@ -168,9 +168,7 @@ add_volume() {
                 # Non-interactive: create directory if it doesn't exist
                 mkdir -p "$host_path" 2>/dev/null || true
             else
-                echo ""
-                read -r -p "Host path '$host_path' does not exist. Create it? (y/N): " create_path
-                if [[ "$create_path" =~ ^[Yy] ]]; then
+                if confirm_prompt "Host path '$host_path' does not exist. Create it? (y/N):"; then
                     mkdir -p "$host_path" || {
                         if command -v flock &>/dev/null; then
                             flock -u 9 || true
@@ -376,7 +374,7 @@ remove_volume() {
     success "Removed volume '$volume_name'"
 
     # Offer to unmount if mounted
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+    if run_in_container "echo running" 2>/dev/null >/dev/null; then
         if ! [ -t 0 ]; then
             # Non-interactive: perform unmount automatically if container is running and the volume was removed
             unmount_volume "$volume_name" || true
@@ -449,7 +447,7 @@ mount_volume() {
     fi
 
     # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+    if ! run_in_container "echo running" 2>/dev/null >/dev/null; then
         error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
@@ -539,7 +537,7 @@ unmount_volume() {
     fi
 
     # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+    if ! run_in_container "echo running" 2>/dev/null >/dev/null; then
         error_exit "Devcontainer is not running" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
@@ -582,7 +580,7 @@ volume_status() {
     echo ""
 
     # Check if container is running
-    if devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+    if run_in_container "echo running" 2>/dev/null >/dev/null; then
         success "Container is running"
 
         # Get container ID

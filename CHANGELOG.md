@@ -32,6 +32,8 @@
 ### Enhanced
 - **Python Setup**: Completely rewritten with portable Python downloads, SHA256 verification, and virtual environment nesting
 - **Security**: Advanced vulnerability scanning with multiple tools and extensive package analysis
+- **Venv Creation Centralization**: Consolidated duplicated venv creation logic into reusable helpers (`create_system_venv`, `create_portable_venv`)
+- **Agent Installation Refactoring**: Streamlined pip agent installation with direct venv python/pip usage and reduced redundancy
 - Better error messages with actionable guidance
 - Graceful failure handling for non-critical operations
 - Improved project directory detection and validation

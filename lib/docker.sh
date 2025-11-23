@@ -357,7 +357,8 @@ docker_up() {
     if [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" = true ]; then
         info "Setting container home folder to project directory..."
         # Add project directory as home mount
-        HOME_MOUNT="--mount type=bind,source=$PROJECT_DIR,target=/home/$CONTAINER_USER"
+        HOME_MOUNT="type=bind,source=$PROJECT_DIR,target=/home/$CONTAINER_USER"
+        info "HOME_MOUNT: $HOME_MOUNT"
     fi
     
     # Build mount arguments from JSON config
@@ -366,15 +367,133 @@ docker_up() {
         # Mount is already in Docker format: "source=...,target=...,type=..."
         MOUNT_ARGS+=("--mount" "$mount")
     done
+
+add_mount_to_devcontainer() {
+    local src="$1"
+    local tgt="$2"
+    local typ="${3:-bind}"
+    local recreate="${4:-}"
+    local cfg="${DEVCONTAINER_CONFIG_FILE:-.devcontainer/devcontainer.json}"
+
+    if [ ! -f "$cfg" ]; then
+        error "Could not find devcontainer.json to add mount"
+        return 1
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        if command -v python3 >/dev/null 2>&1; then
+            info "jq not available, using python3 as fallback to modify devcontainer.json"
+            # Use python3 to safely check for duplicates and append the mount
+            if ! python3 - "$cfg" "$src" "$tgt" "$typ" <<'PY'
+import sys, json
+cfg, src, tgt, typ = sys.argv[1:]
+with open(cfg, 'r') as f:
+    data = json.load(f)
+mounts = data.get('mounts') or []
+# Check duplicates
+for m in mounts:
+    if isinstance(m, dict):
+        if m.get('source') == src or m.get('target') == tgt:
+            sys.exit(0)
+    elif isinstance(m, str):
+        if f"source={src}" in m or f"target={tgt}" in m:
+            sys.exit(0)
+# Append mount
+if isinstance(mounts, list):
+    mounts.append({"type": typ, "source": src, "target": tgt})
+else:
+    mounts = [{"type": typ, "source": src, "target": tgt}]
+data['mounts'] = mounts
+with open(cfg, 'w') as f:
+    json.dump(data, f, indent=2)
+print('ok')
+PY
+            then
+                validate_json_if_available "$cfg" || warning "Updated devcontainer.json may be invalid"
+                info "Added mount to $cfg: $typ $src -> $tgt"
+                # Optionally ask to recreate below
+            else
+                warning "Failed to update $cfg with python fallback"
+                return 1
+            fi
+        else
+            warning "jq and python3 not available, cannot add mount to devcontainer.json"
+            return 1
+        fi
+    fi
+
+    # Normalize type
+    typ="${typ:-bind}"
+
+    # Robust duplicate detection using jq (handles both object and string mount formats)
+    if jq -e --arg src "$src" --arg tgt "$tgt" --arg typ "$typ" '
+            .mounts[]? as $m |
+            if ($m|type) == "object" then
+                ($m.source == $src) or ($m.target == $tgt) or ($m.type == $typ and $m.source == $src and $m.target == $tgt)
+            elif ($m|type) == "string" then
+                ($m | contains("target=" + $tgt)) or ($m | contains("source=" + $src))
+            else
+                false
+            end
+        ' "$cfg" >/dev/null 2>&1; then
+        info "Mount for target $tgt or source $src already exists in devcontainer.json"
+        return 0
+    fi
+
+    local tmp
+    tmp=$(mktemp "${cfg}.XXXXXX")
+
+    if jq -e '.mounts' "$cfg" >/dev/null 2>&1; then
+        if ! jq --arg src "$src" --arg tgt "$tgt" --arg typ "$typ" '.mounts += [{type:$typ, source:$src, target:$tgt}]' "$cfg" > "$tmp"; then
+            rm -f "$tmp" || true
+            error "Failed to append mount to $cfg"
+            return 1
+        fi
+    else
+        if ! jq --arg src "$src" --arg tgt "$tgt" --arg typ "$typ" '. + { mounts: [ { type: $typ, source: $src, target: $tgt } ] }' "$cfg" > "$tmp"; then
+            rm -f "$tmp" || true
+            error "Failed to add mounts array to $cfg"
+            return 1
+        fi
+    fi
+
+    mv "$tmp" "$cfg"
+    validate_json_if_available "$cfg" || warning "Updated devcontainer.json may be invalid"
+    info "Added mount to $cfg: $typ $src -> $tgt"
+
+    # Optionally recreate container to apply new mount
+    if [ "$recreate" = "yes" ] || [ "$recreate" = "prompt" ]; then
+        if [ "$recreate" = "prompt" ] && [ -t 0 ]; then
+            echo "Do you want to recreate the container now to apply mount? (y/N): "
+            read -r _choice
+            if [[ ! "$_choice" =~ ^[Yy] ]]; then
+                return 0
+            fi
+        fi
+
+        if command -v devcontainer_rebuild >/dev/null 2>&1; then
+            info "Recreating devcontainer to apply mount (preserving agents and volumes)..."
+            devcontainer_rebuild --preserve-agents --preserve-volumes --force
+        else
+            warning "devcontainer_rebuild not available; cannot recreate container automatically"
+        fi
+    fi
+
+    return 0
+}
     
     # Only add default workspace mount if none are specified in config
     if [ ${#MOUNTS[@]} -eq 0 ] && [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" != true ]; then
-        MOUNT_ARGS+=("--mount" "type=bind,source=$PROJECT_DIR,target=$WORKSPACE_FOLDER,consistency=cached")
+        local mount_spec="type=bind,source=$PROJECT_DIR,target=$WORKSPACE_FOLDER,consistency=cached"
+        info "Adding default mount: $mount_spec"
+        MOUNT_ARGS+=("--mount" "$mount_spec")
     fi
     
     # Add home mount if enabled
     if [ -n "${HOME_MOUNT:-}" ]; then
-        MOUNT_ARGS+=("$HOME_MOUNT")
+        info "Adding HOME_MOUNT to MOUNT_ARGS: $HOME_MOUNT"
+        MOUNT_ARGS+=("--mount" "$HOME_MOUNT")
+        info "MOUNT_ARGS now: ${MOUNT_ARGS[*]}"
     fi
     
     # Build environment variables using environment module if available
@@ -1169,6 +1288,37 @@ execute_container_command() {
         docker "$cmd" "$@"
     fi
 }
+
+# Execute a command inside the devcontainer: prefer devcontainer CLI, fall back to docker/podman exec
+exec_in_container() {
+    local cmd="$*"
+    if command -v devcontainer >/dev/null 2>&1; then
+        devcontainer exec --workspace-folder . /bin/bash -lc "$cmd"
+        return $?
+    fi
+
+    local container_name
+    container_name=$(get_container_name_for_project "${PROJECT_DIR:-$(pwd)}")
+    if [ -z "${container_name}" ]; then
+        error "Unable to determine container name for project"
+        return 1
+    fi
+
+    # Prefer docker/podman via execute_container_command wrapper
+    if command -v execute_container_command >/dev/null 2>&1; then
+        execute_container_command exec -i "$container_name" /bin/sh -lc "$cmd"
+        return $?
+    else
+        docker exec -i "$container_name" /bin/sh -lc "$cmd"
+        return $?
+    fi
+}
+
+# Backwards-compatible alias used across the codebase
+run_in_container() {
+    exec_in_container "$@"
+}
+
 
 devcontainer_down() {
     info "Stopping devcontainer..."

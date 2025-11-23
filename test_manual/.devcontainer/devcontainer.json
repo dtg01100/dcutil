@@ -1,0 +1,1 @@
+{"name": "Test", "image": "mcr.microsoft.com/devcontainers/base:ubuntu", "workspaceFolder": "/workspaces/test", "remoteUser": "vscode", "containerUser": "vscode"}

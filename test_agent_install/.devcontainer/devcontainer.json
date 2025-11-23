@@ -1,0 +1,7 @@
+{
+    "name": "Test Agent Install Container",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "workspaceFolder": "/workspaces/test",
+    "remoteUser": "vscode",
+    "containerUser": "vscode"
+}
