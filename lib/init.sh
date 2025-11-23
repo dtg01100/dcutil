@@ -219,11 +219,24 @@ wizard_with_dialog() {
     # Initialize variables
     local selected_features=""
 
-    # Template selection - simplified for testing
-    local template_list="1 alpine 2 python 3 javascript-node 4 Custom"
-    local template_names="alpine python javascript-node Custom"
+    # Template selection - dynamic from API
+    local template_list=""
+    local template_names=""
+    local i=1
 
-    info "Using simplified template selection (4 options)"
+    if command -v jq >/dev/null 2>&1; then
+        while IFS= read -r template; do
+            if [ -n "$template" ] && [ $i -le 20 ]; then  # Limit to 20 templates for menu
+                template_list="$template_list $i \"$template\""
+                template_names="$template_names $template"
+                i=$((i + 1))
+            fi
+        done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null | head -20)"
+    fi
+
+    template_list="$template_list $i \"Custom image\""
+
+    info "Loaded $((i-1)) templates from API"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 15 50 4 \
@@ -243,21 +256,13 @@ wizard_with_dialog() {
     fi
 
     local selected_template=""
-    info "Processing selection: '$selected_template_num'"
-    case "$selected_template_num" in
-        1) selected_template="alpine" ;;
-        2) selected_template="python" ;;
-        3) selected_template="javascript-node" ;;
-        4) selected_template="custom" ;;
-        "") 
-            info "No selection made, cancelling"
-            return 1
-            ;;
-        *)
-            info "Invalid selection: $selected_template_num"
-            return 1
-            ;;
-    esac
+    if [ "$selected_template_num" = "$i" ]; then
+        selected_template="custom"
+    elif [ -n "$selected_template_num" ] && [ "$selected_template_num" -gt 0 ] && [ "$selected_template_num" -le $((i-1)) ]; then
+        # Convert space-separated template_names to array and get the selected one
+        local template_array=($template_names)
+        selected_template="${template_array[$((selected_template_num-1))]}"
+    fi
     info "Selected template: $selected_template"
 
     # Container name
