@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # shutdownAction handling for dcutil
 # Implements shutdown actions per devcontainer specification

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Comprehensive demonstration of dcutil devcontainer CLI removal
 # Shows both devcontainer CLI mode and Docker-native mode working

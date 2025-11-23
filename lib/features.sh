@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Devcontainer Features support for dcutil
 # Implements Devcontainer Features specification for adding tools and runtimes
@@ -289,7 +289,7 @@ EOF
     # Create a basic install script if none provided (fallback for local testing)
     if [ ! -f "$cache_dir/src/install.sh" ]; then
         cat > "$cache_dir/src/install.sh" << 'FEATURE_INSTALL_SCRIPT'
-#!/bin/bash
+#!/usr/bin/env bash
 # Default fallback install script for features
 # This script simply prints DCUTIL_INPUT_* environment variables for testing
 env | sed -n 's/^DCUTIL_INPUT_/DCUTIL_INPUT_/p' | sed 's/^/DCUTIL_INPUT: /'

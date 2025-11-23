@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Tool Integration support for dcutil
 # Implements customizations and metadata parsing from devcontainer specification

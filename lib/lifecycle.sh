@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Lifecycle command support for dcutil
 # Implements additional lifecycle hooks from devcontainer specification

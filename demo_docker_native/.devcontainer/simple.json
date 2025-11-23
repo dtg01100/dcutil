@@ -1,0 +1,6 @@
+{
+    "name": "Simple Dev Container",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "workspaceFolder": "/workspaces/simple",
+    "postCreateCommand": "echo 'Simple container ready'"
+}

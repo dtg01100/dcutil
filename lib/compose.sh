@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Docker Compose support for dcutil
 # Handles docker-compose.yml based devcontainer configurations

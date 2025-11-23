@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Advanced Features support for dcutil
 # Implements advanced devcontainer specification features

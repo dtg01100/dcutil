@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Core functionality for dcutil
 # Handles basic operations and command routing

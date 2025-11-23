@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test custom Dockerfile builds end-to-end
 # This script tests the complete custom Dockerfile build workflow

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Comprehensive Schema Validation for Devcontainer Configuration
 # Implements JSON Schema validation for devcontainer.json files

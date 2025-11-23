@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Auto-setup completion for dcutil
 # This script detects your shell and sets up completion automatically

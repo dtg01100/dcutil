@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Final Comprehensive Test for 100% Devcontainer Specification Compliance
 # Tests all implemented features and validates complete functionality

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Environment management for dcutil
 # Handles containerEnv, remoteEnv, and user management

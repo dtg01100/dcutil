@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Podman backend support for dcutil
 # Provides Podman compatibility layer for Docker-native operations

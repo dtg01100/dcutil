@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Enhanced build configuration support for dcutil
 # Handles advanced Dockerfile build options per devcontainer specification

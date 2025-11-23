@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Bash completion for dcutil
 # Install by sourcing this file in your .bashrc or placing it in /etc/bash_completion.d/

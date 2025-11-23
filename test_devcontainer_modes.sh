@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test script for devcontainer CLI removal functionality
 # Verifies both devcontainer CLI and Docker-native modes work correctly

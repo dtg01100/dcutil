@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test script for Phase 5 Devcontainer Features Implementation
 # Tests userEnvProbe, hostRequirements, and shutdownAction features

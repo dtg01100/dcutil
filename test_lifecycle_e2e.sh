@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test lifecycle commands end-to-end
 # This script tests the complete lifecycle command workflow

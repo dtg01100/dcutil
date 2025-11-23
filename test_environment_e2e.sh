@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Test environment management end-to-end
 # This script tests the complete environment variable management workflow

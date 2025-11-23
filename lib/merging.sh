@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Image Metadata Merging support for dcutil
 # Implements the merge logic between image metadata and devcontainer.json per specification

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # userEnvProbe support for dcutil
 # Implements shell-based environment variable probing per devcontainer specification
@@ -54,7 +54,7 @@ probe_user_environment() {
     
     # Create probe script that outputs environment variables
     cat > "$probe_script" << 'EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Source common profile files to pick up user environment
 if [ -f "$HOME/.bash_profile" ]; then

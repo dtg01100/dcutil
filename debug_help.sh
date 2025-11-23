@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Main dcutil script
 # Routes commands to appropriate modules
@@ -102,7 +102,7 @@ if [ "$COMMAND" = "completion" ]; then
 
         if [ "$shell" = "bash" ]; then
             cat << 'BASH_EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Bash completion for dcutil
 _source_dcutil_completion() {

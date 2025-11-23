@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # hostRequirements validation for dcutil
 # Implements validation of system requirements per devcontainer specification

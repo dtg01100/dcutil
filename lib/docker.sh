@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Docker-native devcontainer operations for dcutil
 # Direct Docker operations without external dependencies

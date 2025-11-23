@@ -1,5 +1,5 @@
 source "$SCRIPT_DIR/lib/docker.sh"
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Debug wrapper for dcutil - minimal wrapper script
 set -euo pipefail
@@ -111,7 +111,7 @@ if [ "$COMMAND" = "completion" ]; then
 
         if [ "$shell" = "bash" ]; then
             cat << 'BASH_EOF'
-#!/bin/bash
+#!/usr/bin/env bash
 
 # Bash completion for dcutil
 _source_dcutil_completion() {
