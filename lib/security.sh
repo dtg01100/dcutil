@@ -435,11 +435,6 @@ install_agent() {
 
         info "Configuration pass-through enabled"
     fi
-                    ;;
-            esac
-            info "Configuration files copied to container"
-        fi
-    fi
 
     info "Installation completed, running security scans..."
 
