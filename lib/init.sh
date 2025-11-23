@@ -475,8 +475,8 @@ EOF
                     selected_features_json="[]"
                 fi
 
-                # Set defaults
-                container_user_input=${container_user:-vscode}
+                 # Set defaults
+                 container_user_input=${container_user_input:-vscode}
 
                 # Validate workspace folder
                 if [ -n "$workspace_folder" ]; then
@@ -496,29 +496,37 @@ EOF
                 local selected_features_json
                 selected_features_json=$(choose_features "$features_json")
 
-                # Get remaining config via text prompts
-                # Get container name
-                read -r -p "Container name [My Project]: " container_name
-                container_name=${container_name:-"My Project"}
+                 # Get remaining config via text prompts
+                 # Get container name
+                 read -r -p "Container name [My Project]: " container_name
+                 container_name=${container_name:-"My Project"}
 
-                # Prompt for workspace folder (validate)
-                while true; do
-                    read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
-                    workspace_folder=${workspace_folder:-/workspaces}
-                    validate_workspace_folder "$workspace_folder"
-                    case $? in
-                        0) break;;
-                        1) echo "Invalid input: workspace folder cannot be empty";;
-                        2) echo "Workspace folder must be an absolute path (start with /)";;
-                        3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
-                        4) echo "Workspace folder must not have leading or trailing whitespace";;
-                        *) echo "Invalid workspace folder";;
-                    esac
-                done
+                 # Prompt for workspace folder (validate)
+                 while true; do
+                     read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
+                     workspace_folder=${workspace_folder:-/workspaces}
+                     validate_workspace_folder "$workspace_folder"
+                     case $? in
+                         0) break;;
+                         1) echo "Invalid input: workspace folder cannot be empty";;
+                         2) echo "Workspace folder must be an absolute path (start with /)";;
+                         3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
+                         4) echo "Workspace folder must not have leading or trailing whitespace";;
+                         *) echo "Invalid workspace folder";;
+                     esac
+                 done
 
-                # Prompt for container user (supports name or numeric UID[:GID])
-                read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
-                container_user_input=${container_user_input:-vscode}
+                 # Prompt for container user (supports name or numeric UID[:GID])
+                 read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
+                 container_user_input=${container_user_input:-vscode}
+
+                 # Ask whether to set ownership of the workspace
+                 read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
+                 chown_choice=${chown_choice:-Y}
+
+                 # Ask whether to mount host project dir into container workspace
+                 read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
+                 mount_choice=${mount_choice:-Y}
 
                 # Ask whether to set ownership of the workspace
                 read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
@@ -527,32 +535,9 @@ EOF
                 # Ask whether to mount host project dir into container workspace
                 read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
                 mount_choice=${mount_choice:-Y}
-            fi
+             fi
 
-            # selected_template is used directly in the dialog path
-
-            # Get container name
-            read -r -p "Container name [My Project]: " container_name
-            container_name=${container_name:-"My Project"}
-
-            # Prompt for workspace folder (validate)
-            while true; do
-                read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
-                workspace_folder=${workspace_folder:-/workspaces}
-                validate_workspace_folder "$workspace_folder"
-                case $? in
-                    0) break;;
-                    1) echo "Invalid input: workspace folder cannot be empty";;
-                    2) echo "Workspace folder must be an absolute path (start with /)";;
-                    3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
-                    4) echo "Workspace folder must not have leading or trailing whitespace";;
-                    *) echo "Invalid workspace folder";;
-                esac
-            done
-
-            # Prompt for container user (supports name or numeric UID[:GID])
-            read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
-            container_user_input=${container_user_input:-vscode}
+             # selected_template is used directly in the dialog path
 
             container_user_is_numeric=false
             container_uid=""
@@ -571,23 +556,18 @@ EOF
                 remote_user="$container_user"
             fi
 
-            # Ask whether to set ownership of the workspace
-            read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
-            chown_choice=${chown_choice:-Y}
-            set_chown=false
-            if [[ "$chown_choice" =~ ^[Yy] ]]; then
-                set_chown=true
-            fi
+             # Set variables based on dialog choices or defaults
+             set_chown=false
+             if [[ "$chown_choice" =~ ^[Yy] ]]; then
+                 set_chown=true
+             fi
 
-            # Ask whether to mount host project dir into container workspace
-            read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
-            mount_choice=${mount_choice:-Y}
-            mount_project_to_container=false
-            mounts_snippet=""
-            if [[ "$mount_choice" =~ ^[Yy] ]]; then
-                mount_project_to_container=true
-                mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
-            fi
+             mount_project_to_container=false
+             mounts_snippet=""
+             if [[ "$mount_choice" =~ ^[Yy] ]]; then
+                 mount_project_to_container=true
+                 mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
+             fi
 
             # Default chown snippet based on numeric/user input
             chown_snippet=""
@@ -724,12 +704,21 @@ EOF
             echo ""
             echo "Modes:"
             echo "  fast     Create basic Ubuntu container automatically"
-            echo "  wizard   Interactive setup (default)"
+            echo "  wizard   Interactive setup with dynamic templates and features (default)"
+            echo ""
+            echo "Wizard Features:"
+            echo "  • Dynamic template fetching (40+ official templates from GitHub)"
+            echo "  • Live feature catalog (27+ features: Node.js, Python, Docker, etc.)"
+            echo "  • Dialog interface (ncurses UI when available)"
+            echo "  • Text interface fallback for all environments"
+            echo "  • Auto-generated container names and smart defaults"
+            echo "  • Optional immediate container startup"
             echo ""
             echo "Examples:"
-            echo "  dcutil init          # Start wizard"
-            echo "  dcutil init fast     # Quick basic setup"
-            echo "  dcutil init --fast   # Quick basic setup"
+            echo "  dcutil init          # Start interactive wizard"
+            echo "  dcutil init wizard   # Start interactive wizard (explicit)"
+            echo "  dcutil init fast     # Quick basic Ubuntu setup"
+            echo "  dcutil init --fast   # Quick basic Ubuntu setup"
             ;;
         *)
             echo -e "${RED}❌ Unknown init mode: $INIT_MODE${NC}"

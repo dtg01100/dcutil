@@ -166,27 +166,67 @@ dcutil supports a Docker-native mode that operates without requiring the devcont
 
 ### Initialization
 
-Use the `init` command to create a devcontainer configuration:
+Use the `init` command to create a devcontainer configuration with an interactive wizard or fast setup:
 
 ```bash
-# Interactive wizard with multiple project types
+# Interactive wizard with dynamic template and feature selection
 ./dcutil init
+
+# Interactive wizard (explicit)
+./dcutil init wizard
 
 # Quick basic Ubuntu setup
 ./dcutil init fast
 ```
 
-The wizard supports:
-- Basic Ubuntu container with common tools
-- Node.js development environment
-- Python development environment
-- Go development environment
-- Custom Docker images
+#### Enhanced Interactive Wizard
 
-Key wizard features:
-- Numeric UID/GID support: Enter container user as a name or UID[:GID] when prompted (e.g., "vscode" or "1000:1000"). If a numeric UID is provided, the script uses numeric chown to avoid needing the username in the image.
-- Workspace folder validation: Prompts for an absolute workspaceFolder path and validates it is not root and does not contain trailing whitespace.
-- Optional project bind mount: Optionally map the host project directory to the container workspace (adds a devcontainer.json mounts entry with source=$PROJECT_DIR,target=$workspaceFolder,type=bind,consistency=cached).
+The wizard provides a comprehensive setup experience with:
+
+**Dynamic Content Fetching:**
+- **40+ Official Templates**: Automatically fetches and displays all available devcontainer templates from Microsoft's GitHub repository
+- **27+ Devcontainer Features**: Live feature catalog with tools and runtimes (Node.js, Python, Go, Docker, AWS CLI, etc.)
+- **24-hour Caching**: Templates and features are cached locally for improved performance
+
+**User Interface Options:**
+- **Dialog Interface**: Professional ncurses-based UI using `dialog` command (when available)
+- **Text Interface**: Reliable fallback for environments without dialog support
+- **Auto-Detection**: Automatically chooses the best interface based on terminal capabilities
+
+**Configuration Options:**
+- **Template Selection**: Choose from official templates (Ubuntu, Alpine, Node.js, Python, Go, etc.) or specify custom images
+- **Feature Installation**: Select multiple features to install (Git, Docker, AWS CLI, etc.)
+- **Container Configuration**: Auto-generated container names, customizable workspace folders, user settings
+- **Mount Options**: Optional bind mounting of host project directory with proper permissions
+- **Permission Management**: Configurable ownership settings for workspace directories
+
+**Advanced Features:**
+- **Numeric UID/GID Support**: Enter container user as name or UID[:GID] (e.g., "vscode" or "1000:1000")
+- **Workspace Validation**: Ensures absolute paths, prevents root mounting, validates input
+- **Smart Defaults**: Auto-generates meaningful container names from project directory
+- **Immediate Startup**: Option to start the container immediately after configuration
+
+**Example Wizard Flow:**
+```
+📋 Available Devcontainer Templates:
+1) ubuntu          2) alpine          3) python
+4) javascript-node 5) go             6) dotnet
+...
+
+🔧 Available Devcontainer Features:
+1) git             2) github-cli      3) docker-in-docker
+4) node           5) python         6) aws-cli
+...
+
+Container Configuration:
+- Container name: dcutil-myproject
+- Workspace folder: /workspaces
+- Container user: vscode
+- Mount options: bind mount enabled
+- Permissions: chown to container user
+```
+
+The wizard creates production-ready devcontainer.json configurations with proper features, mounts, and customizations.
 
 ### Volume Management
 
