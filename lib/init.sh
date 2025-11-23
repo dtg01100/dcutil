@@ -201,12 +201,10 @@ has_dialog() {
         return 1
     fi
 
-    # Test if dialog can actually run (try a simple command)
-    if echo "" | dialog --stdout --msgbox "Testing dialog" 5 20 2>/dev/null; then
-        info "Dialog test passed"
+    # Test if dialog can actually run (try a simple command silently)
+    if echo "" | dialog --stdout --msgbox "Testing dialog" 5 20 >/dev/null 2>&1; then
         return 0
     else
-        info "Dialog test failed"
         return 1
     fi
 }
