@@ -301,7 +301,62 @@ install_agent() {
 
     info "Installing $AGENT..."
 
-    # Execute the installation
+    # Determine install type for proper handling
+    if [[ "$INSTALL_CMD" == npm* ]]; then
+        INSTALL_TYPE="npm"
+        info "Ensuring npm is available..."
+        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "command -v npm" 2>/dev/null; then
+            warning "npm not found. Installing latest Node.js LTS..."
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+                curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
+            " 2>/dev/null; then
+                error_exit "Failed to install Node.js and npm" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+        fi
+    elif [[ "$INSTALL_CMD" == pip* ]]; then
+        INSTALL_TYPE="pip"
+        info "Setting up Python environment for isolated installation..."
+        PYTHON_BIN_DIR="/home/vscode/.dcutil/python"
+        VENV_DIR="/home/vscode/.dcutil/agents/$AGENT"
+
+        # Ensure Python and pip are available
+        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "command -v python3" 2>/dev/null; then
+            error_exit "Python3 not found in container" "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "python3 -m pip --version" 2>/dev/null; then
+            warning "pip not found. Installing pip..."
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+                sudo apt-get update && sudo apt-get install -y python3-pip
+            " 2>/dev/null; then
+                error_exit "Failed to install pip" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+        fi
+
+        # Create isolated virtual environment
+        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+            mkdir -p $VENV_DIR
+            python3 -m venv $VENV_DIR
+        " 2>/dev/null; then
+            error_exit "Failed to create Python virtual environment" "$EXIT_DEVCONTAINER_ERROR"
+        fi
+        
+        info "Using isolated Python environment for $AGENT"
+        INSTALL_CMD="source $VENV_DIR/bin/activate && $INSTALL_CMD"
+    elif [[ "$INSTALL_CMD" == curl* ]]; then
+        # Special handling for high-risk curl|bash installations
+        INSTALL_TYPE="curl"
+        warning "⚠️  HIGH RISK: This installation downloads and executes remote scripts."
+        read -r -p "Do you trust the source and want to proceed? (y/N): " security_confirm
+        security_confirm=${security_confirm:-N}
+        if [[ ! "$security_confirm" =~ ^[Yy][Ee][Ss]$ ]]; then
+            info "Installation cancelled by user"
+            return 0
+        fi
+    else
+        INSTALL_TYPE=""
+    fi
+
+    # Execute the installation with proper environment
     if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
