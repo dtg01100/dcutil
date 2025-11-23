@@ -448,14 +448,6 @@ install_agent() {
             info "Added configuration mounts to $config_file"
         fi
 
-            if [ -n "$config_file" ] && command -v jq &> /dev/null; then
-                # Add the mount to the devcontainer.json mounts array
-                local mount_json="{\"type\": \"bind\", \"source\": \"$mount_source\", \"target\": \"$mount_target\"}"
-                jq --argjson mount "$mount_json" '.mounts = (.mounts // [] | map(select(if type == "object" and .target == "/home/vscode/.opencode" then empty else . end) | select(. != null))) + [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
-                info "Added configuration mount to $config_file"
-            fi
-        fi
-
         # Stop and remove the current container so it gets recreated with the new mount
         CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
         if [ -n "$CONTAINER_ID" ]; then
