@@ -199,12 +199,117 @@ install_agent() {
     check_devcontainer_cli
     check_docker_daemon
 
+    # Get container name for this project
+    local CONTAINER_NAME
+    CONTAINER_NAME=$(get_container_name_for_project "$PROJECT_DIR")
+    info "Using container: $CONTAINER_NAME"
+
     # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
+    local container_running=false
+    if docker container inspect "$CONTAINER_NAME" &>/dev/null && docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
+        container_running=true
+    fi
+
+    if [ "$container_running" = false ]; then
         warning "Container is not running. Starting it first..."
-        if ! devcontainer up --workspace-folder . 2>/dev/null; then
+        if ! docker start "$CONTAINER_NAME" 2>/dev/null; then
             error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
         fi
+    fi
+
+    # Ask about configuration pass-through
+    local config_mount=""
+    echo ""
+    echo -e "${YELLOW}⚙️  Configuration Pass-through:${NC}"
+    echo "Should $AGENT have access to its configuration files?"
+
+    # Config mounting for agents
+    case "$AGENT" in
+        "opencode")
+            local has_local_share=false
+            local has_opencode=false
+            if [ -d "$HOME/.local/share/opencode" ]; then
+                has_local_share=true
+            fi
+            if [ -d "$HOME/.opencode" ]; then
+                has_opencode=true
+            fi
+            if [ "$has_local_share" = true ] || [ "$has_opencode" = true ]; then
+                echo "1) No configuration access"
+                echo "2) Mount opencode config directories"
+                if [ "$has_local_share" = true ]; then
+                    echo "   - ~/.local/share/opencode -> /home/vscode/.local/share/opencode"
+                fi
+                if [ "$has_opencode" = true ]; then
+                    echo "   - ~/.opencode -> /home/vscode/.opencode"
+                fi
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    config_mount="--mount type=bind,source=$HOME/.local/share/opencode,target=/home/vscode/.local/share/opencode --mount type=bind,source=$HOME/.opencode,target=/home/vscode/.opencode"
+                    info "Will mount opencode configuration directories"
+                fi
+            fi
+            ;;
+        "aider")
+            if [ -f "$HOME/.aider.conf.yml" ]; then
+                echo "1) No configuration access"
+                echo "2) Mount aider config file (~/.aider.conf.yml)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    warning "⚠️  SECURITY WARNING: The aider config file contains API keys and sensitive authentication data."
+                    read -r -p "Do you understand the security implications and want to proceed? (Y/n): " security_confirm
+                    security_confirm=${security_confirm:-Y}
+                    if [[ "$security_confirm" =~ ^[Yy] ]]; then
+                        config_mount="--mount type=bind,source=$HOME/.aider.conf.yml,target=/home/vscode/.aider.conf.yml"
+                        info "Will mount aider configuration"
+                    fi
+                fi
+            fi
+            ;;
+        "copilot-cli"|"cody"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
+            if [ -d "$HOME/.config" ]; then
+                echo "1) No configuration access"
+                echo "2) Mount config directory (~/.config)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    warning "⚠️  SECURITY WARNING: The ~/.config directory may contain sensitive information including API keys, authentication tokens, and personal data from various applications."
+                    read -r -p "Do you understand the security implications and want to proceed? (Y/n): " security_confirm
+                    security_confirm=${security_confirm:-Y}
+                    if [[ "$security_confirm" =~ ^[Yy] ]]; then
+                        config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
+                        info "Will mount configuration directory"
+                    fi
+                fi
+            fi
+            ;;
+        *)
+            echo "1) No configuration access"
+            echo "2) Skip configuration setup"
+            echo ""
+            read -r -p "Enter choice [1-None, 2-Skip] [1]: " user_config_choice
+            ;;
+    esac
+
+    # Security check for high-risk installations
+    check_agent_security_risk "$AGENT" "$INSTALL_CMD"
+
+    info "Installing $AGENT..."
+
+    # Execute the installation
+    if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
+        set -euo pipefail
+        export DEBIAN_FRONTEND=noninteractive
+        cd /home/vscode
+        $INSTALL_CMD
+    " 2>/dev/null; then
+        error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
+    fi
     fi
 
     # Ask about configuration pass-through
