@@ -253,10 +253,10 @@ install_agent() {
     case "$AGENT" in
         "opencode")
             local opencode_config_dir=""
-            if [ -d "$HOME/.config/opencode" ]; then
-                opencode_config_dir="$HOME/.config/opencode"
-            elif [ -d "$HOME/.local/share/opencode" ]; then
+            if [ -d "$HOME/.local/share/opencode" ]; then
                 opencode_config_dir="$HOME/.local/share/opencode"
+            elif [ -d "$HOME/.config/opencode" ]; then
+                opencode_config_dir="$HOME/.config/opencode"
             fi
             if [ -n "$opencode_config_dir" ]; then
                 # Check if mount already exists
@@ -422,10 +422,10 @@ install_agent() {
             case "$AGENT" in
                 "opencode")
                     local opencode_config_dir=""
-                    if [ -d "$HOME/.config/opencode" ]; then
-                        opencode_config_dir="$HOME/.config/opencode"
-                    elif [ -d "$HOME/.local/share/opencode" ]; then
+                    if [ -d "$HOME/.local/share/opencode" ]; then
                         opencode_config_dir="$HOME/.local/share/opencode"
+                    elif [ -d "$HOME/.config/opencode" ]; then
+                        opencode_config_dir="$HOME/.config/opencode"
                     fi
                     if [ -n "$opencode_config_dir" ]; then
                         docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.opencode 2>/dev/null || true
