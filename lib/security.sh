@@ -199,6 +199,11 @@ install_agent() {
     check_devcontainer_cli
     check_docker_daemon
 
+    # Get container name for this project
+    local CONTAINER_NAME
+    CONTAINER_NAME=$(get_container_name_for_project "$PROJECT_DIR")
+    info "Using container: $CONTAINER_NAME"
+
     # Check if container is running
     local container_running=false
     if docker container inspect "$CONTAINER_NAME" &>/dev/null && docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
