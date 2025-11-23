@@ -233,14 +233,14 @@ wizard_with_dialog() {
 
         while IFS= read -r template; do
             if [ -n "$template" ] && [ $i -le 20 ]; then  # Limit to 20 templates for menu
-                template_list="$template_list $i \"$template\""
+                template_list="$template_list $i '$template'"
                 template_names="$template_names $template"
                 i=$((i + 1))
             fi
         done <<< "$parsed_templates"
     fi
 
-    template_list="$template_list $i \"Custom image\""
+    template_list="$template_list $i 'Custom image'"
     info "wizard_with_dialog: final template_list: $template_list"
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
