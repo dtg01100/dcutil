@@ -661,8 +661,13 @@ docker_restart() {
 
 # Enter devcontainer
 docker_enter() {
+    local project_dir="$1"
     info "Entering container..."
-    
+
+    # Set container name for this project
+    CONTAINER_NAME=$(get_container_name_for_project "$project_dir")
+    info "Using container name: $CONTAINER_NAME"
+
 # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         if [ -t 0 ]; then

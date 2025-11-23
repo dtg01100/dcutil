@@ -5,6 +5,25 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Lock management functions
+open_lock() {
+    local lockfile="$1"
+    local exclusive="${2:-false}"
+
+    if command -v flock &>/dev/null; then
+        if [ "$exclusive" = true ]; then
+            exec 9>"$lockfile" || return 1
+            flock -x 9 || return 1
+        else
+            exec 9<"$lockfile" || return 1
+            flock -s 9 || return 1
+        fi
+        echo "9"
+        return 0
+    fi
+    return 1
+}
+
 
 
 ensure_volume_config() {
@@ -87,6 +106,126 @@ get_volume_config_file() {
     fi
 }
 
+add_volume() {
+    local volume_name="$1"
+    local host_path="$2"
+    local container_path="$3"
+    local mount_type="${4:-bind}"
+
+    if [ -z "$volume_name" ] || [ -z "$host_path" ] || [ -z "$container_path" ]; then
+        error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
+    fi
+
+    # Validate mount type
+    case "$mount_type" in
+        "bind"|"volume"|"tmpfs")
+            ;;
+        *)
+            error_exit "Invalid mount type '$mount_type'. Must be one of: bind, volume, tmpfs" "$EXIT_INVALID_ARGS"
+            ;;
+    esac
+
+    local volume_file
+    volume_file=$(get_volume_config_file)
+    ensure_volume_config
+
+    local lockfile
+    lockfile="${volume_file}.lock"
+
+    # Acquire exclusive lock during addition
+    local fd=""
+    if command -v flock &>/dev/null; then
+        fd=$(open_lock "$lockfile" true)
+    fi
+
+    # Check if volume already exists
+    local volume_exists=false
+    if command -v jq &>/dev/null; then
+        if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
+            volume_exists=true
+        fi
+    else
+        if grep -q "\"$volume_name\"" "$volume_file"; then
+            volume_exists=true
+        fi
+    fi
+
+    if [ "$volume_exists" = true ]; then
+        if command -v flock &>/dev/null; then
+            flock -u 9 || true
+            exec 9>&- || true
+        fi
+        error_exit "Volume '$volume_name' already exists" "$EXIT_CONFIG_ERROR"
+    fi
+
+    # Validate host path exists (for bind mounts)
+    if [ "$mount_type" = "bind" ]; then
+        # Expand tilde
+        host_path="${host_path/#\~/$HOME}"
+
+        if [ ! -e "$host_path" ]; then
+            if ! [ -t 0 ]; then
+                # Non-interactive: create directory if it doesn't exist
+                mkdir -p "$host_path" 2>/dev/null || true
+            else
+                echo ""
+                read -r -p "Host path '$host_path' does not exist. Create it? (y/N): " create_path
+                if [[ "$create_path" =~ ^[Yy] ]]; then
+                    mkdir -p "$host_path" || {
+                        if command -v flock &>/dev/null; then
+                            flock -u 9 || true
+                            exec 9>&- || true
+                        fi
+                        error_exit "Failed to create host path '$host_path'" "$EXIT_CONFIG_ERROR"
+                    }
+                else
+                    if command -v flock &>/dev/null; then
+                        flock -u 9 || true
+                        exec 9>&- || true
+                    fi
+                    info "Volume addition cancelled"
+                    return 0
+                fi
+            fi
+        fi
+
+        # Convert to absolute path
+        host_path=$(realpath "$host_path" 2>/dev/null || echo "$host_path")
+    fi
+
+    # Add volume to configuration atomically
+    if command -v jq &> /dev/null; then
+        local temp_file
+        temp_file=$(mktemp "${volume_file}.XXXXXX")
+        if ! jq --arg name "$volume_name" --arg host "$host_path" --arg container "$container_path" --arg type "$mount_type" \
+            '.volumes[$name] = {"host_path": $host, "container_path": $container, "mount_type": $type, "auto_mount": false}' \
+            "$volume_file" > "$temp_file"; then
+            warning "Failed to update volume file using jq; printing current file for debugging"
+            head -n 200 "$volume_file" 2>/dev/null || true
+            rm -f "$temp_file" || true
+            if command -v flock &>/dev/null; then
+                flock -u 9 || true
+                exec 9>&- || true
+            fi
+            error_exit "Failed to update volume config using jq" "$EXIT_CONFIG_ERROR"
+        fi
+        mv "$temp_file" "$volume_file"
+    else
+        error_exit "jq is required for volume management" "$EXIT_CONFIG_ERROR"
+    fi
+
+    if command -v flock &>/dev/null; then
+        flock -u 9 || true
+        exec 9>&- || true
+    fi
+
+    success "Added volume '$volume_name'"
+    info "  Host path: $host_path"
+    info "  Container path: $container_path"
+    info "  Mount type: $mount_type"
+    info "Use 'dcutil volumes mount $volume_name' to mount it to a running container"
+}
+
 list_volumes() {
     local volume_file
     volume_file=$(get_volume_config_file)
@@ -121,31 +260,34 @@ list_volumes() {
                 json_attempts=$((json_attempts + 1))
             done
 
-        # if jq -e '.volumes | length > 0' "$volume_file" >/dev/null 2>&1; then
-        #     jq -r '.volumes | keys[]' "$volume_file" | while read key; do
-        #         host=$(jq -r '.volumes["'"$key"'"].host_path' "$volume_file")
-        #         auto=$(jq -r '.volumes["'"$key"'"].auto_mount' "$volume_file")
-        #         echo "  $key -> $host (auto: $auto)"
-        #     done
-        #     found=true
+            if jq -e '.volumes | length > 0' "$volume_file" >/dev/null 2>&1; then
+                jq -r '.volumes | keys[]' "$volume_file" | while read key; do
+                    host=$(jq -r '.volumes["'"$key"'"].host_path' "$volume_file")
+                    container=$(jq -r '.volumes["'"$key"'"].container_path' "$volume_file")
+                    type=$(jq -r '.volumes["'"$key"'"].mount_type' "$volume_file")
+                    auto=$(jq -r '.volumes["'"$key"'"].auto_mount' "$volume_file")
+                    echo "  $key -> $host:$container (type: $type, auto: $auto)"
+                done
+                found=true
+            fi
         fi
 
-    if command -v flock &>/dev/null; then
-        flock -u 9 || true
-        exec 9>&- || true
+        if command -v flock &>/dev/null; then
+            flock -u 9 || true
+            exec 9>&- || true
+        fi
+
+        if [ "$found" = true ]; then
+            break
+        fi
+
+        attempts=$((attempts + 1))
+        sleep 0.02
+    done
+
+    if [ "$found" = false ]; then
+        echo "  No volumes configured"
     fi
-
-    if [ "$found" = true ]; then
-        break
-    fi
-
-    attempts=$((attempts + 1))
-    sleep 0.02
-done
-
-if [ "$found" = false ]; then
-    echo "  No volumes configured"
-fi
 }
 
 remove_volume() {
@@ -170,17 +312,9 @@ remove_volume() {
 
     # Check if volume exists
     local volume_exists=false
-        local volumes
-        volumes=$(grep -o '"[^\"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//') || true
-        if [ -n "$volumes" ]; then
-            found=true
-            echo "$volumes" | while read -r vol_name; do
-                local host_path
-                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-                local auto_mount
-                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
-                echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
-            done
+    if command -v jq &>/dev/null; then
+        if jq -e ".volumes[\"$volume_name\"]" "$volume_file" >/dev/null 2>&1; then
+            volume_exists=true
         fi
     else
         if grep -q "\"$volume_name\"" "$volume_file"; then
@@ -229,19 +363,10 @@ remove_volume() {
             fi
             error_exit "Failed to update volume config using jq" "$EXIT_CONFIG_ERROR"
         fi
-
-        local volumes
-        volumes=$(grep -o '"[^\"]*":' "$volume_file" | grep -v 'volumes' | sed 's/"//g; s/:.*//') || true
-        if [ -n "$volumes" ]; then
-            found=true
-            echo "$volumes" | while read -r vol_name; do
-                local host_path
-                host_path=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-                local auto_mount
-                auto_mount=$(grep -A5 "\"$vol_name\"" "$volume_file" | grep "auto_mount" | sed 's/.*: \(.*\)/\1/')
-                echo "  $vol_name -> $host_path (auto: ${auto_mount%,})"
-            done
-        fi
+        mv "$temp_file" "$volume_file"
+    else
+        error_exit "jq is required for volume management" "$EXIT_CONFIG_ERROR"
+    fi
 
     if command -v flock &>/dev/null; then
         flock -u 9 || true

@@ -33,6 +33,7 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 #### Container Backend Support
 - **Docker Backend**: Full Docker CLI compatibility with all features
 - **Podman Backend**: Complete Podman support with rootless containers
+- **Docker-Native Mode**: Direct Docker API usage without devcontainer CLI dependency
 - **Auto-Detection**: Automatically detects and uses available container runtime
 - **Backend Switching**: Runtime backend selection via environment variables
 - **Enterprise Ready**: Rootless support, enhanced security, OCI compliance
@@ -69,7 +70,7 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 
 ### Orchestration & Utilities
 - `compose <cmd>` - Docker Compose environments (up, down, restart, logs, exec, status, scale, config)
-- `volumes <cmd>` - Volume management (list, add, remove, mount, unmount, backup, restore)
+- `volumes <cmd>` - Volume management (list, add, remove, mount, unmount, status, backup, restore)
 - `init` - Initialize a devcontainer (fast or wizard mode)
 - `install-agent <agent>` - Install AI agent inside the devcontainer
 - `completion` - Generate shell completion scripts
@@ -139,6 +140,28 @@ DCUTIL_BACKEND=podman ./dcutil up
 - Seamless backend switching
 - Consistent command interface across backends
 
+### Docker-Native Mode
+
+dcutil supports a Docker-native mode that operates without requiring the devcontainer CLI, providing enhanced performance and reliability:
+
+```bash
+# Use Docker-native mode (no devcontainer CLI required)
+./dcutil up
+
+# The script automatically detects when devcontainer CLI is unavailable
+# and switches to Docker-native mode seamlessly
+```
+
+#### Docker-Native Features
+- **No External Dependencies**: Works with just Docker/Podman installed
+- **Enhanced Performance**: Direct API calls eliminate CLI overhead
+- **Robust Container Management**: Advanced naming, collision prevention, and cleanup
+- **Environment Sanitization**: Proper handling of environment variables for Docker compatibility
+- **Lifecycle Command Execution**: Full support for onCreateCommand, updateContentCommand, postAttachCommand
+- **Tool Integration**: VS Code extensions, settings, and customizations
+- **Volume Management**: Atomic JSON operations with file locking for concurrent access
+- **Race Condition Prevention**: File locking and retry logic for multi-process operations
+
 ### Initialization
 
 Use the `init` command to create a devcontainer configuration:
@@ -162,6 +185,46 @@ Key wizard features:
 - Numeric UID/GID support: Enter container user as a name or UID[:GID] when prompted (e.g., "vscode" or "1000:1000"). If a numeric UID is provided, the script uses numeric chown to avoid needing the username in the image.
 - Workspace folder validation: Prompts for an absolute workspaceFolder path and validates it is not root and does not contain trailing whitespace.
 - Optional project bind mount: Optionally map the host project directory to the container workspace (adds a devcontainer.json mounts entry with source=$PROJECT_DIR,target=$workspaceFolder,type=bind,consistency=cached).
+
+### Volume Management
+
+dcutil provides comprehensive volume management with atomic operations and race condition prevention:
+
+```bash
+# Add a volume configuration
+./dcutil volumes add my-volume /host/path /container/path bind
+
+# List configured volumes
+./dcutil volumes list
+
+# Remove a volume configuration
+./dcutil volumes remove my-volume
+
+# Mount a volume to a running container
+./dcutil volumes mount my-volume
+
+# Check volume status
+./dcutil volumes status
+
+# Backup a volume
+./dcutil volumes backup my-volume
+
+# Restore a volume from backup
+./dcutil volumes restore my-volume backup.tar.gz
+```
+
+#### Volume Types
+- **bind**: Direct host directory mounting with consistency options
+- **volume**: Named Docker volumes for persistent data
+- **tmpfs**: Temporary filesystem mounts
+
+#### Advanced Features
+- **Atomic Operations**: File locking prevents concurrent access corruption
+- **Race Condition Prevention**: Retry logic for multi-process scenarios
+- **Data Consistency**: fsync operations ensure data durability
+- **Backup/Restore**: Full volume backup and restoration capabilities
+- **Mount Type Validation**: Ensures correct mount configuration
+- **Path Expansion**: Automatic tilde (~) and relative path resolution
 
 ### Installing AI Agents
 
@@ -317,8 +380,8 @@ dcutil implements **100% of the Devcontainer Specification** including:
 
 ## Requirements
 
-- **Devcontainer CLI**: `npm install -g @devcontainers/cli`
 - **Container Runtime**: Docker or Podman
+- **Devcontainer CLI**: Optional - `npm install -g @devcontainers/cli` (required for devcontainer CLI mode)
 - **Bash or Zsh**: For auto-completion support
 - **jq**: For JSON processing (optional, enhances some features)
 
