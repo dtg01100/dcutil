@@ -81,36 +81,35 @@ choose_template() {
         return
     fi
 
-    echo -e "${YELLOW}📋 Available Devcontainer Templates:${NC}"
-    echo ""
+    echo -e "${YELLOW}📋 Available Devcontainer Templates:${NC}" >&2
+    echo "" >&2
 
     local i=1
     local template_array=()
     while IFS= read -r template; do
         if [ -n "$template" ]; then
             template_array+=("$template")
-            echo "$i) $template"
+            echo "$i) $template" >&2
             i=$((i + 1))
         fi
     done <<< "$template_names"
 
-    echo ""
-    echo "0) Custom (specify your own image)"
-    echo ""
+    echo "" >&2
+    echo "0) Custom (specify your own image)" >&2
+    echo "" >&2
 
     local choice
-    while true; do
-        read -r -p "Choose template [1-$((i-1)), 0 for custom]: " choice
-        if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 0 ] && [ "$choice" -lt "$i" ]; then
-            break
-        fi
-        echo "Invalid choice. Please enter a number between 0 and $((i-1))."
-    done
+    read -r -p "Choose template [1-$((i-1)), 0 for custom]: " choice
 
-    if [ "$choice" -eq 0 ]; then
-        echo "custom"
+    if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 0 ] && [ "$choice" -le $((i-1)) ]; then
+        if [ "$choice" -eq 0 ]; then
+            echo "custom"
+        else
+            echo "${template_array[$((choice-1))]}"
+        fi
     else
-        echo "${template_array[$((choice-1))]}"
+        warning "Invalid choice, using basic template"
+        echo "basic"
     fi
 }
 
@@ -134,27 +133,27 @@ choose_features() {
         return
     fi
 
-    echo -e "${YELLOW}🔧 Available Devcontainer Features:${NC}"
-    echo "Features add tools and runtimes to your container."
-    echo ""
+    echo -e "${YELLOW}🔧 Available Devcontainer Features:${NC}" >&2
+    echo "Features add tools and runtimes to your container." >&2
+    echo "" >&2
 
     local i=1
     local feature_array=()
     while IFS= read -r feature; do
         if [ -n "$feature" ]; then
             feature_array+=("$feature")
-            echo "$i) $feature"
+            echo "$i) $feature" >&2
             i=$((i + 1))
         fi
     done <<< "$feature_names"
 
-    echo ""
-    echo "0) No additional features"
-    echo ""
+    echo "" >&2
+    echo "0) No additional features" >&2
+    echo "" >&2
 
     local selected_features=()
     while true; do
-        read -r -p "Choose features (comma-separated numbers, or 0 for none): " choices
+        read -r -p "Choose features (comma-separated numbers, or 0 for none): " choices >&2
         if [ "$choices" = "0" ] || [ -z "$choices" ]; then
             break
         fi
@@ -167,7 +166,7 @@ choose_features() {
             if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$i" ]; then
                 selected_features+=("${feature_array[$((choice-1))]}")
             else
-                echo "Invalid choice: $choice. Please enter numbers between 1 and $((i-1))."
+                echo "Invalid choice: $choice. Please enter numbers between 1 and $((i-1))." >&2
                 valid=false
                 break
             fi
@@ -429,38 +428,6 @@ EOF
                 selected_features_json=$(choose_features "$features_json")
 
                 # Get remaining config via text prompts
-                # Get container name
-                read -r -p "Container name [My Project]: " container_name
-                container_name=${container_name:-"My Project"}
-
-                # Prompt for workspace folder (validate)
-                while true; do
-                    read -r -p "Workspace folder inside container [/workspaces]: " workspace_folder
-                    workspace_folder=${workspace_folder:-/workspaces}
-                    validate_workspace_folder "$workspace_folder"
-                    case $? in
-                        0) break;;
-                        1) echo "Invalid input: workspace folder cannot be empty";;
-                        2) echo "Workspace folder must be an absolute path (start with /)";;
-                        3) echo "'/' is not allowed as a workspace folder. Choose a subdirectory like /workspaces/project";;
-                        4) echo "Workspace folder must not have leading or trailing whitespace";;
-                        *) echo "Invalid workspace folder";;
-                    esac
-                done
-
-                # Prompt for container user (supports name or numeric UID[:GID])
-                read -r -p "Container user (name or UID[:GID]) [vscode]: " container_user_input
-                container_user_input=${container_user_input:-vscode}
-
-                # Ask whether to set ownership of the workspace
-                read -r -p "Set ownership of $workspace_folder to ${container_user_input}? (Y/n): " chown_choice
-                chown_choice=${chown_choice:-Y}
-
-                # Ask whether to mount host project dir into container workspace
-                read -r -p "Map host project directory ($PROJECT_DIR) to container workspace folder as bind mount? (Y/n): " mount_choice
-                mount_choice=${mount_choice:-Y}
-            fi
-
                 # Get container name
                 read -r -p "Container name [My Project]: " container_name
                 container_name=${container_name:-"My Project"}
