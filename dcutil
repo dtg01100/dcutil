@@ -3,7 +3,7 @@
 # Main dcutil script
 # Routes commands to appropriate modules
 
-VERSION="v1.0.5"
+VERSION="v1.0.6"
 
 set -euo pipefail
 
