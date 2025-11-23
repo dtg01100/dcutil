@@ -192,13 +192,15 @@ parse_devcontainer_config() {
 
         # mounts
         if jq -e '.mounts' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-            while IFS= read -r mount_spec; do
-                # Expand variables in mount specification
-                local expanded_mount="$mount_spec"
-                expanded_mount="${expanded_mount//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
-                expanded_mount="${expanded_mount//\$\{localWorkspaceFolderBasename\}/${PROJECT_DIR##*/}}"
-                MOUNTS+=("$expanded_mount")
-            done < <(jq -r '.mounts[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+            while IFS= read -r docker_mount; do
+                if [ -n "$docker_mount" ]; then
+                    # Expand variables in mount specification
+                    local expanded_mount="$docker_mount"
+                    expanded_mount="${expanded_mount//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
+                    expanded_mount="${expanded_mount//\$\{localWorkspaceFolderBasename\}/${PROJECT_DIR##*/}}"
+                    MOUNTS+=("$expanded_mount")
+                fi
+            done < <(jq -r '.mounts[] | if type == "object" then "type=\(.type),source=\(.source),target=\(.target)" else . end' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
         fi
 
         # features
@@ -423,8 +425,15 @@ docker_up() {
         OPTIONAL_MOUNTS+=("-v" "/tmp/.X11-unix:/tmp/.X11-unix")
     fi
 
-    # Create container in background to avoid hanging
-    # If a container already exists with the intended name, attempt to rename it to avoid collisions
+    # Check if the expected container is already running
+    local running_container
+    running_container=$(docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.ID}}' 2>/dev/null | head -1)
+    if [ -n "$running_container" ]; then
+        success "Devcontainer is already running"
+        return 0
+    fi
+
+    # If a container exists with the intended name (but not running), rename it to avoid collisions
     if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
         info "Container name $CONTAINER_NAME already exists; renaming existing container to avoid collision"
         if ! rename_conflicting_container "$CONTAINER_NAME"; then
@@ -434,11 +443,11 @@ docker_up() {
         fi
     fi
 
-    # If there are any containers for this project, remove them to avoid name and port conflicts
+    # Remove any stopped containers for this project to avoid conflicts
     local existing_cids
     existing_cids=$(docker ps -a --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format '{{.ID}}' 2>/dev/null || true)
     if [ -n "$existing_cids" ]; then
-        info "Removing existing container(s) for project to avoid conflicts: $existing_cids"
+        info "Removing existing stopped container(s) for project: $existing_cids"
         for cid in $existing_cids; do
             docker rm -f "$cid" 2>/dev/null || true
         done
@@ -677,7 +686,28 @@ docker_enter() {
             container_exists=true
             if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
                 container_running=true
+    fi
+
+
+
+    # If container exists but is not running, offer to start it
+    if [ "$container_exists" = true ] && [ "$container_running" = false ]; then
+        if [ -t 0 ]; then
+            echo ""
+            warning "Devcontainer exists but is not running."
+            read -r -p "Would you like to start it? (y/N): " start_container
+            if [[ "$start_container" =~ ^[Yy] ]]; then
+                info "Starting devcontainer..."
+                devcontainer_restart
+                container_running=true
+            else
+                info "Devcontainer not started. Run 'dcutil up' to start it."
+                return 0
             fi
+        else
+            error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+        fi
+    fi
         fi
     else
         if docker container inspect "$CONTAINER_NAME" &>/dev/null; then
@@ -1176,7 +1206,154 @@ devcontainer_run() {
     if [ $# -eq 0 ]; then
         error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" "$EXIT_INVALID_ARGS"
     fi
+
+    if ! ensure_container_running; then
+        return 1
+    fi
+
     docker_run "$PROJECT_DIR" "$@"
+}
+
+ensure_container_running() {
+    # Get container name
+    local container_name
+    container_name=$(get_container_name_for_project "$PROJECT_DIR")
+
+    if [ -z "$container_name" ]; then
+        error "No container name determined for this project"
+        return 1
+    fi
+
+    # Check if container exists and is running
+    local container_exists=false
+    local container_running=false
+
+    if docker container inspect "$container_name" &>/dev/null; then
+        container_exists=true
+        if docker container inspect "$container_name" | grep -q '"Running": true'; then
+            container_running=true
+        fi
+    fi
+
+    if [ "$container_running" = false ]; then
+        if [ "$container_exists" = true ]; then
+            # Container exists but not running
+            if [ -t 0 ]; then
+                warning "Container exists but is not running."
+                read -r -p "Start the container? (Y/n): " start_choice
+                start_choice=${start_choice:-Y}
+                if [[ "$start_choice" =~ ^[Yy] ]]; then
+                    info "Starting container..."
+                    docker start "$container_name" >/dev/null
+                    success "Container started"
+                    return 0
+                else
+                    error "Container not started. Command cancelled."
+                    return 1
+                fi
+            else
+                error "Container is not running. Run 'dcutil up' first."
+                return 1
+            fi
+        else
+            # Container doesn't exist
+            if [ -t 0 ]; then
+                warning "No container found for this project."
+                read -r -p "Create and start the container? (Y/n): " create_choice
+                create_choice=${create_choice:-Y}
+                if [[ "$create_choice" =~ ^[Yy] ]]; then
+                    info "Creating and starting container..."
+                    docker_up "$PROJECT_DIR"
+                    success "Container created and started"
+                    return 0
+                else
+                    error "Container not created. Command cancelled."
+                    return 1
+                fi
+            else
+                error "No container found. Run 'dcutil up' first."
+                return 1
+            fi
+        fi
+    fi
+
+    return 0
+}
+
+devcontainer_check() {
+    info "Checking devcontainer configuration..."
+    check_devcontainer_config
+}
+
+check_devcontainer_config() {
+    local config_file=""
+    local issues_found=false
+
+    # Find config file
+    if [ -f ".devcontainer/devcontainer.json" ]; then
+        config_file=".devcontainer/devcontainer.json"
+    elif [ -f ".devcontainer.json" ]; then
+        config_file=".devcontainer.json"
+    else
+        error "No devcontainer configuration found. Run 'dcutil init' first."
+        return 1
+    fi
+
+    info "Found configuration file: $config_file"
+
+    # Check JSON syntax
+    if ! jq empty "$config_file" 2>/dev/null; then
+        error "Invalid JSON in $config_file"
+        issues_found=true
+    else
+        success "JSON syntax is valid"
+    fi
+
+    # Check for duplicate mounts
+    if jq -e '.mounts' "$config_file" >/dev/null 2>&1; then
+        local mount_targets
+        mount_targets=$(jq -r '.mounts[]?.target // empty' "$config_file" 2>/dev/null | sort | uniq -d)
+        if [ -n "$mount_targets" ]; then
+            error "Duplicate mount targets found: $mount_targets"
+            issues_found=true
+        else
+            success "No duplicate mount targets"
+        fi
+    fi
+
+    # Check container status
+    local container_name
+    container_name=$(get_container_name_for_project "$PROJECT_DIR")
+    if [ -n "$container_name" ]; then
+        if docker ps -a --filter "name=^${container_name}$" --format "{{.Names}}" | grep -q "^${container_name}$"; then
+            local container_status
+            container_status=$(docker inspect "$container_name" --format "{{.State.Status}}" 2>/dev/null)
+            if [ "$container_status" = "running" ]; then
+                success "Container $container_name is running"
+            else
+                warning "Container $container_name exists but is $container_status"
+            fi
+        else
+            info "No container found for this project"
+        fi
+    fi
+
+    # Check for common issues
+    if jq -e '.image' "$config_file" >/dev/null 2>&1; then
+        success "Image specified in configuration"
+    elif jq -e '.build.dockerfile' "$config_file" >/dev/null 2>&1; then
+        success "Custom build specified in configuration"
+    else
+        warning "No image or build configuration specified in devcontainer.json"
+    fi
+
+    if [ "$issues_found" = true ]; then
+        error "Issues found in devcontainer configuration"
+        return 1
+    else
+        success "Devcontainer configuration looks good"
+        return 0
+    fi
 }
 
 devcontainer_build() {

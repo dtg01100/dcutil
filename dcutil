@@ -122,7 +122,7 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
@@ -400,24 +400,27 @@ Commands:
    clean       Remove containers, volumes, and configuration files
   status      Show devcontainer status
   logs        Show devcontainer logs
-  list        List available devcontainers
-  run         Run a command in the devcontainer
-  init        Initialize devcontainer setup
-  install-agent Install authentication agent in container
-  ssh         SSH key management
-  volumes     Volume management commands
-  compose     Docker Compose environment commands
-  features    Devcontainer Features management
-  advanced    Advanced devcontainer features
-  integration Tool integration features
-  merging     Image metadata merging
-  userprobe   User environment probing
-  hostrequirements Host system requirements validation
-  shutdown    Container shutdown actions
-  hostrequirements Host system requirements validation
-  shutdown    Container shutdown actions
-  rebuild     Rebuild devcontainer with options
-  help        Show this help message
+   list        List available devcontainers
+   run         Run a command in the devcontainer
+   init        Initialize devcontainer setup
+   install-agent Install authentication agent in container
+   check       Check devcontainer configuration for errors
+   ssh         SSH key management
+   volumes     Volume management commands
+   compose     Docker Compose environment commands
+   features    Devcontainer Features management
+   advanced    Advanced devcontainer features
+   integration Tool integration features
+   merging     Image metadata merging
+   userprobe   User environment probing
+   hostrequirements Host system requirements validation
+   shutdown    Container shutdown actions
+   rebuild     Rebuild devcontainer with options
+   schema      Devcontainer configuration schema validation
+   podman      Podman backend configuration and status
+   completion  Setup shell completion
+   test        Test dcutil improvements
+   help        Show this help message
   completion  Setup shell completion
   test        Test dcutil improvements
 
@@ -1520,13 +1523,16 @@ case "$COMMAND" in
     "logs")
         devcontainer_logs
         ;;
-    "list")
-        devcontainer_list
-        ;;
-    "run")
-        devcontainer_run "$@"
-        ;;
-    "install-agent")
+     "list")
+         devcontainer_list
+         ;;
+     "run")
+         devcontainer_run "$@"
+         ;;
+     "check")
+         devcontainer_check
+         ;;
+     "install-agent")
         if [ $# -eq 0 ]; then
             error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" "$EXIT_INVALID_ARGS"
         fi

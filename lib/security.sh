@@ -83,9 +83,9 @@ scan_vulnerabilities() {
             local vulnerabilities_found=false
 
             # 1. Use safety tool with proper pipenv/venv support
-            if devcontainer exec --workspace-folder . /bin/bash -c "$python_cmd -c 'import safety; print(\"safety available\")'" &>/dev/null; then
+            if docker exec "$CONTAINER_NAME" /bin/bash -c "$python_cmd -c 'import safety; print(\"safety available\")'" &>/dev/null; then
                 info "Running safety vulnerability scan..."
-                if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
                     export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
                     $python_cmd -m safety scan --output=text
                 " 2>/dev/null; then
@@ -94,11 +94,11 @@ scan_vulnerabilities() {
                 fi
             else
                 info "Installing safety for advanced vulnerability scanning..."
-                if devcontainer exec --workspace-folder . /bin/bash -c "
+                if docker exec "$CONTAINER_NAME" /bin/bash -c "
                     $pip_cmd install safety --quiet
                 " 2>/dev/null; then
                     info "Running safety vulnerability scan..."
-                    if ! devcontainer exec --workspace-folder . /bin/bash -c "
+                    if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
                         export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
                         timeout 30 $python_cmd -m safety scan --output=text || $pip_cmd list | grep -E '(aider|opencode|qwen|gemini|claude|openai)' | xargs $pip_cmd show | grep -A5 -B5 'Requires:' | cat
                     " 2>/dev/null; then
@@ -110,7 +110,7 @@ scan_vulnerabilities() {
 
             # 2. Check for dependency conflicts using pip-tools/pipdeptree
             info "Checking for package dependency conflicts..."
-            if devcontainer exec --workspace-folder . /bin/bash -c "
+            if docker exec "$CONTAINER_NAME" /bin/bash -c "
                 $pip_cmd install pipdeptree --quiet 2>/dev/null || true
                 if command -v pipdeptree >/dev/null 2>&1; then
                     export PATH=\"$venv_dir/bin:\$PATH\" 2>/dev/null || true
@@ -144,7 +144,7 @@ try:
 
             # 3. Check for known problematic packages
             info "Checking for packages with known security issues..."
-            if devcontainer exec --workspace-folder . /bin/bash -c "
+            if docker exec "$CONTAINER_NAME" /bin/bash -c "
                 $pip_cmd list --format=freeze | grep -E '^(pip|setuptools|wheel)=' | while read pkg_line; do
                     pkg_name=\${pkg_line%%=*}
                     pkg_version=\${pkg_line##*=}
@@ -185,7 +185,7 @@ try:
             ;;
         "npm")
             info "Running npm security audit..."
-            devcontainer exec --workspace-folder . /bin/bash -c "npm audit --audit-level=high" || warning "npm audit found potential vulnerabilities"
+            docker exec "$CONTAINER_NAME" /bin/bash -c "npm audit --audit-level=high" || warning "npm audit found potential vulnerabilities"
             ;;
     esac
 }
@@ -193,19 +193,24 @@ try:
 install_agent() {
     local AGENT="$1"
     local INSTALL_CMD
+    local VENV_DIR=""
+    local USE_PORTABLE=false
+    local INSTALL_TYPE=""
     INSTALL_CMD=$(get_agent_install_command "$AGENT")
 
     info "Installing $AGENT inside devcontainer..."
     check_devcontainer_cli
     check_docker_daemon
 
-    # Check if container is running
-    if ! devcontainer exec --workspace-folder . echo "running" 2>/dev/null >/dev/null; then
-        warning "Container is not running. Starting it first..."
-        if ! devcontainer up --workspace-folder . 2>/dev/null; then
-            error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
-        fi
+    # Ensure container is running
+    if ! ensure_container_running; then
+        error_exit "Cannot install agent: container not available" "$EXIT_DEVCONTAINER_ERROR"
     fi
+
+    # Get container name for this project
+    local CONTAINER_NAME
+    CONTAINER_NAME=$(get_container_name_for_project "$PROJECT_DIR")
+    info "Using container: $CONTAINER_NAME"
 
     # Ask about configuration pass-through
     config_mount=""
@@ -213,62 +218,166 @@ install_agent() {
     echo -e "${YELLOW}⚙️  Configuration Pass-through:${NC}"
     echo "Should $AGENT have access to its configuration files?"
 
+    # Config mounting for agents
     case "$AGENT" in
         "opencode")
-            echo "1) No configuration access"
-            echo "2) Mount ~/.opencode directory (recommended)"
-            echo ""
-            read -r -p "Enter choice [1-None, 2-Mount ~/.opencode] [1]: " user_config_choice
-            user_config_choice=${user_config_choice:-1}
-            if [ "$user_config_choice" = "2" ]; then
-                if [ -d "$HOME/.opencode" ]; then
-                    config_mount="--mount type=bind,source=$HOME/.opencode,target=/home/vscode/.opencode"
+            local opencode_config_dir=""
+            if [ -d "$HOME/.config/opencode" ]; then
+                opencode_config_dir="$HOME/.config/opencode"
+            elif [ -d "$HOME/.local/share/opencode" ]; then
+                opencode_config_dir="$HOME/.local/share/opencode"
+            fi
+            if [ -n "$opencode_config_dir" ]; then
+                echo "1) No configuration access"
+                echo "2) Mount opencode config directory ($opencode_config_dir)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
+                    config_mount="--mount type=bind,source=$opencode_config_dir,target=/home/vscode/.opencode"
                     info "Will mount opencode configuration"
-                else
-                    warning "$HOME/.opencode directory not found, skipping configuration mount"
                 fi
             fi
             ;;
         "aider")
-            echo "1) No configuration access"
-            echo "2) Mount ~/.aider.conf.yml file (recommended)"
-            echo ""
-            read -r -p "Enter choice [1-None, 2-Mount ~/.aider.conf.yml] [1]: " user_config_choice
-            user_config_choice=${user_config_choice:-1}
-            if [ "$user_config_choice" = "2" ]; then
-                if [ -f "$HOME/.aider.conf.yml" ]; then
+            if [ -f "$HOME/.aider.conf.yml" ]; then
+                echo "1) No configuration access"
+                echo "2) Mount aider config file (~/.aider.conf.yml)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
                     config_mount="--mount type=bind,source=$HOME/.aider.conf.yml,target=/home/vscode/.aider.conf.yml"
                     info "Will mount aider configuration"
-                else
-                    warning "$HOME/.aider.conf.yml file not found, skipping configuration mount"
                 fi
             fi
             ;;
-        "copilot-cli"|"cody"|"tabnine"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
-            echo "1) No configuration access"
-            echo "2) Mount ~/.config directory (for CLI tools)"
-            echo ""
-            read -r -p "Enter choice [1-None, 2-Mount ~/.config] [1]: " user_config_choice
-            user_config_choice=${user_config_choice:-1}
-            if [ "$user_config_choice" = "2" ]; then
-                if [ -d "$HOME/.config" ]; then
+        "copilot-cli"|"cody"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
+            if [ -d "$HOME/.config" ]; then
+                echo "1) No configuration access"
+                echo "2) Mount config directory (~/.config)"
+                echo ""
+                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                user_config_choice=${user_config_choice:-1}
+                if [ "$user_config_choice" = "2" ]; then
                     config_mount="--mount type=bind,source=$HOME/.config,target=/home/vscode/.config"
                     info "Will mount configuration directory"
-                else
-                    warning "$HOME/.config directory not found, skipping configuration mount"
                 fi
             fi
-            ;;
-        *)
-            echo "1) No configuration access"
-            echo "2) Skip configuration setup"
-            echo ""
-            read -r -p "Enter choice [1-None, 2-Skip] [1]: " user_config_choice
             ;;
     esac
 
-    # Security check for high-risk installations
-    check_agent_security_risk "$AGENT" "$INSTALL_CMD"
+        if [ "$mount_exists" = true ]; then
+            echo "Configuration mount is already configured."
+            echo "1) Keep existing configuration mount"
+            echo "2) Remove configuration mount"
+            echo ""
+            read -r -p "Enter choice [1-Keep, 2-Remove] [1]: " user_config_choice
+            user_config_choice=${user_config_choice:-1}
+            if [ "$user_config_choice" = "2" ]; then
+                # Remove the mount
+                jq '.mounts = (.mounts // []) | map(select(.target != "/home/vscode/.opencode"))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+                info "Removed configuration mount from $config_file"
+                # Since we're removing, we need to recreate the container
+                CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+                if [ -n "$CONTAINER_ID" ]; then
+                    info "Stopping and removing current container to apply configuration change..."
+                    docker stop "$CONTAINER_ID" 2>/dev/null || true
+                    docker rm "$CONTAINER_ID" 2>/dev/null || true
+                    info "Recreating container without configuration mount..."
+                    docker_up "$PROJECT_DIR"
+                fi
+            fi
+        else
+            echo "1) No configuration access"
+            echo "2) Mount ~/.config/opencode directory (if exists)"
+            echo ""
+            read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+            user_config_choice=${user_config_choice:-1}
+            if [ "$user_config_choice" = "2" ] && [ -d "$HOME/.config/opencode" ]; then
+                config_mount="--mount type=bind,source=$HOME/.config/opencode,target=/home/vscode/.opencode"
+                info "Will mount opencode configuration"
+            fi
+        fi
+
+    # If config mounting requested, set it up before installation
+    if [ -n "$config_mount" ]; then
+        info "Setting up configuration pass-through..."
+        # Parse the mount specification to add to devcontainer.json
+        # config_mount is like "--mount type=bind,source=/home/user/.config/opencode,target=/home/vscode/.opencode"
+        # We need to convert it to JSON format for devcontainer.json
+
+        # Extract the mount details
+        local mount_source=""
+        local mount_target=""
+        if [[ "$config_mount" == *"--mount type=bind,source="* ]]; then
+            mount_source=$(echo "$config_mount" | sed 's/.*--mount type=bind,source=\([^,]*\).*/\1/')
+            mount_target=$(echo "$config_mount" | sed 's/.*target=\([^"]*\).*/\1/')
+        fi
+
+        if [ -n "$mount_source" ] && [ -n "$mount_target" ]; then
+            # Find the devcontainer.json file
+            local config_file=""
+            if [ -f ".devcontainer/devcontainer.json" ]; then
+                config_file=".devcontainer/devcontainer.json"
+            elif [ -f ".devcontainer.json" ]; then
+                config_file=".devcontainer.json"
+            fi
+
+            if [ -n "$config_file" ] && command -v jq &> /dev/null; then
+                # Add the mount to the devcontainer.json mounts array
+                local mount_json="{\"type\": \"bind\", \"source\": \"$mount_source\", \"target\": \"$mount_target\"}"
+                jq --argjson mount "$mount_json" '.mounts += [$mount]' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+                info "Added configuration mount to $config_file"
+            fi
+        fi
+
+        # Stop and remove the current container so it gets recreated with the new mount
+        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+        if [ -n "$CONTAINER_ID" ]; then
+            info "Stopping and removing current container to apply new configuration..."
+            docker stop "$CONTAINER_ID" 2>/dev/null || true
+            docker rm "$CONTAINER_ID" 2>/dev/null || true
+        fi
+
+        # Recreate the container with the updated configuration
+        info "Recreating container with configuration pass-through..."
+        docker_up "$PROJECT_DIR"
+
+        # Copy initial configuration files to ensure they're available
+        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+        if [ -n "$CONTAINER_ID" ]; then
+            case "$AGENT" in
+                "opencode")
+                    local opencode_config_dir=""
+                    if [ -d "$HOME/.config/opencode" ]; then
+                        opencode_config_dir="$HOME/.config/opencode"
+                    elif [ -d "$HOME/.local/share/opencode" ]; then
+                        opencode_config_dir="$HOME/.local/share/opencode"
+                    fi
+                    if [ -n "$opencode_config_dir" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.opencode 2>/dev/null || true
+                        docker cp "$opencode_config_dir/." "$CONTAINER_ID:/home/vscode/.opencode/" 2>/dev/null && \
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.opencode 2>/dev/null
+                    fi
+                    ;;
+                "aider")
+                    if [ -f "$HOME/.aider.conf.yml" ]; then
+                        docker cp "$HOME/.aider.conf.yml" "$CONTAINER_ID:/home/vscode/.aider.conf.yml" 2>/dev/null && \
+                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.conf.yml 2>/dev/null
+                    fi
+                    ;;
+                "copilot-cli"|"cody"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
+                    if [ -d "$HOME/.config" ]; then
+                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config 2>/dev/null || true
+                        docker cp "$HOME/.config/." "$CONTAINER_ID:/home/vscode/.config/" 2>/dev/null && \
+                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config 2>/dev/null
+                    fi
+                    ;;
+            esac
+            info "Configuration pass-through enabled and initial files copied"
+        fi
+    fi
 
     info "Installing $AGENT..."
 
@@ -276,11 +385,9 @@ install_agent() {
     if [[ "$INSTALL_CMD" == npm* ]]; then
         INSTALL_TYPE="npm"
         info "Ensuring npm is available..."
-        if ! devcontainer exec --workspace-folder . /bin/bash -c "command -v npm" 2>/dev/null; then
+        if ! docker exec "$CONTAINER_NAME" /bin/bash -c "command -v npm" 2>/dev/null; then
             warning "npm not found. Installing latest Node.js LTS..."
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
-                curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs
-            " 2>/dev/null; then
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs" 2>/dev/null; then
                 error_exit "Failed to install Node.js and npm" "$EXIT_DEVCONTAINER_ERROR"
             fi
         fi
@@ -291,11 +398,11 @@ install_agent() {
         VENV_DIR="/home/vscode/.dcutil/agents/$AGENT"
 
         # Determine platform architecture for portable Python
-        PLATFORM=$(devcontainer exec --workspace-folder . /bin/bash -c "ARCH=\$(uname -m); OS=\$(uname -s); if [ \"\$OS\" = \"Linux\" ]; then OS_PREFIX=\"linux\"; elif [ \"\$OS\" = \"Darwin\" ]; then OS_PREFIX=\"macos\"; else OS_PREFIX=\"linux\"; fi; if [ \"\$ARCH\" = \"x86_64\" ]; then echo \"\$OS_PREFIX-x86_64\"; elif [ \"\$ARCH\" = \"aarch64\" ] || [ \"\$ARCH\" = \"arm64\" ]; then echo \"\$OS_PREFIX-aarch64\"; else echo \"linux-x86_64\"; fi" 2>/dev/null || echo "linux-x86_64")
+        PLATFORM=$(docker exec "$CONTAINER_NAME" /bin/bash -c "ARCH=\$(uname -m); OS=\$(uname -s); if [ \"\$OS\" = \"Linux\" ]; then OS_PREFIX=\"linux\"; elif [ \"\$OS\" = \"Darwin\" ]; then OS_PREFIX=\"macos\"; else OS_PREFIX=\"linux\"; fi; if [ \"\$ARCH\" = \"x86_64\" ]; then echo \"\$OS_PREFIX-x86_64\"; elif [ \"\$ARCH\" = \"aarch64\" ] || [ \"\$ARCH\" = \"arm64\" ]; then echo \"\$OS_PREFIX-aarch64\"; else echo \"linux-x86_64\"; fi" 2>/dev/null || echo "linux-x86_64")
 
         USE_PORTABLE=false
         # Try to set up portable Python
-        if devcontainer exec --workspace-folder . /bin/bash -c "PLATFORM=\$PLATFORM;
+        if docker exec "$CONTAINER_NAME" /bin/bash -c "PLATFORM=\$PLATFORM;
             if [ -x $PYTHON_BIN_DIR/bin/python3 ]; then
                 exit 0
             fi
@@ -331,7 +438,7 @@ install_agent() {
 
         if [ "$USE_PORTABLE" = "true" ]; then
             # Create venv with portable Python
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
                 mkdir -p $VENV_DIR
                 $PYTHON_BIN_DIR/bin/python3 -m venv $VENV_DIR
             " 2>/dev/null; then
@@ -342,7 +449,7 @@ install_agent() {
 
         if [ "$USE_PORTABLE" != "true" ]; then
             # Fallback to system Python virtual environment
-            if ! devcontainer exec --workspace-folder . /bin/bash -c "
+            if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
                 if ! python3 -m venv --help > /dev/null 2>&1; then
                     apt-get update && apt-get install -y python3-venv
                 fi
@@ -361,44 +468,19 @@ install_agent() {
     fi
 
     # Execute the installation with sandboxing
-    if [ "$INSTALL_TYPE" = "pip" ]; then
-        INSTALL_CMD="source $VENV_DIR/bin/activate && $INSTALL_CMD"
+    local exec_cmd="exec $INSTALL_CMD"
+    # For curl|bash installations, don't use exec as it doesn't work with pipelines
+    if [ "$INSTALL_TYPE" = "curl" ]; then
+        exec_cmd="$INSTALL_CMD"
     fi
-    
-    # Enhanced security: use restricted shell for installations
-    if ! devcontainer exec --workspace-folder . /bin/bash -c "
+
+    if ! docker exec "$CONTAINER_NAME" /bin/bash -c "
         set -euo pipefail
         export DEBIAN_FRONTEND=noninteractive
-        exec $INSTALL_CMD
-    " 2>/dev/null; then
+        cd /home/vscode
+        $exec_cmd
+    "; then
         error_exit "Failed to install $AGENT" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-
-    # Apply configuration mounts if specified
-    if [ -n "$config_mount" ]; then
-        info "Mounting configuration files..."
-        # Get container ID and apply mount
-        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-        if [ -n "$CONTAINER_ID" ]; then
-            # Note: Docker mount options would need to be applied at container creation time
-            # For now, we'll copy configuration files
-            case "$AGENT" in
-                "aider")
-                    if [ -f "$HOME/.aider.toml" ]; then
-                        docker cp "$HOME/.aider.toml" "$CONTAINER_ID:/home/vscode/.aider.toml" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null
-                    fi
-                    ;;
-            esac
-            info "Configuration files copied to container"
-        fi
-    fi
-
-    info "Installation completed, running security scans..."
-
-    # Run vulnerability scanning if applicable
-    if [ -n "$INSTALL_TYPE" ]; then
-        scan_vulnerabilities "$AGENT" "$INSTALL_TYPE" "$VENV_DIR"
     fi
 
     success "$AGENT installed successfully in devcontainer"

@@ -47,7 +47,7 @@ info() {
 # Input validation functions
 validate_command() {
     local cmd="${1:-}"
-    local valid_commands="up down restart enter build clean status logs list run init install-agent ssh volumes compose rebuild features lifecycle environment advanced integration merging userprobe hostrequirements shutdown schema podman help completion test"
+    local valid_commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose rebuild features lifecycle environment advanced integration merging userprobe hostrequirements shutdown schema podman help completion test"
 
     if [[ ! " $valid_commands " =~ $cmd ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." "$EXIT_INVALID_ARGS"
