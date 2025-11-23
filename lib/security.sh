@@ -448,38 +448,8 @@ install_agent() {
         info "Recreating container with configuration pass-through..."
         docker_up "$PROJECT_DIR"
 
-        # Copy initial configuration files to ensure they're available
-        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-        if [ -n "$CONTAINER_ID" ]; then
-            case "$AGENT" in
-                "opencode")
-                    if [ -d "$HOME/.local/share/opencode" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.local/share/opencode 2>/dev/null || true
-                        docker cp "$HOME/.local/share/opencode/." "$CONTAINER_ID:/home/vscode/.local/share/opencode/" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.local/share/opencode 2>/dev/null
-                    fi
-                    if [ -d "$HOME/.opencode" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.opencode 2>/dev/null || true
-                        docker cp "$HOME/.opencode/." "$CONTAINER_ID:/home/vscode/.opencode/" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.opencode 2>/dev/null
-                    fi
-                    ;;
-                "aider")
-                    if [ -f "$HOME/.aider.conf.yml" ]; then
-                        docker cp "$HOME/.aider.conf.yml" "$CONTAINER_ID:/home/vscode/.aider.conf.yml" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.conf.yml 2>/dev/null
-                    fi
-                    ;;
-                "copilot-cli"|"cody"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
-                    if [ -d "$HOME/.config" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config 2>/dev/null || true
-                        docker cp "$HOME/.config/." "$CONTAINER_ID:/home/vscode/.config/" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config 2>/dev/null
-                    fi
-                    ;;
-            esac
-            info "Configuration pass-through enabled and initial files copied"
-        fi
+        # Configuration mounts are now active
+        info "Configuration pass-through enabled"
     fi
 
     info "Installing $AGENT..."
