@@ -228,14 +228,52 @@ install_agent() {
                 opencode_config_dir="$HOME/.local/share/opencode"
             fi
             if [ -n "$opencode_config_dir" ]; then
-                echo "1) No configuration access"
-                echo "2) Mount opencode config directory ($opencode_config_dir)"
-                echo ""
-                read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
-                user_config_choice=${user_config_choice:-1}
-                if [ "$user_config_choice" = "2" ]; then
-                    config_mount="--mount type=bind,source=$opencode_config_dir,target=/home/vscode/.opencode"
-                    info "Will mount opencode configuration"
+                # Check if mount already exists
+                local config_file=""
+                if [ -f ".devcontainer/devcontainer.json" ]; then
+                    config_file=".devcontainer/devcontainer.json"
+                elif [ -f ".devcontainer.json" ]; then
+                    config_file=".devcontainer.json"
+                fi
+
+                local mount_exists=false
+                if [ -n "$config_file" ] && command -v jq &> /dev/null; then
+                    if jq -e '.mounts // [] | any(.target == "/home/vscode/.opencode")' "$config_file" >/dev/null 2>&1; then
+                        mount_exists=true
+                    fi
+                fi
+
+                if [ "$mount_exists" = true ]; then
+                    echo "Configuration mount is already configured."
+                    echo "1) Keep existing configuration mount"
+                    echo "2) Remove configuration mount"
+                    echo ""
+                    read -r -p "Enter choice [1-Keep, 2-Remove] [1]: " user_config_choice
+                    user_config_choice=${user_config_choice:-1}
+                    if [ "$user_config_choice" = "2" ]; then
+                        # Remove the mount
+                        jq '.mounts = (.mounts // []) | map(select(.target != "/home/vscode/.opencode"))' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+                        info "Removed configuration mount from $config_file"
+                        # Since we're removing, we need to recreate the container
+                        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+                        if [ -n "$CONTAINER_ID" ]; then
+                            info "Stopping and removing current container to apply configuration change..."
+                            docker stop "$CONTAINER_ID" 2>/dev/null || true
+                            docker rm "$CONTAINER_ID" 2>/dev/null || true
+                            info "Recreating container without configuration mount..."
+                            docker_up "$PROJECT_DIR"
+                        fi
+                    fi
+                else
+                    echo "1) No configuration access"
+                    echo "2) Mount opencode config directory ($opencode_config_dir)"
+                    echo ""
+                    read -r -p "Enter choice [1-None, 2-Mount] [1]: " user_config_choice
+                    user_config_choice=${user_config_choice:-1}
+                    if [ "$user_config_choice" = "2" ]; then
+                        config_mount="--mount type=bind,source=$opencode_config_dir,target=/home/vscode/.opencode"
+                        info "Will mount opencode configuration"
+                    fi
                 fi
             fi
             ;;
