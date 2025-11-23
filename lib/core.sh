@@ -71,7 +71,7 @@ validate_project_path() {
             error_exit "Cannot access project path '$path'." "$EXIT_PERMISSION_ERROR"
         fi
         PROJECT_DIR="$(pwd)"
-        cd - >/dev/null
+        cd - >/dev/null || exit
     fi
 }
 

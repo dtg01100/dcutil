@@ -261,7 +261,7 @@ list_volumes() {
             done
 
             if jq -e '.volumes | length > 0' "$volume_file" >/dev/null 2>&1; then
-                jq -r '.volumes | keys[]' "$volume_file" | while read key; do
+                jq -r '.volumes | keys[]' "$volume_file" | while read -r key; do
                     host=$(jq -r '.volumes["'"$key"'"].host_path' "$volume_file")
                     container=$(jq -r '.volumes["'"$key"'"].container_path' "$volume_file")
                     type=$(jq -r '.volumes["'"$key"'"].mount_type' "$volume_file")

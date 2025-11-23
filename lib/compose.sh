@@ -174,7 +174,15 @@ docker_compose_build() {
         "$compose_cmd" "${build_args[@]}" -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE}
     fi
     
-    if [ $? -eq 0 ]; then
+    local build_cmd=("$compose_cmd" "${build_args[@]}" -p "$COMPOSE_PROJECT_NAME" build ${COMPOSE_SERVICE:+$COMPOSE_SERVICE})
+
+    if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
+        build_cmd+=(-f "$DOCKER_COMPOSE_FILE")
+    else
+        build_cmd+=(-f "$DOCKER_COMPOSE_FILE")
+    fi
+
+    if "${build_cmd[@]}"; then
         success "Docker Compose images built successfully"
     else
         error_exit "Failed to build Docker Compose images" "$EXIT_DEVCONTAINER_ERROR"
@@ -209,12 +217,12 @@ docker_compose_up() {
             if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
                 "$compose_cmd" "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
             else
-                $compose_cmd "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
+                "$compose_cmd" "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
             fi
             # Wait a moment for dependencies to be ready
             sleep 3
         else
-            $compose_cmd "${up_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
+            "$compose_cmd" "${up_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
             sleep 3
         fi
     fi
@@ -231,7 +239,7 @@ docker_compose_up() {
     if [ ${#RUN_SERVICES[@]} -gt 0 ]; then
         for service in "${RUN_SERVICES[@]}"; do
             # Avoid duplicates
-            if [[ ! " ${services_to_start[@]} " =~ " ${service} " ]]; then
+            if [[ ! " ${services_to_start[*]} " =~ " $service " ]]; then
                 services_to_start+=("$service")
             fi
         done
@@ -431,13 +439,13 @@ docker_compose_exec() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd "${exec_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" exec "$COMPOSE_SERVICE" $cmd
+            "$compose_cmd" "${exec_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" exec "$COMPOSE_SERVICE" "$cmd"
         else
             # Single compose file
-            $compose_cmd "${exec_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" exec "$COMPOSE_SERVICE" $cmd
+            "$compose_cmd" "${exec_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" exec "$COMPOSE_SERVICE" "$cmd"
         fi
     else
-        $compose_cmd "${exec_args[@]}" -p "$COMPOSE_PROJECT_NAME" exec "$COMPOSE_SERVICE" $cmd
+        "$compose_cmd" "${exec_args[@]}" -p "$COMPOSE_PROJECT_NAME" exec "$COMPOSE_SERVICE" "$cmd"
     fi
 }
 

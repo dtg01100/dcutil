@@ -313,7 +313,9 @@ env_prepare_inputs_for_feature() {
 
     # Set environment variables for feature inputs
     for input_name in "${INPUTS_NAMES[@]}"; do
-        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')"
+        local input_upper
+        input_upper=$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')
+        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
         local val="${INPUTS_VALUES[$input_name]:-}"
 
         if [ -z "$val" ]; then
@@ -330,7 +332,9 @@ env_prepare_inputs_for_feature() {
 env_clear_inputs_for_feature() {
     local feature_safe_name="$1"
     for input_name in "${INPUTS_NAMES[@]}"; do
-        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')"
+        local input_upper
+        input_upper=$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')
+        local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
         unset "DCUTIL_INPUT_${input_name^^}"
         unset "$var_name"
     done
@@ -401,7 +405,9 @@ install_features() {
     
     # Initialize installation log
     echo "# Devcontainer Features Installation Log" > "$FEATURES_INSTALL_LOG"
-    echo "# Date: $(date)" >> "$FEATURES_INSTALL_LOG"
+    {
+        echo "# Date: $(date)"
+    } >> "$FEATURES_INSTALL_LOG"
     echo "# Project: $PROJECT_DIR" >> "$FEATURES_INSTALL_LOG"
     echo "" >> "$FEATURES_INSTALL_LOG"
     
@@ -568,7 +574,7 @@ clean_features_cache() {
     
     if [ -d "$FEATURES_CACHE_DIR" ]; then
         # Remove all cached features
-        rm -rf "$FEATURES_CACHE_DIR"/*
+        rm -rf "${FEATURES_CACHE_DIR:?}"/*
         success "Features cache cleaned"
     else
         info "Features cache directory does not exist"

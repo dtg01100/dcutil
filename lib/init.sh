@@ -65,7 +65,7 @@ fetch_available_features() {
 choose_template() {
     local templates_json="$1"
 
-    info "choose_template called with JSON length: $(echo "$templates_json" | wc -c)"
+    info "choose_template called with JSON length: ${#templates_json}"
 
     if ! command -v jq >/dev/null 2>&1; then
         warning "jq not available, using basic template selection"
@@ -236,7 +236,7 @@ wizard_with_dialog() {
     local selected_template_num
     selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" 30 80 20 \
-        $template_list 2>/dev/null)
+        "$template_list" 2>/dev/null)
     local dialog_exit=$?
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
@@ -252,7 +252,8 @@ wizard_with_dialog() {
         selected_template="custom"
     elif [ -n "$selected_template_num" ] && [ "$selected_template_num" -gt 0 ] && [ "$selected_template_num" -le $((i-1)) ]; then
         # Convert space-separated template_names to array and get the selected one
-        local template_array=($template_names)
+        local template_array
+        mapfile -t template_array <<< "$template_names"
         selected_template="${template_array[$((selected_template_num-1))]}"
     fi
     info "Selected template: $selected_template"
@@ -306,7 +307,9 @@ wizard_with_dialog() {
 
     # Container name (auto-generate from project directory)
     local container_name
-    local default_name="dcutil-$(basename "$PROJECT_DIR" 2>/dev/null || echo "project")"
+    local project_basename
+    project_basename=$(basename "$PROJECT_DIR" 2>/dev/null || echo "project")
+    local default_name="dcutil-$project_basename"
     container_name=$(dialog --stdout --title "Container Configuration" \
         --inputbox "Container name:" 8 40 "$default_name" 2>/dev/null)
 
