@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0] - 2025-11-24
+
+### 🚀 Major Refactoring
+- **CLI Wrapper Architecture**: Refactored dcutil as a wrapper for the official devcontainer CLI with enhanced UX, removing Docker-native mode
+- **Automatic Backend Detection**: Implemented automatic detection of which backend (Docker/Podman) the devcontainer CLI uses, ensuring consistent operations
+- **Documentation Overhaul**: Updated README to be user-focused, moved technical details to DEVELOPER.md
+- **Backend Preference**: Changed to prefer Docker for better testing coverage
+
+### 🔧 Technical Improvements
+- **Selective Direct Calls**: Direct backend interactions now only occur for CLI-unsupported features (restart, status, logs, etc.)
+- **Backend Consistency**: All operations respect the detected backend from devcontainer CLI usage
+- **Modular Documentation**: Separated user and developer documentation
+
 ## [1.1.2] - 2025-11-24
 
 ### 🐛 Bug Fixes
