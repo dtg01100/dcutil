@@ -231,9 +231,20 @@ compute_dialog_dims() {
     # Prefer dialog's own idea of the screen size to ensure compatibility
     if dialog_maxsize >/dev/null 2>&1; then
         read -r lines cols <<< "$(dialog_maxsize)"
+        # Validate that we got numeric values
+        if ! [[ "$lines" =~ ^[0-9]+$ ]] || ! [[ "$cols" =~ ^[0-9]+$ ]]; then
+            lines=$(tput lines 2>/dev/null || echo 24)
+            cols=$(tput cols 2>/dev/null || echo 80)
+        fi
     else
         lines=$(tput lines 2>/dev/null || echo 24)
         cols=$(tput cols 2>/dev/null || echo 80)
+    fi
+
+    # Ensure we have valid numbers for arithmetic
+    if ! [[ "$lines" =~ ^[0-9]+$ ]] || ! [[ "$cols" =~ ^[0-9]+$ ]]; then
+        echo "0 0 0"
+        return 0
     fi
 
     if [ "$lines" -lt "$min_lines" ] || [ "$cols" -lt "$min_cols" ]; then
@@ -383,11 +394,13 @@ wizard_with_dialog() {
     local selected_template=""
     if [ "$selected_template_num" = "$i" ]; then
         selected_template="custom"
-    elif [ -n "$selected_template_num" ] && [ "$selected_template_num" -gt 0 ] && [ "$selected_template_num" -le $((i-1)) ]; then
+    elif [ -n "$selected_template_num" ] && [[ "$selected_template_num" =~ ^[0-9]+$ ]] && [ "$selected_template_num" -gt 0 ] && [ "$selected_template_num" -le $((i-1)) ]; then
         # Convert space-separated template_names to array and get the selected one
         local template_array
         mapfile -t template_array <<< "$template_names"
-        selected_template="${template_array[$((selected_template_num-1))]}"
+        if [ ${#template_array[@]} -gt 0 ] && [ $((selected_template_num-1)) -lt ${#template_array[@]} ]; then
+            selected_template="${template_array[$((selected_template_num-1))]}"
+        fi
     fi
     info "Selected template: $selected_template"
 
