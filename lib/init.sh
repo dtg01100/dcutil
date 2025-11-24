@@ -427,7 +427,7 @@ wizard_with_dialog() {
 
         local selected_feature_nums
         selected_feature_nums=$(safe_dialog --title "Devcontainer Features" \
-            --checklist "Select additional features to install:" "$f_h" "$f_w" "$f_list" $feature_list)
+            --checklist "Select additional features to install:" "$f_h" "$f_w" "$f_list" "$feature_list")
         dialog_exit=$?
 
         if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
@@ -454,7 +454,7 @@ wizard_with_dialog() {
                 fi
             fi
         done
-        selected_features=$(echo "$selected_features" | sed 's/^ *//')  # Trim leading space
+        selected_features="${selected_features/# /}"  # Trim leading space
     fi
 
     # Container name (auto-generate from project directory)
@@ -462,27 +462,50 @@ wizard_with_dialog() {
     local project_basename
     project_basename=$(basename "$PROJECT_DIR" 2>/dev/null || echo "project")
     local default_name="dcutil-$project_basename"
+    
+    # Compute dims for inputboxes
+    local n_h n_w
+    read -r n_h n_w n_list <<< "$(compute_dialog_dims 8 40 0)"
+    if [ "$n_h" -eq 0 ]; then
+        # Terminal too small for dialog inputbox -> fallback
+        return 2
+    fi
+
     container_name=$(safe_dialog --title "Container Configuration" \
-        --inputbox "Container name:" 8 40 "$default_name")
+        --inputbox "Container name:" "$n_h" "$n_w" "$default_name")
 
     # Workspace folder
     local workspace_folder
     workspace_folder=$(safe_dialog --title "Container Configuration" \
-        --inputbox "Workspace folder inside container:" 8 40 "/workspaces")
+        --inputbox "Workspace folder inside container:" "$n_h" "$n_w" "/workspaces")
 
     # Container user
     local container_user
+    local d_h d_w
+    read -r d_h d_w d_list <<< "$(compute_dialog_dims 8 40 0)"
+    if [ "$d_h" -eq 0 ]; then
+        # Terminal too small for dialog inputbox -> fallback
+        return 2
+    fi
+
     container_user=$(safe_dialog --title "Container Configuration" \
         --inputbox "Container user (name or UID[:GID]:" "$d_h" "$d_w" "vscode")
 
     # Mount options
+    local m_h m_w
+    read -r m_h m_w m_list <<< "$(compute_dialog_dims 6 50 0)"
+    if [ "$m_h" -eq 0 ]; then
+        # Terminal too small for dialog yesno -> fallback
+        return 2
+    fi
+
     safe_dialog --title "Mount Options" \
-        --yesno "Map host project directory to container workspace?" 6 50
+        --yesno "Map host project directory to container workspace?" "$m_h" "$m_w"
     mount_choice=$?
 
     # Chown options
     safe_dialog --title "Permissions" \
-        --yesno "Set ownership of workspace to container user?" 6 50
+        --yesno "Set ownership of workspace to container user?" "$m_h" "$m_w"
     chown_choice=$?
 
     # Clear dialog artifacts
