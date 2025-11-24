@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.1] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Syntax Errors**: Fixed malformed if/else structures in `environment.sh` and `podman.sh`
+- **Script Validation**: Ensured all shell scripts pass syntax validation
+
 ## [1.1.0] - 2025-11-24
 
 ### 🚀 Major Refactoring
