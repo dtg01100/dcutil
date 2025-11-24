@@ -204,8 +204,8 @@ has_dialog() {
         return 1
     fi
 
-    # Test if dialog can actually run (try a simple command that requires tty)
-    if echo "test" | dialog --stdout --msgbox "Testing dialog availability" 5 30 >/dev/null 2>&1; then
+    # Test if dialog can actually run without displaying (print max size)
+    if dialog --stdout --print-maxsize >/dev/null 2>&1; then
         return 0
     else
         return 1

@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.3] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Detection**: Fixed `has_dialog()` test to use non-displaying `--print-maxsize` option instead of `--msgbox` to avoid unwanted dialog displays during testing
+
 ## [1.3.2] - 2025-11-24
 
 ### 🐛 Bug Fixes
