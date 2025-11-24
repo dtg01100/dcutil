@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0] - 2025-11-24
+
+### 🚀 Major Refactoring
+- **Devcontainer CLI Integration**: Replaced all direct docker/podman exec calls with the official devcontainer CLI
+- **Simplified Architecture**: Removed Python fallbacks for JSON processing (jq is now required)
+- **Container-First Execution**: All operations now prefer running through the devcontainer CLI for consistency
+
+### 🔧 Technical Improvements
+- **Reduced Maintenance**: No longer maintaining low-level docker exec logic
+- **Better Compatibility**: Leverages official devcontainer CLI for cross-platform consistency
+- **Improved Feature Installation**: Enhanced container detection and in-container execution
+- **Cleaner Dependencies**: Removed unnecessary Python dependency from Homebrew formula
+
+### 📦 Package Updates
+- **Homebrew Formula**: Updated to remove Python dependency, agents install in containers
+
 ## [1.0.8] - 2025-11-23
 
 ### Added
