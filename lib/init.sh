@@ -193,28 +193,33 @@ choose_features() {
 
 # Wrapper for dialog to ensure stderr goes to /dev/tty if available
 safe_dialog() {
-    local tmpfile output rc
-    tmpfile=$(mktemp /tmp/dcutil_dialog.XXXXXX)
+    local output rc
 
+    # Prefer --stdout to capture selection output reliably
     if [ -c /dev/tty ] && [ -w /dev/tty ]; then
-        # Ensure dialog uses the controlling tty for UI
-        dialog "$@" 2>"$tmpfile" </dev/tty >/dev/tty
+        output=$(dialog --stdout "$@" 2>/dev/tty)
         rc=$?
     else
-        # Fallback when /dev/tty not writable - capture stderr which contains the data
-        dialog "$@" 2>"$tmpfile"
+        output=$(dialog --stdout "$@" 2>/dev/null)
         rc=$?
-    fi
-
-    if [ -f "$tmpfile" ]; then
-        output=$(cat "$tmpfile" 2>/dev/null || true)
-        rm -f "$tmpfile" || true
-    else
-        output=""
     fi
 
     printf "%s" "$output"
     return $rc
+}
+
+# Try to obtain the dialog maxsize (rows and cols) without displaying UI
+dialog_maxsize() {
+    local out sizes
+    out=$(safe_dialog --print-maxsize 2>/dev/null || echo "")
+
+    # Strip ANSI escape sequences and try to parse numbers like "MaxSize: 24, 80"
+    sizes=$(printf "%s" "$out" | sed -n 's/[^0-9,]*\([0-9]\+\), *\([0-9]\+\).*/\1 \2/p')
+    if [ -n "$sizes" ]; then
+        echo "$sizes"
+        return 0
+    fi
+    return 1
 }
 
 # Compute dialog sizes based on terminal dimensions
@@ -223,8 +228,13 @@ compute_dialog_dims() {
     local min_lines=10 min_cols=40
     local lines cols
 
-    lines=$(tput lines 2>/dev/null || echo 24)
-    cols=$(tput cols 2>/dev/null || echo 80)
+    # Prefer dialog's own idea of the screen size to ensure compatibility
+    if dialog_maxsize >/dev/null 2>&1; then
+        read -r lines cols <<< "$(dialog_maxsize)"
+    else
+        lines=$(tput lines 2>/dev/null || echo 24)
+        cols=$(tput cols 2>/dev/null || echo 80)
+    fi
 
     if [ "$lines" -lt "$min_lines" ] || [ "$cols" -lt "$min_cols" ]; then
         echo "0 0 0"
@@ -268,19 +278,20 @@ compute_dialog_dims() {
 
 # Verify that dialog shows a UI and user can interact with it
 verify_dialog() {
-    # Do a quick non-intrusive visual check. Use infobox to display for a second.
-    # Use --print-maxsize to silently verify dialog can display; this avoids prompting users in CI
+    # Use --print-maxsize to silently verify dialog can display unless forced
     if safe_dialog --print-maxsize >/dev/null 2>&1; then
         return 0
     fi
-    # If print-maxsize fails, give the in-terminal visual check as a fallback only for manual debugging
+
+    # If print-maxsize fails and dialog has been forced, fallback to visual infobox then yesno
     if [ "${DCUTIL_FORCE_DIALOG:-0}" = "1" ]; then
-        safe_dialog --title "Dialog Test" --infobox "Testing dialog - you should briefly see a dialog box (this is a test)" 3 60 >/dev/tty 2>/dev/tty &
+        # Direct dialog usage without redirection
+        (dialog --title "Dialog Test" --infobox "Testing dialog - you should briefly see a dialog box (this is a test)" 3 60) &
         sleep 1
-        # Now confirm with a yesno prompt
-        safe_dialog --title "Dialog Test" --yesno "Did you see the dialog box?" 6 60 >/dev/tty 2>/dev/tty
+        dialog --title "Dialog Test" --yesno "Did you see the dialog box?" 6 60
         return $?
     fi
+
     return 1
 }
 
@@ -333,32 +344,32 @@ wizard_with_dialog() {
     local selected_features=""
 
     # Template selection - dynamic from API
-    local template_list=""
-    local template_names=""
+    local template_args=()
+    local template_names=()
     local i=1
 
     if command -v jq >/dev/null 2>&1; then
         while IFS= read -r template; do
             if [ -n "$template" ]; then
-                template_list="$template_list $i $template"
-                template_names="$template_names $template"
+                template_args+=("$i" "$template")
+                template_names+=("$template")
                 i=$((i + 1))
             fi
         done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null)"
     fi
 
-    template_list="$template_list $i custom"
+    template_args+=("$i" "custom")
     local selected_template_num
     # Compute dims for menu
-    read -r d_h d_w d_list <<< "$(compute_dialog_dims 30 80 20)"
-    if [ "$d_h" -eq 0 ]; then
+    read -r m_h m_w m_list <<< "$(compute_dialog_dims 30 80 20)"
+    if [ "$m_h" -eq 0 ]; then
         # Terminal too small for dialog menu
         return 2
     fi
 
     selected_template_num=$(safe_dialog --title "Devcontainer Template Selection" \
-        --menu "Choose a devcontainer template:" "$d_h" "$d_w" "$d_list" \
-        "$template_list")
+        --menu "Choose a devcontainer template:" "$m_h" "$m_w" "$m_list" \
+        "${template_args[@]}")
     local dialog_exit=$?
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then

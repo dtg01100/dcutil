@@ -149,6 +149,13 @@ test_dcutil_improvements() {
 
 # Parse and validate arguments  
 COMMAND="${1:-help}"
+# Allow a special verify-dialog command for debugging dialog UI without running full wizard
+if [ "${1:-}" = "verify-dialog" ]; then
+    export PROJECT_DIR
+    if command -v lib/init.sh >/dev/null 2>&1; then
+        echo "Running dialog verification..."
+    fi
+fi
 
 # Handle special completion command
 if [ "$COMMAND" = "completion" ]; then
@@ -421,6 +428,22 @@ ZSH_EOF
 fi
 
 validate_command "$COMMAND"
+
+# Allow verify-dialog command be invoked from top-level invocation
+if [ "$COMMAND" = "verify-dialog" ]; then
+    determine_project_dir
+    # Ensure modules are sourced
+    if command -v verify_dialog >/dev/null 2>&1; then
+        if verify_dialog; then
+            success "Dialog verification passed"
+            exit $EXIT_SUCCESS
+        else
+            error_exit "Dialog verification failed or dialog not available" "$EXIT_CONFIG_ERROR"
+        fi
+    else
+        error_exit "Dialog verification not available. Ensure init module is sourced." "$EXIT_CONFIG_ERROR"
+    fi
+fi
 
 # Print usage information
 print_usage() {
