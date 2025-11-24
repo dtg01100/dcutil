@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Container Entry**: Fixed "exec: executable file not found" error when entering devcontainers
+- **Devcontainer CLI**: Corrected function calls to `execute_command_in_devcontainer`
+- **Command Execution**: Removed duplicate 'exec' arguments causing command failures
+
 ## [1.1.1] - 2025-11-24
 
 ### 🐛 Bug Fixes
