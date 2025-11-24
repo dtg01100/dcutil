@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.1] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Detection**: Fixed `has_dialog()` function to properly detect non-interactive environments, preventing dialog failures in CI/automated environments
+
+## [1.3.0] - 2025-11-24
+
+### 🚀 Features
+- **Guardrails**: Added comprehensive guardrails and shellcheck fixes for improved code quality and security
+
 ## [1.2.0] - 2025-11-24
 
 ### 🚀 Major Refactoring

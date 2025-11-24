@@ -201,12 +201,8 @@ has_dialog() {
         return 1
     fi
 
-    # Test if dialog can actually run (try a simple command silently)
-    if dialog --stdout --clear >/dev/null 2>&1; then
-        return 0
-    else
-        return 1
-    fi
+    # Dialog is available if all checks pass
+    return 0
 }
 
 # Enhanced wizard with dialog interface
