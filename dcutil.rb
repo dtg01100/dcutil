@@ -1,11 +1,17 @@
+# typed: strict
+# frozen_string_literal: true
+
 class Dcutil < Formula
   desc "Enhanced devcontainer utility with advanced features"
   homepage "https://github.com/dtg01100/dcutil"
-  url "https://github.com/dtg01100/dcutil/archive/refs/tags/v1.1.1.tar.gz"
-  sha256 "dae4707a003852182c0b3718ae5e76f3819d6b159bba392f1b8398dc6924b39b"
+  url "https://github.com/dtg01100/dcutil/archive/refs/tags/v1.2.0.tar.gz"
+  sha256 "8e6a7100ea65ae157d0fffc0c3ab4856405ebc3b914e68e1a09ba135036f3f1a"
   license "MIT"
 
   # Linux-only for now since we don't have macOS testing
+  depends_on "curl"
+  depends_on "devcontainer"
+  depends_on "jq"
   depends_on :linux
 
   # bottle do
@@ -14,22 +20,19 @@ class Dcutil < Formula
   #   sha256 cellar: :any_skip_relocation, ventura: "UPDATE_WITH_BOTTLE_SHA256"
   # end
 
-  # Required dependencies
-  depends_on "jq"                    # JSON processing
-  depends_on "devcontainer"          # Official Microsoft devcontainer CLI
-  depends_on "curl"                  # HTTP client for downloading templates/features
+  # Required dependencies                    # JSON processing          # Official Microsoft devcontainer CLI                  # HTTP client for downloading templates/features
 
   # Container runtime (one of these is required)
   depends_on "docker" => :optional   # Docker container runtime
+  depends_on "docker-compose" => :optional
+  depends_on "git" => :optional
+  depends_on "node" => :optional
   depends_on "podman" => :optional   # Podman container runtime
 
-  # Optional dependencies for enhanced features
-  depends_on "git" => :optional      # Git operations
-  depends_on "docker-compose" => :optional  # Docker Compose support
-  depends_on "podman-compose" => :optional  # Podman Compose support
+  # Optional dependencies for enhanced features # Git operations  # Docker Compose support
+  depends_on "podman-compose" => :optional # Podman Compose support
 
   # Node.js for various agents (opencode, cody, etc.)
-  depends_on "node" => :optional
 
   def install
     # Install the main script
