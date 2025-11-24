@@ -149,7 +149,7 @@ apply_remote_environment() {
             
             # Add to user's bash profile for persistence
             if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "
+                execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "
                     if [ -f /home/vscode/.bashrc ]; then
                         echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
                     elif [ -f /home/developer/.bashrc ]; then
@@ -208,7 +208,7 @@ setup_user_environment() {
     
     # Check if user exists and set up home directory
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "
+        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "
             # Check if user exists
             if id -u $CONTAINER_USER >/dev/null 2>&1; then
                 # Set up home directory permissions

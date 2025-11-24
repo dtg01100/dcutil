@@ -258,7 +258,7 @@ enhanced_dcutil_command() {
         "run")
             # Use devcontainer CLI exec for run commands
             info "Executing in container with dcutil's enhanced UX..."
-            execute_command_in_devcontainer "$PROJECT_DIR" exec "$@"
+            execute_command_in_devcontainer "$PROJECT_DIR" "$@"
             ;;
         *)
             # For other commands, continue with dcutil implementation

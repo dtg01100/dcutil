@@ -115,8 +115,8 @@ apply_user_uid_sync() {
     local container_uid
     local container_gid
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        container_uid=$(execute_command_in_devcontainer "$PROJECT_DIR" exec id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
-        container_gid=$(execute_command_in_devcontainer "$PROJECT_DIR" exec id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+        container_uid=$(execute_command_in_devcontainer "$PROJECT_DIR" id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+        container_gid=$(execute_command_in_devcontainer "$PROJECT_DIR" id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
     else
         container_uid=$(docker exec "$CONTAINER_NAME" id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
         container_gid=$(docker exec "$CONTAINER_NAME" id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
@@ -127,11 +127,11 @@ apply_user_uid_sync() {
         
         # Update user UID
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec usermod -u "$current_uid" "${CONTAINER_USER:-vscode}" 2>/dev/null; then
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" usermod -u "$current_uid" "${CONTAINER_USER:-vscode}" 2>/dev/null; then
                 warning "Failed to update container user UID"
             fi
             # Update file ownership for the user's files
-            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec find /home/"${CONTAINER_USER:-vscode}" -user "$container_uid" -exec chown -h "$current_uid":"$current_gid" {} \; 2>/dev/null; then
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" find /home/"${CONTAINER_USER:-vscode}" -user "$container_uid" -exec chown -h "$current_uid":"$current_gid" {} \; 2>/dev/null; then
                 warning "Failed to update file ownership"
             fi
         else
@@ -150,7 +150,7 @@ apply_user_uid_sync() {
         
         # Update user GID
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec groupmod -g "$current_gid" "$(id -gn "${CONTAINER_USER:-vscode}" 2>/dev/null || echo "vscode")" 2>/dev/null; then
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" groupmod -g "$current_gid" "$(id -gn "${CONTAINER_USER:-vscode}" 2>/dev/null || echo "vscode")" 2>/dev/null; then
                 warning "Failed to update container user GID"
             fi
         else

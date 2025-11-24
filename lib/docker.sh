@@ -430,9 +430,9 @@ docker_enter() {
 
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
             if [ -t 0 ]; then
-                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/bash
+                execute_command_in_devcontainer "$PROJECT_DIR" /bin/bash
             else
-                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh
+                execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh
             fi
         else
             if [ -t 0 ]; then
@@ -607,7 +607,7 @@ docker_run() {
     fi
     
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "$*"
+        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$*"
         return $?
     else
         if ! docker exec "$container_id" /bin/sh -c "$*"; then
@@ -857,7 +857,7 @@ exec_in_container() {
 
     # Prefer official devcontainer CLI for exec
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -lc "$cmd"
+        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -lc "$cmd"
         return $?
     elif command -v execute_container_command >/dev/null 2>&1; then
         execute_container_command exec -i "$container_name" /bin/sh -lc "$cmd"
@@ -872,7 +872,7 @@ exec_in_container() {
 run_in_container() {
     # Prefer official devcontainer CLI for exec
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" exec "$@"
+        execute_command_in_devcontainer "$PROJECT_DIR" "$@"
     else
         exec_in_container "$@"
     fi

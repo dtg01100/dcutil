@@ -229,7 +229,7 @@ execute_lifecycle_command() {
                 # If container is running, execute inside container; otherwise run locally
                 if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
                     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                        if ! execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "$cmd"; then
+                        if ! execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd"; then
                             error "[$command_name] Command failed: $cmd"
                             return 1
                         fi
@@ -250,7 +250,7 @@ execute_lifecycle_command() {
         info "[$command_name] Executing: $command_json"
         if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
             if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                if ! execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "$command_json"; then
+                if ! execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$command_json"; then
                     error "[$command_name] Command failed: $command_json"
                     return 1
                 fi
@@ -350,7 +350,7 @@ execute_parallel_commands() {
                             if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
                                 if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
                                     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                                        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "$cmd"
+                                        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd"
                                     else
                                         docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"
                                     fi
@@ -363,7 +363,7 @@ execute_parallel_commands() {
                         # Single command
                         if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
                             if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "$cmd_value"
+                                execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd_value"
                             else
                                 docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd_value"
                             fi

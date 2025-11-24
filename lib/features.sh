@@ -515,7 +515,7 @@ execute_feature_install_in_container() {
             exec_args+=("-e" "FEATURE_NAME=$feature_name")
             exec_args+=("-e" "FEATURE_VERSION=$feature_version")
             
-            if execute_command_in_devcontainer "$PROJECT_DIR" exec "${exec_args[@]}" /bin/sh -lc "$env_cmd" >> "$FEATURES_INSTALL_LOG" 2>&1; then
+            if execute_command_in_devcontainer "$PROJECT_DIR" "${exec_args[@]}" /bin/sh -lc "$env_cmd" >> "$FEATURES_INSTALL_LOG" 2>&1; then
                 docker exec -i "$container_name" rm -f "$dest" >/dev/null 2>&1 || true
                 return 0
             else

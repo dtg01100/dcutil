@@ -93,7 +93,7 @@ execute_shutdown_action() {
                 
                 # Execute shutdown command in container
                 if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                    if execute_command_in_devcontainer "$PROJECT_DIR" exec sh -c "$SHUTDOWN_ACTION" >/dev/null 2>&1; then
+                    if execute_command_in_devcontainer "$PROJECT_DIR" sh -c "$SHUTDOWN_ACTION" >/dev/null 2>&1; then
                         success "Custom shutdown command executed successfully"
                         return 0
                     else

@@ -489,8 +489,8 @@ mount_volume() {
                 read -r -p "Copy files from host to container as demonstration? (y/N): " copy_files
                 if [[ "$copy_files" =~ ^[Yy] ]]; then
                     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                        if execute_command_in_devcontainer "$PROJECT_DIR" exec mkdir -p "$container_path" 2>/dev/null &&
-                           execute_command_in_devcontainer "$PROJECT_DIR" exec cp -rL "$host_path/." "$container_path/" 2>/dev/null; then
+                        if execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p "$container_path" 2>/dev/null &&
+                           execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$host_path/." "$container_path/" 2>/dev/null; then
                             success "Files copied to container"
                             info "Note: This is a one-time copy, not a live bind mount"
                         else
@@ -574,7 +574,7 @@ unmount_volume() {
 
     if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-            if execute_command_in_devcontainer "$PROJECT_DIR" exec umount "$container_path" 2>/dev/null; then
+            if execute_command_in_devcontainer "$PROJECT_DIR" umount "$container_path" 2>/dev/null; then
                 success "Volume '$volume_name' unmounted successfully"
             else
                 warning "Volume '$volume_name' was not mounted or failed to unmount"

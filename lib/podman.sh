@@ -318,7 +318,7 @@ podman_docker_rmi() {
 podman_docker_exec() {
     # Prefer official devcontainer CLI for exec
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" exec "$@"
+        execute_command_in_devcontainer "$PROJECT_DIR" "$@"
     elif [ "$PODMAN_BACKEND_ENABLED" = true ]; then
         execute_podman_command exec "$@"
     else

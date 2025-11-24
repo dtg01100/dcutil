@@ -137,7 +137,7 @@ apply_probed_environment() {
             if [[ "$var_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
                 # Prefer official devcontainer CLI for exec
                 if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                    if execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "export $var_name=\"$var_value\" && echo 'export $var_name=\"$var_value\"' >> /etc/environment" 2>/dev/null; then
+                    if execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "export $var_name=\"$var_value\" && echo 'export $var_name=\"$var_value\"' >> /etc/environment" 2>/dev/null; then
                         info "Applied: $var_name"
                     else
                         warning "Failed to apply: $var_name"
