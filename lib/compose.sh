@@ -239,7 +239,7 @@ docker_compose_up() {
     if [ ${#RUN_SERVICES[@]} -gt 0 ]; then
         for service in "${RUN_SERVICES[@]}"; do
             # Avoid duplicates
-            if [[ ! " ${services_to_start[*]} " =~ " $service " ]]; then
+            if [[ ! " ${services_to_start[*]} " =~ $service ]]; then
                 services_to_start+=("$service")
             fi
         done
@@ -487,8 +487,27 @@ docker_compose_clean() {
     if ! is_compose_mode; then
         return 1
     fi
-    
+
     info "Cleaning up Docker Compose environment..."
+
+    # Confirm cleanup
+    echo ""
+    warning "This will stop and remove the Docker Compose environment, including volumes and orphaned containers"
+    local confirm=""
+    if [ -t 0 ]; then
+        read -r -p "Are you sure? (y/N): " confirm
+    elif [ "${DCUTIL_FORCE:-}" = "1" ]; then
+        # Non-interactive with force flag: assume confirmation
+        confirm="y"
+    else
+        # Non-interactive without force: cancel
+        error_exit "Compose clean operation requires DCUTIL_FORCE=1 in non-interactive mode" "$EXIT_INVALID_ARGS"
+    fi
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+        info "Compose cleanup cancelled"
+        return 0
+    fi
+
     docker_compose_down
     
     # Remove volumes and images

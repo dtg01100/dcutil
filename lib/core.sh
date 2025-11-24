@@ -23,6 +23,90 @@ NC='\033[0m' # No Color
 PROJECT_DIR=""
 DETECTED_BACKEND=""
 
+# Guardrail functions
+check_root_user() {
+    if [ "$(id -u)" -eq 0 ]; then
+        warning "Running as root user - this may cause permission issues with devcontainers"
+        if [ -t 0 ] && [ "${DCUTIL_ALLOW_ROOT:-}" != "1" ]; then
+            echo ""
+            read -r -p "Continue anyway? (y/N): " confirm
+            if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                info "Operation cancelled"
+                exit $EXIT_PERMISSION_ERROR
+            fi
+        fi
+    fi
+}
+
+check_disk_space() {
+    local required_mb="${1:-100}"
+    local available_mb
+
+    # Check available disk space in MB
+    if command -v df >/dev/null 2>&1; then
+        available_mb=$(df -m "$PROJECT_DIR" 2>/dev/null | tail -1 | awk '{print $4}')
+        if [ -n "$available_mb" ] && [ "$available_mb" -lt "$required_mb" ]; then
+            warning "Low disk space: ${available_mb}MB available, ${required_mb}MB recommended"
+            if [ -t 0 ] && [ "${DCUTIL_IGNORE_DISK_SPACE:-}" != "1" ]; then
+                echo ""
+                read -r -p "Continue anyway? (y/N): " confirm
+                if [[ ! "$confirm" =~ ^[Yy] ]]; then
+                    info "Operation cancelled"
+                    exit $EXIT_PERMISSION_ERROR
+                fi
+            fi
+        fi
+    fi
+}
+
+validate_container_state() {
+    local container_name="$1"
+    local expected_state="$2"  # "running", "stopped", "exists", "not_exists"
+
+    case "$expected_state" in
+        "running")
+            if ! docker container inspect "$container_name" >/dev/null 2>&1 || \
+               ! docker container inspect "$container_name" | grep -q '"Running": true'; then
+                error_exit "Container '$container_name' is not running" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+            ;;
+        "stopped")
+            if ! docker container inspect "$container_name" >/dev/null 2>&1 || \
+               docker container inspect "$container_name" | grep -q '"Running": true'; then
+                error_exit "Container '$container_name' is not stopped" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+            ;;
+        "exists")
+            if ! docker container inspect "$container_name" >/dev/null 2>&1; then
+                error_exit "Container '$container_name' does not exist" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+            ;;
+        "not_exists")
+            if docker container inspect "$container_name" >/dev/null 2>&1; then
+                error_exit "Container '$container_name' already exists" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+            ;;
+    esac
+}
+
+log_dangerous_operation() {
+    local operation="$1"
+    local details="${2:-}"
+
+    # Log to stderr for visibility, but only if not in quiet mode
+    if [ "${DCUTIL_QUIET:-}" != "1" ]; then
+        echo "🔒 Operation logged: $operation" >&2
+        if [ -n "$details" ]; then
+            echo "   Details: $details" >&2
+        fi
+    fi
+
+    # Could also log to a file if DCUTIL_LOG_FILE is set
+    if [ -n "${DCUTIL_LOG_FILE:-}" ]; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S') $operation $details" >> "$DCUTIL_LOG_FILE"
+    fi
+}
+
 # Detect which backend the devcontainer CLI is using for a project
 detect_cli_backend() {
     local project_dir="${1:-$PROJECT_DIR}"
@@ -192,7 +276,7 @@ validate_safe_path() {
 safe_path() {
     local path="$1"
     case "$path" in
-        "~/"*) echo "${HOME}/${path#"~/"}" ;;
+        "~/"*) echo "$HOME/${path#"~/"}" ;;
         "~"*) echo "$HOME" ;;
         *) echo "$path" ;;
     esac | while IFS= read -r line; do

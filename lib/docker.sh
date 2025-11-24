@@ -628,7 +628,29 @@ docker_run() {
 # Clean up devcontainer
 docker_clean() {
     info "Cleaning up devcontainer..."
-    
+
+    # Confirm cleanup
+    echo ""
+    warning "This will remove containers, volumes (if --remove-volumes specified), and configuration files"
+    local confirm=""
+    if [ -t 0 ]; then
+        read -r -p "Are you sure? (y/N): " confirm
+    elif [ "${DCUTIL_FORCE:-}" = "1" ]; then
+        # Non-interactive with force flag: assume confirmation
+        confirm="y"
+        log_dangerous_operation "clean" "forced non-interactive cleanup"
+    else
+        # Non-interactive without force: cancel
+        error_exit "Clean operation requires DCUTIL_FORCE=1 in non-interactive mode" "$EXIT_INVALID_ARGS"
+    fi
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+        info "Cleanup cancelled"
+        return 0
+    fi
+
+    # Log the operation
+    log_dangerous_operation "clean" "removing containers and configuration"
+
     # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_clean

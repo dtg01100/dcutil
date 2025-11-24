@@ -43,12 +43,30 @@ parse_shutdown_action() {
 # Execute shutdown action
 execute_shutdown_action() {
     local container_name="$1"
-    
+
     if ! parse_shutdown_action; then
         info "No shutdownAction configuration found, using default behavior"
         SHUTDOWN_ACTION="stop"
     fi
-    
+
+    # Guardrail: Confirm destructive shutdown actions
+    if [ "$SHUTDOWN_ACTION" = "kill" ]; then
+        echo ""
+        warning "Shutdown action 'kill' will forcefully terminate the container and may cause data loss"
+        local confirm=""
+        if [ -t 0 ]; then
+            read -r -p "Are you sure? (y/N): " confirm
+        elif [ "${DCUTIL_FORCE:-}" = "1" ]; then
+            confirm="y"
+        else
+            error_exit "Kill shutdown action requires DCUTIL_FORCE=1 in non-interactive mode" "$EXIT_INVALID_ARGS"
+        fi
+        if [[ ! "$confirm" =~ ^[Yy] ]]; then
+            info "Shutdown cancelled"
+            return 0
+        fi
+    fi
+
     info "Executing shutdown action: $SHUTDOWN_ACTION for container: $container_name"
     
     case "$SHUTDOWN_ACTION" in
@@ -64,6 +82,7 @@ execute_shutdown_action() {
             ;;
         "kill")
             info "Killing container..."
+            log_dangerous_operation "shutdown" "forcefully killing container $container_name"
             if docker kill "$container_name" >/dev/null 2>&1; then
                 success "Container killed successfully"
                 return 0
@@ -121,7 +140,7 @@ register_shutdown_handler() {
     
     if [ -n "$container_name" ]; then
         # Set up trap for script exit
-        trap "info 'Script exiting, executing shutdown action...'; execute_shutdown_action '$container_name'; trap - EXIT; exit" EXIT
+        trap 'info "Script exiting, executing shutdown action..."; execute_shutdown_action "'"$container_name"'"; trap - EXIT; exit' EXIT
         info "Shutdown handler registered for container: $container_name"
     fi
 }

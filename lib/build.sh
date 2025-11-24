@@ -141,6 +141,9 @@ docker_build_enhanced() {
     info "Building Docker image with enhanced configuration..."
     check_docker_daemon
 
+    # Guardrail: Check disk space before build
+    check_disk_space 500
+
     # If features are configured, warn user about better approach with the official CLI
     if command -v has_features >/dev/null 2>&1 && has_features; then
         warning "Features detected - recommended to use official devcontainer CLI for proper feature handling"

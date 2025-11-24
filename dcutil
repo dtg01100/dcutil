@@ -32,6 +32,9 @@ fi
 # Source core functionality first
 source "$LIB_DIR/core.sh"
 
+# Guardrail: Check for root user
+check_root_user
+
 # Always use official devcontainer CLI as primary engine with dcutil enhancements
 info "Using official devcontainer CLI with dcutil enhancements"
 source "$LIB_DIR/api_official_cli.sh"
@@ -1065,10 +1068,14 @@ EOF
     shift 1
     environment_cli "$@"
     exit $EXIT_SUCCESS
-elif [ "$COMMAND" = "rebuild" ]; then
-    # Rebuild command doesn't need project directory
-    determine_project_dir
-    shift 1
+ elif [ "$COMMAND" = "rebuild" ]; then
+     # Rebuild command doesn't need project directory
+     determine_project_dir
+     shift 1
+ elif [ "$COMMAND" = "clean" ]; then
+     # Clean command doesn't need project directory
+     devcontainer_clean
+     exit $EXIT_SUCCESS
 
 elif [ "$COMMAND" = "init" ]; then
     # For init, use current directory (we want to initialize here)
@@ -1559,9 +1566,6 @@ case "$COMMAND" in
         ;;
     "build")
         enhanced_dcutil_command "build" "$@"
-        ;;
-    "clean")
-        devcontainer_clean
         ;;
     "status")
         devcontainer_status

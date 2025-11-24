@@ -533,8 +533,7 @@ execute_feature_install_in_container() {
 # Install a single feature
 install_feature() {
     local feature_spec="$1"
-    local install_dir="$2"
-    local feature_config="$3"
+    local feature_config="$2"
 
     info "Installing feature: $feature_spec"
 
@@ -754,12 +753,12 @@ install_features() {
     info "Installing ${#FEATURES_IDS[@]} feature(s) with dependency resolution..."
 
     # Initialize installation log
-    echo "# Devcontainer Features Installation Log" > "$FEATURES_INSTALL_LOG"
     {
+        echo "# Devcontainer Features Installation Log"
         echo "# Date: $(date)"
-    } >> "$FEATURES_INSTALL_LOG"
-    echo "# Project: $PROJECT_DIR" >> "$FEATURES_INSTALL_LOG"
-    echo "" >> "$FEATURES_INSTALL_LOG"
+        echo "# Project: $PROJECT_DIR"
+        echo ""
+    } > "$FEATURES_INSTALL_LOG"
 
     # Load inputs if any
     load_input_values
@@ -800,7 +799,7 @@ install_features() {
         local feature_spec="$feature_id"
         local feature_config
         feature_config="${FEATURES_CONFIG_MAP[$feature_id]}"
-        if ! install_feature "$feature_spec" "$FEATURES_DIR" "$feature_config"; then
+        if ! install_feature "$feature_spec" "$feature_config"; then
             failed_features+=("$feature_spec")
         fi
     done
@@ -997,9 +996,27 @@ clean_features_cache() {
     if [ -z "${FEATURES_CACHE_DIR:-}" ]; then
         error_exit "Features cache directory not initialized" "$EXIT_CONFIG_ERROR"
     fi
-    
+
     info "Cleaning features cache..."
-    
+
+    # Confirm cleanup
+    echo ""
+    warning "This will remove the features cache and installation directories"
+    local confirm=""
+    if [ -t 0 ]; then
+        read -r -p "Are you sure? (y/N): " confirm
+    elif [ "${DCUTIL_FORCE:-}" = "1" ]; then
+        # Non-interactive with force flag: assume confirmation
+        confirm="y"
+    else
+        # Non-interactive without force: cancel
+        error_exit "Features clean operation requires DCUTIL_FORCE=1 in non-interactive mode" "$EXIT_INVALID_ARGS"
+    fi
+    if [[ ! "$confirm" =~ ^[Yy] ]]; then
+        info "Features cleanup cancelled"
+        return 0
+    fi
+
     if [ -d "$FEATURES_CACHE_DIR" ]; then
         # Remove all cached features
         rm -rf "${FEATURES_CACHE_DIR:?}"/*
