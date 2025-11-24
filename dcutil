@@ -7,13 +7,6 @@ VERSION="v1.0.8"
 
 set -euo pipefail
 
-# Source core functionality first
-source "$(dirname "${BASH_SOURCE[0]}")/lib/core.sh"
-
-# Always use official devcontainer CLI as primary engine with dcutil enhancements
-info "Using official devcontainer CLI with dcutil enhancements"
-source "$(dirname "${BASH_SOURCE[0]}")/lib/api_official_cli.sh"
-
 # Source other dcutil modules for enhanced functionality
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -d "$SCRIPT_DIR/lib" ]; then
@@ -27,6 +20,13 @@ else
     echo "Error: Could not find dcutil library files" >&2
     exit 1
 fi
+
+# Source core functionality first
+source "$LIB_DIR/core.sh"
+
+# Always use official devcontainer CLI as primary engine with dcutil enhancements
+info "Using official devcontainer CLI with dcutil enhancements"
+source "$LIB_DIR/api_official_cli.sh"
 
 source "$LIB_DIR/docker.sh"
 source "$LIB_DIR/volumes.sh"
