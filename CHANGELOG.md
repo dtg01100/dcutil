@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.2] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Detection**: Improved `has_dialog()` function with additional checks for `/dev/tty` availability and actual dialog functionality testing
+
 ## [1.3.1] - 2025-11-24
 
 ### 🐛 Bug Fixes

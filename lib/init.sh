@@ -200,9 +200,16 @@ has_dialog() {
     if ! [ -t 0 ] || ! [ -t 1 ] || ! [ -n "$TERM" ]; then
         return 1
     fi
+    if ! [ -c /dev/tty ] || ! [ -w /dev/tty ]; then
+        return 1
+    fi
 
-    # Dialog is available if all checks pass
-    return 0
+    # Test if dialog can actually run (try a simple command that requires tty)
+    if echo "test" | dialog --stdout --msgbox "Testing dialog availability" 5 30 >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Enhanced wizard with dialog interface
