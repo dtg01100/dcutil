@@ -526,8 +526,12 @@ apply_podman_tweaks() {
             return 1
         fi
 
-    # Clean up backup file
-    rm -f "${config_file}.backup" 2>/dev/null || true
+        # Clean up backup file
+        rm -f "${config_file}.backup" 2>/dev/null || true
+    else
+        warning "jq not available, cannot apply Podman tweaks to $config_file"
+        return 1
+    fi
 }
 
 # Cleanup Podman backend state

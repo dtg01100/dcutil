@@ -248,11 +248,6 @@ setup_user_environment() {
             fi
         " || true
     fi
-            else
-                echo 'Cannot create user $CONTAINER_USER: not running as root'
-            fi
-        fi
-    " || warning "Failed to set up user environment"
     
     return 0
 }
