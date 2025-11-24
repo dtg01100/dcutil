@@ -347,7 +347,7 @@ wizard_with_dialog() {
         done <<< "$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null)"
     fi
 
-    template_list="$template_list $i Custom-image"
+    template_list="$template_list $i custom"
     local selected_template_num
     # Compute dims for menu
     read -r d_h d_w d_list <<< "$(compute_dialog_dims 30 80 20)"
@@ -394,10 +394,16 @@ wizard_with_dialog() {
     fi
 
     if [ -n "$feature_list" ]; then
+        local f_h f_w f_list
+        read -r f_h f_w f_list <<< "$(compute_dialog_dims 20 70 10)"
+        if [ "$f_h" -eq 0 ]; then
+            # Terminal too small for dialog checklist -> fallback
+            return 2
+        fi
+
         local selected_feature_nums
         selected_feature_nums=$(safe_dialog --title "Devcontainer Features" \
-            --checklist "Select additional features to install:" 20 70 10 \
-            $feature_list)
+            --checklist "Select additional features to install:" "$f_h" "$f_w" "$f_list" $feature_list)
         dialog_exit=$?
 
         if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
@@ -405,7 +411,7 @@ wizard_with_dialog() {
             return 1
         elif [ $dialog_exit -ne 0 ]; then
             # Error
-            return 1
+            return 2
         fi
 
         # Convert selected feature numbers to feature names
