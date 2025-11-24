@@ -193,19 +193,28 @@ choose_features() {
 
 # Wrapper for dialog to ensure stderr goes to /dev/tty if available
 safe_dialog() {
-    local output rc
-    # Prefer --stdout to capture selection output reliably
+    local tmpfile output rc
+    tmpfile=$(mktemp /tmp/dcutil_dialog.XXXXXX)
+
     if [ -c /dev/tty ] && [ -w /dev/tty ]; then
-        output=$(dialog --stdout "$@" 2>/dev/tty)
+        # Ensure dialog uses the controlling tty for UI
+        dialog "$@" 2>"$tmpfile" </dev/tty >/dev/tty
         rc=$?
-        printf "%s" "$output"
-        return $rc
     else
-        output=$(dialog --stdout "$@" 2>/dev/null)
+        # Fallback when /dev/tty not writable - capture stderr which contains the data
+        dialog "$@" 2>"$tmpfile"
         rc=$?
-        printf "%s" "$output"
-        return $rc
     fi
+
+    if [ -f "$tmpfile" ]; then
+        output=$(cat "$tmpfile" 2>/dev/null || true)
+        rm -f "$tmpfile" || true
+    else
+        output=""
+    fi
+
+    printf "%s" "$output"
+    return $rc
 }
 
 # Compute dialog sizes based on terminal dimensions
