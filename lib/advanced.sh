@@ -114,20 +114,34 @@ apply_user_uid_sync() {
     # Check if container user exists and get its UID/GID
     local container_uid
     local container_gid
-    container_uid=$(docker exec "$CONTAINER_NAME" id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
-    container_gid=$(docker exec "$CONTAINER_NAME" id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        container_uid=$(execute_command_in_devcontainer "$PROJECT_DIR" exec id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+        container_gid=$(execute_command_in_devcontainer "$PROJECT_DIR" exec id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+    else
+        container_uid=$(docker exec "$CONTAINER_NAME" id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+        container_gid=$(docker exec "$CONTAINER_NAME" id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
+    fi
     
     if [ -n "$container_uid" ] && [ "$container_uid" != "$current_uid" ]; then
         info "Updating container user UID from $container_uid to $current_uid"
         
         # Update user UID
-        if ! docker exec "$CONTAINER_NAME" usermod -u "$current_uid" "${CONTAINER_USER:-vscode}" 2>/dev/null; then
-            warning "Failed to update container user UID"
-        fi
-        
-        # Update file ownership for the user's files
-        if ! docker exec "$CONTAINER_NAME" find /home/"${CONTAINER_USER:-vscode}" -user "$container_uid" -exec chown -h "$current_uid":"$current_gid" {} \; 2>/dev/null; then
-            warning "Failed to update file ownership"
+        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec usermod -u "$current_uid" "${CONTAINER_USER:-vscode}" 2>/dev/null; then
+                warning "Failed to update container user UID"
+            fi
+            # Update file ownership for the user's files
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec find /home/"${CONTAINER_USER:-vscode}" -user "$container_uid" -exec chown -h "$current_uid":"$current_gid" {} \; 2>/dev/null; then
+                warning "Failed to update file ownership"
+            fi
+        else
+            if ! docker exec "$CONTAINER_NAME" usermod -u "$current_uid" "${CONTAINER_USER:-vscode}" 2>/dev/null; then
+                warning "Failed to update container user UID"
+            fi
+            # Update file ownership for the user's files
+            if ! docker exec "$CONTAINER_NAME" find /home/"${CONTAINER_USER:-vscode}" -user "$container_uid" -exec chown -h "$current_uid":"$current_gid" {} \; 2>/dev/null; then
+                warning "Failed to update file ownership"
+            fi
         fi
     fi
     
@@ -135,8 +149,14 @@ apply_user_uid_sync() {
         info "Updating container user GID from $container_gid to $current_gid"
         
         # Update user GID
-        if ! docker exec "$CONTAINER_NAME" groupmod -g "$current_gid" "$(id -gn "${CONTAINER_USER:-vscode}" 2>/dev/null || echo "vscode")" 2>/dev/null; then
-            warning "Failed to update container user GID"
+        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec groupmod -g "$current_gid" "$(id -gn "${CONTAINER_USER:-vscode}" 2>/dev/null || echo "vscode")" 2>/dev/null; then
+                warning "Failed to update container user GID"
+            fi
+        else
+            if ! docker exec "$CONTAINER_NAME" groupmod -g "$current_gid" "$(id -gn "${CONTAINER_USER:-vscode}" 2>/dev/null || echo "vscode")" 2>/dev/null; then
+                warning "Failed to update container user GID"
+            fi
         fi
     fi
     

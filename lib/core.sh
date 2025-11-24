@@ -205,16 +205,8 @@ validate_json_if_available() {
         error_exit "JSON file not found for validation: $fp" "$EXIT_CONFIG_ERROR"
     fi
 
-    if command -v jq >/dev/null 2>&1; then
-        if ! jq -e . "$fp" >/dev/null 2>&1; then
-            error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
-        fi
-    elif command -v python >/dev/null 2>&1; then
-        if ! python -m json.tool "$fp" >/dev/null 2>&1; then
-            error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
-        fi
-    else
-        warning "No JSON validator available (jq/python); could not validate $fp"
+    if ! jq -e . "$fp" >/dev/null 2>&1; then
+        error_exit "Generated JSON at $fp is invalid" "$EXIT_CONFIG_ERROR"
     fi
 }
 

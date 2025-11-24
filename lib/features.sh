@@ -22,6 +22,7 @@ declare -A INPUTS_VALUES=()
 
 # Load inputs values interactively if not already set
 load_input_values() {
+    
     if [ ${#INPUTS_NAMES[@]} -eq 0 ]; then
         return 0
     fi
@@ -345,8 +346,15 @@ env_prepare_inputs_for_feature() {
     feature_id=$(parse_feature_spec "$feature_spec" | cut -d: -f1)
     local feature_name
     feature_name="${feature_id##*/}"
+    local feature_version
+    feature_version=$(parse_feature_spec "$feature_spec" | cut -d: -f2)
     local feature_safe_name
     feature_safe_name=$(echo "$feature_name" | sed 's#[/\\.-]#_#g' | tr '[:lower:]' '[:upper:]')
+
+    # Export standard feature environment variables
+    export "FEATURE_ID=$feature_id"
+    export "FEATURE_NAME=$feature_name"
+    export "FEATURE_VERSION=$feature_version"
 
     # Set environment variables for feature inputs
     for input_name in "${INPUTS_NAMES[@]}"; do
@@ -375,6 +383,151 @@ env_clear_inputs_for_feature() {
         unset "DCUTIL_INPUT_${input_name^^}"
         unset "$var_name"
     done
+}
+
+# Helper: find running container for project
+get_running_container_for_project() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    
+    # Prefer official devcontainer CLI to get container name
+    if command -v get_current_devcontainer_name >/dev/null 2>&1; then
+        local container_name
+        container_name=$(get_current_devcontainer_name "$project_dir" 2>/dev/null || true)
+        if [ -n "$container_name" ]; then
+            if command -v docker >/dev/null 2>&1; then
+                if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
+                    echo "$container_name"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+
+    # Fallback to docker-based detection
+    local candidate=""
+    if command -v docker >/dev/null 2>&1; then
+        # Prefer labeled containers
+        candidate=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+        if [ -n "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+
+        # Fallback to devcontainer CLI naming pattern
+        candidate=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E "^devcontainer_$(basename "$project_dir")_[0-9a-f]{8}$" | head -1 || true)
+        if [ -n "$candidate" ]; then
+            echo "$candidate"
+            return 0
+        fi
+
+        # Fallback to deterministic dcutil name
+        candidate="dcutil-$(basename "$project_dir")"
+        if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^$candidate$"; then
+            echo "$candidate"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+# Helper: execute a feature install script inside a container
+execute_feature_install_in_container() {
+    local container_name="$1"
+    local install_script="$2"
+    local feature_name="$3"
+    local feature_safe_name="$4"
+
+    local dest_dir="/tmp/dcutil-features"
+    local dest="$dest_dir/install_${feature_safe_name}.sh"
+
+    # Create destination directory in container
+    if command -v execute_container_command >/dev/null 2>&1; then
+        execute_container_command exec "$container_name" mkdir -p "$dest_dir" >/dev/null 2>&1 || true
+        # Copy file into container
+        execute_container_command cp "$install_script" "$container_name:$dest" || return 1
+        # Prepare env args for inputs
+        local env_args=()
+        for input_name in "${INPUTS_NAMES[@]}"; do
+            local input_upper
+            input_upper=$(echo "$input_name" | sed 's#[-\. ]#_#g' | tr '[:lower:]' '[:upper:]')
+            local var_global="DCUTIL_INPUT_${input_upper}"
+            local var_feature="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
+            if [ -n "${!var_global:-}" ]; then
+                env_args+=("-e" "$var_global=${!var_global}")
+            fi
+            if [ -n "${!var_feature:-}" ]; then
+                env_args+=("-e" "$var_feature=${!var_feature}")
+            fi
+        done
+        # Execute as root to allow apt-like operations
+        execute_container_command exec -i "${env_args[@]}" -u root "$container_name" bash -x "$dest" >> "$FEATURES_INSTALL_LOG" 2>&1 || return 1
+        execute_container_command exec -i "$container_name" rm -f "$dest" >/dev/null 2>&1 || true
+        return 0
+    else
+        # Use raw docker/podman commands
+        docker exec -i "$container_name" mkdir -p "$dest_dir" >/dev/null 2>&1 || true
+        docker cp "$install_script" "$container_name:$dest" || return 1
+        # Build env args for docker exec and inline env for CLI exec
+        local env_args=()
+        local env_inline=""
+        for input_name in "${INPUTS_NAMES[@]}"; do
+            local input_upper
+            input_upper=$(echo "$input_name" | sed 's#[-\. ]#_#g' | tr '[:lower:]' '[:upper:]')
+            local var_global="DCUTIL_INPUT_${input_upper}"
+            local var_feature="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
+            if [ -n "${!var_global:-}" ]; then
+                env_args+=("-e" "$var_global=${!var_global}")
+                # Properly escape single quotes in env values
+                local escaped_val="${!var_global//"'"/"'\"'\"'"}"
+                env_inline+=" $var_global='$escaped_val'"
+            fi
+            if [ -n "${!var_feature:-}" ]; then
+                env_args+=("-e" "$var_feature=${!var_feature}")
+                # Properly escape single quotes in env values
+                local escaped_val="${!var_feature//"'"/"'\"'\"'"}"
+                env_inline+=" $var_feature='$escaped_val'"
+            fi
+        done
+
+        # Prefer using official devcontainer CLI for exec if available
+        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            # Execute using devcontainer CLI to avoid maintaining low-level exec behavior
+            # Set environment variables properly for the devcontainer CLI exec
+            local env_cmd="bash -x '$dest'"
+            local exec_args=()
+            
+            # Add environment variables as separate -e flags
+            for input_name in "${INPUTS_NAMES[@]}"; do
+                local input_upper
+                input_upper=$(echo "$input_name" | sed 's#[-\. ]#_#g' | tr '[:lower:]' '[:upper:]')
+                local var_global="DCUTIL_INPUT_${input_upper}"
+                local var_feature="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
+                if [ -n "${!var_global:-}" ]; then
+                    exec_args+=("-e" "$var_global=${!var_global}")
+                fi
+                if [ -n "${!var_feature:-}" ]; then
+                    exec_args+=("-e" "$var_feature=${!var_feature}")
+                fi
+            done
+            
+            # Add standard feature environment variables
+            exec_args+=("-e" "FEATURE_ID=$feature_id")
+            exec_args+=("-e" "FEATURE_NAME=$feature_name")
+            exec_args+=("-e" "FEATURE_VERSION=$feature_version")
+            
+            if execute_command_in_devcontainer "$PROJECT_DIR" exec "${exec_args[@]}" /bin/sh -lc "$env_cmd" >> "$FEATURES_INSTALL_LOG" 2>&1; then
+                docker exec -i "$container_name" rm -f "$dest" >/dev/null 2>&1 || true
+                return 0
+            else
+                return 1
+            fi
+        fi
+
+        # Run with root privileges when possible
+        docker exec -i --user root "${env_args[@]}" "$container_name" bash -x "$dest" >> "$FEATURES_INSTALL_LOG" 2>&1 || return 1
+        docker exec -i "$container_name" rm -f "$dest" >/dev/null 2>&1 || true
+        return 0
+    fi
 }
 
 # Install a single feature
@@ -408,16 +561,48 @@ install_feature() {
     local install_script="$feature_dir/src/install.sh"
     if [ -f "$install_script" ]; then
         info "Running feature installation script..."
-        # Run install script and capture output into install log
-        if bash "$install_script" >> "$FEATURES_INSTALL_LOG" 2>&1; then
-            success "Feature installed successfully: $feature_spec"
-            echo "$(date): Successfully installed $feature_spec" >> "$FEATURES_INSTALL_LOG"
-            # Cleanup env variables for next feature
-            env_clear_inputs_for_feature "$feature_safe_name"
-            return 0
+
+        # Prefer running inside a running devcontainer if available
+        local container_name
+        container_name=$(get_running_container_for_project "$PROJECT_DIR" 2>/dev/null || true)
+        if [ -n "$container_name" ]; then
+            info "Found running container: $container_name - attempting in-container installation"
+            if execute_feature_install_in_container "$container_name" "$install_script" "$feature_name" "$feature_safe_name"; then
+                success "Feature installed successfully (container mode): $feature_spec"
+                echo "$(date): Successfully installed $feature_spec (container: $container_name)" >> "$FEATURES_INSTALL_LOG"
+                env_clear_inputs_for_feature "$feature_safe_name"
+                return 0
+            else
+                warning "In-container feature installation failed; not attempting host install unless forced"
+            fi
+        fi
+
+        # If no container found or installation in container failed, only run on host when explicitly allowed
+        if [ "${FEATURES_FORCE_HOST_INSTALL:-false}" = true ]; then
+            info "Attempting host install because FEATURES_FORCE_HOST_INSTALL=true"
+            if bash -x "$install_script" >> "$FEATURES_INSTALL_LOG" 2>&1; then
+                success "Feature installed successfully (host mode): $feature_spec"
+                echo "$(date): Successfully installed $feature_spec" >> "$FEATURES_INSTALL_LOG"
+                env_clear_inputs_for_feature "$feature_safe_name"
+                return 0
+            else
+                # Provide diagnostic information
+                local last_log
+                last_log=$(tail -n 40 "$FEATURES_INSTALL_LOG" 2>/dev/null || true)
+                if echo "$last_log" | grep -qiE "Script must be run as root|sudo|Permission denied|E: Could not get lock|cannot open|No such file or directory"; then
+                    error "Feature installation failed: $feature_spec (requires root or container environment)"
+                    error "Last 40 lines of install log:\n$last_log"
+                    error "Suggestion: Run 'dcutil up' to start the devcontainer and re-run 'dcutil features install' inside the container, or set FEATURES_FORCE_HOST_INSTALL=true to force attempt on the host at your own risk."
+                else
+                    error "Feature installation failed: $feature_spec"
+                fi
+                echo "$(date): Failed to install $feature_spec" >> "$FEATURES_INSTALL_LOG"
+                env_clear_inputs_for_feature "$feature_safe_name"
+                return 1
+            fi
         else
-            error "Feature installation failed: $feature_spec"
-            echo "$(date): Failed to install $feature_spec" >> "$FEATURES_INSTALL_LOG"
+            error "No running devcontainer found for this project; please run 'dcutil up' (or set FEATURES_FORCE_HOST_INSTALL=true to try host installation)"
+            echo "$(date): Feature install aborted due to lack of running container" >> "$FEATURES_INSTALL_LOG"
             env_clear_inputs_for_feature "$feature_safe_name"
             return 1
         fi

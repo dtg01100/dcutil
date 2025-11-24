@@ -418,16 +418,8 @@ setup_portable_python_impl() {
             JSON=\$(\$GET_CMD \"$release_url\" || true)
             ASSET=""
             SHA_URL=""
-            if command -v jq >/dev/null 2>&1; then
-                ASSET=\$(echo \"\$JSON\" | jq -r --arg arch \"$arch\" '.assets[] | select(.name | test(\"install_only\\\\.tar\\\\.gz\"; \"i\")) | select(.name | test(\$arch; \"i\")) | .browser_download_url' 2>/dev/null | head -n 1 || true)
-                SHA_URL=\$(echo \"\$JSON\" | jq -r '.assets[] | select(.name | test(\"sha|sha256\"; \"i\")) | .browser_download_url' 2>/dev/null | head -n 1 || true)
-            elif command -v python3 >/dev/null 2>&1; then
-                ASSET=\$(echo \"\$JSON\" | python3 -c \"import sys,json,re; arch=sys.argv[1]; j=json.load(sys.stdin); print(next((a.get('browser_download_url','') for a in j.get('assets',[]) if 'install_only.tar.gz' in a.get('name','') and re.search(arch,a.get('name',''),re.I)),''))\" \"\$arch\") || true
-                SHA_URL=\$(echo \"\$JSON\" | python3 -c \"import sys,json,re; j=json.load(sys.stdin); print(next((a.get('browser_download_url','') for a in j.get('assets',[]) if re.search('sha|sha256',a.get('name',''),re.I)),''))\") || true
-            else
-                ASSET=\$(echo \"\$JSON\" | grep -o '\\\\\"browser_download_url\\\\\": *\\\\\"[^\\\\\"]*install_only\.tar\.gz\\\\\"' | sed 's/.*\\\\\"\\\\(.*install_only\.tar\.gz\\\\)\\\\\".*/\\\\1/' | grep -i \"\$arch\" | head -n 1 || true)
-                SHA_URL=\$(echo \"\$JSON\" | sed -n 's/.*\"browser_download_url\": \"\\\\\([^\\\\\"]*\\\\\)\".*/\\\\1/p' | grep -i sha | head -n 1 || true)
-            fi
+            ASSET=\$(echo \"\$JSON\" | jq -r --arg arch \"$arch\" '.assets[] | select(.name | test(\"install_only\\\\.tar\\\\.gz\"; \"i\")) | select(.name | test(\$arch; \"i\")) | .browser_download_url' 2>/dev/null | head -n 1 || true)
+            SHA_URL=\$(echo \"\$JSON\" | jq -r '.assets[] | select(.name | test(\"sha|sha256\"; \"i\")) | .browser_download_url' 2>/dev/null | head -n 1 || true)
             if [ -n \"\$ASSET\" ]; then
                 ASSET_NAME=\$(basename \"\$ASSET\")
                 SHA_URL=\$(echo \"\$JSON\" | sed -n 's/.*"browser_download_url": "\\\([^\\\"]*\\\)".*/\\1/p' | grep -i sha | head -n 1 || true)
@@ -439,7 +431,7 @@ setup_portable_python_impl() {
                     if ! \$GET_FILE_CMD \"\$sha_file\" \"\$SHA_URL\"; then rm -rf \"\$tmpdir\"; rm -f \"\$assetfile\"; exit 1; fi
                     expected=\$(grep -i \"\$ASSET_NAME\" \"\$sha_file\" | awk '{print \$1}' | head -n 1 || true)
                     if [ -z \"\$expected\" ]; then expected=\$(head -n 1 \"\$sha_file\" | awk '{print \$1}'); fi
-                    if command -v sha256sum >/dev/null 2>&1; then actual=\$(sha256sum \"\$assetfile\" | awk '{print \$1}'); elif command -v openssl >/dev/null 2>&1; then actual=\$(openssl dgst -sha256 \"\$assetfile\" | awk '{print \$2}'); elif command -v python3 >/dev/null 2>&1; then actual=\$(python3 -c \"import sys,hashlib; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())\" \"\$assetfile\"); else echo 'No hash tool available' >&2; rm -rf \"\$tmpdir\"; exit 1; fi
+                    if command -v sha256sum >/dev/null 2>&1; then actual=\$(sha256sum \"\$assetfile\" | awk '{print \$1}'); elif command -v openssl >/dev/null 2>&1; then actual=\$(openssl dgst -sha256 \"\$assetfile\" | awk '{print \$2}'); else echo 'No hash tool available' >&2; rm -rf \"\$tmpdir\"; exit 1; fi
                     if [ \"\$expected\" != \"\$actual\" ]; then echo \"Checksum mismatch for \$ASSET_NAME\" >&2; rm -rf \"\$tmpdir\"; exit 1; fi
                     tar -xz -f \"\$assetfile\" -C \"$python_bin_dir\" || (rm -rf \"\$tmpdir\"; exit 1)
                     rm -rf \"\$tmpdir\"
@@ -614,7 +606,7 @@ install_agent() {
     # Check if container is running
     if ! run_in_container "echo running" 2>/dev/null >/dev/null; then
         warning "Container is not running. Starting it first..."
-        if ! devcontainer up --workspace-folder . 2>/dev/null; then
+        if ! execute_command_in_devcontainer "$PROJECT_DIR" up --workspace-folder . 2>/dev/null; then
             error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
@@ -693,95 +685,89 @@ install_agent() {
             fi
         fi
 
-        # Get container ID and copy/copy snippet where appropriate
-        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
-        if [ -n "$CONTAINER_ID" ]; then
-            # We will prefer to copy the configuration into the container to provide immediate access
+        # Use devcontainer CLI to copy configuration files into the running container
+        local container_name
+        container_name=$(get_current_devcontainer_name 2>/dev/null || true)
+        if [ -n "$container_name" ]; then
             case "$AGENT" in
                 "aider")
                     if [ -f "$HOME/.aider.toml" ]; then
-                        docker cp "$HOME/.aider.toml" "$CONTAINER_ID:/home/vscode/.aider.toml" 2>/dev/null && \
-                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -L "$HOME/.aider.toml" /home/vscode/.aider.toml 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown vscode:vscode /home/vscode/.aider.toml 2>/dev/null || true
                     fi
                     ;;
                 "opencode")
-                    # copy config dir if present
                     if [ -d "$HOME/.opencode" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.opencode 2>/dev/null || true
-                        docker cp "$HOME/.opencode/." "$CONTAINER_ID:/home/vscode/.opencode/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.opencode 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.opencode 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.opencode/." /home/vscode/.opencode/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.opencode 2>/dev/null || true
                     fi
                     ;;
                 "qwen-cli")
-                    # copy qwen config dir if present
                     if [ -d "$HOME/.qwen" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.qwen 2>/dev/null || true
-                        docker cp "$HOME/.qwen/." "$CONTAINER_ID:/home/vscode/.qwen/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.qwen 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.qwen 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.qwen/." /home/vscode/.qwen/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.qwen 2>/dev/null || true
                     fi
                     ;;
                 "copilot-cli")
-                    # copy GitHub Copilot config if present
                     if [ -d "$HOME/.config/GitHub-Copilot" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/GitHub-Copilot 2>/dev/null || true
-                        docker cp "$HOME/.config/GitHub-Copilot/." "$CONTAINER_ID:/home/vscode/.config/GitHub-Copilot/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/GitHub-Copilot 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.config/GitHub-Copilot 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.config/GitHub-Copilot/." /home/vscode/.config/GitHub-Copilot/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.config/GitHub-Copilot 2>/dev/null || true
                     elif [ -d "$HOME/.github-copilot" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.github-copilot 2>/dev/null || true
-                        docker cp "$HOME/.github-copilot/." "$CONTAINER_ID:/home/vscode/.github-copilot/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.github-copilot 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.github-copilot 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.github-copilot/." /home/vscode/.github-copilot/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.github-copilot 2>/dev/null || true
                     fi
                     ;;
                 "cody")
-                    # copy Cody config if present
                     if [ -d "$HOME/.config/CodeSandbox" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/CodeSandbox 2>/dev/null || true
-                        docker cp "$HOME/.config/CodeSandbox/." "$CONTAINER_ID:/home/vscode/.config/CodeSandbox/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/CodeSandbox 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.config/CodeSandbox 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.config/CodeSandbox/." /home/vscode/.config/CodeSandbox/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.config/CodeSandbox 2>/dev/null || true
                     elif [ -d "$HOME/.cody" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.cody 2>/dev/null || true
-                        docker cp "$HOME/.cody/." "$CONTAINER_ID:/home/vscode/.cody/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.cody 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.cody 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.cody/." /home/vscode/.cody/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.cody 2>/dev/null || true
                     fi
                     ;;
                 "gemini")
-                    # copy Google/Gemini config if present
                     if [ -d "$HOME/.config/gcloud" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/gcloud 2>/dev/null || true
-                        docker cp "$HOME/.config/gcloud/." "$CONTAINER_ID:/home/vscode/.config/gcloud/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/gcloud 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.config/gcloud 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.config/gcloud/." /home/vscode/.config/gcloud/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.config/gcloud 2>/dev/null || true
                     elif [ -d "$HOME/.gemini" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.gemini 2>/dev/null || true
-                        docker cp "$HOME/.gemini/." "$CONTAINER_ID:/home/vscode/.gemini/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.gemini 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.gemini 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.gemini/." /home/vscode/.gemini/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.gemini 2>/dev/null || true
                     fi
                     ;;
                 "claude-cli")
-                    # copy Claude config if present
                     if [ -d "$HOME/.anthropic" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.anthropic 2>/dev/null || true
-                        docker cp "$HOME/.anthropic/." "$CONTAINER_ID:/home/vscode/.anthropic/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.anthropic 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.anthropic 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.anthropic/." /home/vscode/.anthropic/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.anthropic 2>/dev/null || true
                     elif [ -d "$HOME/.config/anthropic" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.config/anthropic 2>/dev/null || true
-                        docker cp "$HOME/.config/anthropic/." "$CONTAINER_ID:/home/vscode/.config/anthropic/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.config/anthropic 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.config/anthropic 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.config/anthropic/." /home/vscode/.config/anthropic/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.config/anthropic 2>/dev/null || true
                     fi
                     ;;
                 "openai-cli")
-                    # copy OpenAI config if present
                     if [ -d "$HOME/.openai" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode/.openai 2>/dev/null || true
-                        docker cp "$HOME/.openai/." "$CONTAINER_ID:/home/vscode/.openai/" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown -R vscode:vscode /home/vscode/.openai 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode/.openai 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$HOME/.openai/." /home/vscode/.openai/ 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown -R vscode:vscode /home/vscode/.openai 2>/dev/null || true
                     elif [ -f "$HOME/.openai.token" ]; then
-                        docker exec "$CONTAINER_ID" mkdir -p /home/vscode 2>/dev/null || true
-                        docker cp "$HOME/.openai.token" "$CONTAINER_ID:/home/vscode/.openai.token" 2>/dev/null || true
-                        docker exec "$CONTAINER_ID" chown vscode:vscode /home/vscode/.openai.token 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p /home/vscode 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" cp -L "$HOME/.openai.token" /home/vscode/.openai.token 2>/dev/null || true
+                        execute_command_in_devcontainer "$PROJECT_DIR" chown vscode:vscode /home/vscode/.openai.token 2>/dev/null || true
                     fi
                     ;;
             esac
-            info "Configuration files copied to container (fallback)"
+            info "Configuration files copied to container via devcontainer CLI"
         fi
     fi
 

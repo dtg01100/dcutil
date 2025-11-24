@@ -148,13 +148,23 @@ apply_remote_environment() {
             info "Remote environment: $env_var"
             
             # Add to user's bash profile for persistence
-            docker exec "$container_id" /bin/sh -c "
-                if [ -f /home/vscode/.bashrc ]; then
-                    echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
-                elif [ -f /home/developer/.bashrc ]; then
-                    echo 'export $key=\"$value\"' >> /home/developer/.bashrc
-                fi
-            " || true
+            if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "
+                    if [ -f /home/vscode/.bashrc ]; then
+                        echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
+                    elif [ -f /home/developer/.bashrc ]; then
+                        echo 'export $key=\"$value\"' >> /home/developer/.bashrc
+                    fi
+                " || true
+            else
+                docker exec "$container_id" /bin/sh -c "
+                    if [ -f /home/vscode/.bashrc ]; then
+                        echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
+                    elif [ -f /home/developer/.bashrc ]; then
+                        echo 'export $key=\"$value\"' >> /home/developer/.bashrc
+                    fi
+                " || true
+            fi
         fi
     done
     
@@ -197,22 +207,47 @@ setup_user_environment() {
     info "Setting up user environment for $CONTAINER_USER..."
     
     # Check if user exists and set up home directory
-    docker exec "$container_id" /bin/sh -c "
-        # Check if user exists
-        if id -u $CONTAINER_USER >/dev/null 2>&1; then
-            # Set up home directory permissions
-            if [ -d /home/$CONTAINER_USER ]; then
-                chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "
+            # Check if user exists
+            if id -u $CONTAINER_USER >/dev/null 2>&1; then
+                # Set up home directory permissions
+                if [ -d /home/$CONTAINER_USER ]; then
+                    chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
+                fi
+                
+                # Add user to sudo group if needed and possible
+                if command -v usermod >/dev/null 2>&1; then
+                    usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
+                fi
+            else
+                # User doesn't exist, check if we can create it
+                if [ \$(id -u) -eq 0 ]; then
+                    useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
+                fi
             fi
-            
-            # Add user to sudo group if needed and possible
-            if command -v usermod >/dev/null 2>&1; then
-                usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
+        " || true
+    else
+        docker exec "$container_id" /bin/sh -c "
+            # Check if user exists
+            if id -u $CONTAINER_USER >/dev/null 2>&1; then
+                # Set up home directory permissions
+                if [ -d /home/$CONTAINER_USER ]; then
+                    chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
+                fi
+                
+                # Add user to sudo group if needed and possible
+                if command -v usermod >/dev/null 2>&1; then
+                    usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
+                fi
+            else
+                # User doesn't exist, check if we can create it
+                if [ \$(id -u) -eq 0 ]; then
+                    useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
+                fi
             fi
-        else
-            # User doesn't exist, check if we can create it
-            if [ \$(id -u) -eq 0 ]; then
-                useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
+        " || true
+    fi
             else
                 echo 'Cannot create user $CONTAINER_USER: not running as root'
             fi

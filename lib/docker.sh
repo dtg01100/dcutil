@@ -428,11 +428,11 @@ docker_enter() {
             execute_post_attach_command
         fi
 
-        if command -v execute_container_command >/dev/null 2>&1; then
+        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
             if [ -t 0 ]; then
-                execute_container_command exec -it "$CONTAINER_NAME" /bin/bash
+                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/bash
             else
-                execute_container_command exec -i "$CONTAINER_NAME" /bin/sh
+                execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh
             fi
         else
             if [ -t 0 ]; then
@@ -606,8 +606,13 @@ docker_run() {
         error_exit "No running devcontainer found for $project_dir" "$EXIT_DEVCONTAINER_ERROR"
     fi
     
-    if ! docker exec "$container_id" /bin/sh -c "$*"; then
-        error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -c "$*"
+        return $?
+    else
+        if ! docker exec "$container_id" /bin/sh -c "$*"; then
+            error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
+        fi
     fi
 }
 
@@ -850,8 +855,11 @@ exec_in_container() {
         return 1
     fi
 
-    # Prefer docker/podman via execute_container_command wrapper
-    if command -v execute_container_command >/dev/null 2>&1; then
+    # Prefer official devcontainer CLI for exec
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" exec /bin/sh -lc "$cmd"
+        return $?
+    elif command -v execute_container_command >/dev/null 2>&1; then
         execute_container_command exec -i "$container_name" /bin/sh -lc "$cmd"
         return $?
     else
@@ -862,7 +870,12 @@ exec_in_container() {
 
 # Backwards-compatible alias used across the codebase
 run_in_container() {
-    exec_in_container "$@"
+    # Prefer official devcontainer CLI for exec
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" exec "$@"
+    else
+        exec_in_container "$@"
+    fi
 }
 
 devcontainer_status() {

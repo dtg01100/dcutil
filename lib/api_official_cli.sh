@@ -25,6 +25,9 @@ execute_devcontainer_cli() {
     local subcommand="$1"
     shift
 
+    # Verify CLI is available before executing
+    verify_devcontainer_cli
+
     info "Executing: devcontainer $subcommand $*"
     devcontainer "$subcommand" "$@"
 }
@@ -166,6 +169,7 @@ execute_command_in_devcontainer() {
     local project_dir="${1:-$PROJECT_DIR}"
     shift  # Remove project_dir from arguments
 
+    # Verify CLI is available before executing
     verify_devcontainer_cli
 
     # The devcontainer CLI has an exec command that can run commands in the container
@@ -188,7 +192,7 @@ execute_command_in_devcontainer() {
     args+=("$@")
 
     info "Executing command in devcontainer using official CLI..."
-    execute_devcontainer_cli "exec" "${args[@]}"
+    devcontainer "exec" "${args[@]}"
 }
 
 # Execute command in container using devcontainer CLI
@@ -196,6 +200,7 @@ execute_command_in_container_via_cli() {
     local project_dir="${1:-$PROJECT_DIR}"
     shift  # Remove project_dir from arguments
 
+    # Verify CLI is available before executing
     verify_devcontainer_cli
 
     # Construct command to execute inside container using devcontainer CLI
@@ -251,10 +256,9 @@ enhanced_dcutil_command() {
             devcontainer_cli_build "$PROJECT_DIR" "$@"
             ;;
         "run")
-            # For run/exec commands, we might still need to use Docker directly
-            # since devcontainer CLI's exec is different from direct container access
+            # Use devcontainer CLI exec for run commands
             info "Executing in container with dcutil's enhanced UX..."
-            docker_run "$PROJECT_DIR" "$@"
+            execute_command_in_devcontainer "$PROJECT_DIR" exec "$@"
             ;;
         *)
             # For other commands, continue with dcutil implementation

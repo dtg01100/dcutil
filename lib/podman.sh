@@ -316,7 +316,10 @@ podman_docker_rmi() {
 }
 
 podman_docker_exec() {
-    if [ "$PODMAN_BACKEND_ENABLED" = true ]; then
+    # Prefer official devcontainer CLI for exec
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" exec "$@"
+    elif [ "$PODMAN_BACKEND_ENABLED" = true ]; then
         execute_podman_command exec "$@"
     else
         docker exec "$@"
@@ -522,55 +525,6 @@ apply_podman_tweaks() {
             [ -f "${config_file}.backup" ] && mv "${config_file}.backup" "$config_file" 2>/dev/null || true
             return 1
         fi
-    elif command -v python3 >/dev/null 2>&1; then
-        # Fallback to python3
-        info "jq not available, using python3 to apply Podman tweaks"
-        if python3 - "$config_file" <<'PY'
-import sys, json, os
-config_file = sys.argv[1]
-
-# Create backup
-backup_file = config_file + '.backup'
-try:
-    with open(config_file, 'r') as f:
-        data = json.load(f)
-
-    # Create backup
-    with open(backup_file, 'w') as f:
-        json.dump(data, f, indent=2)
-
-    # Apply Podman tweaks
-    if 'securityOpt' not in data:
-        data['securityOpt'] = ["label:disable"]
-    if 'runArgs' not in data:
-        data['runArgs'] = ["--userns=keep-id"]
-
-    # Write back
-    with open(config_file, 'w') as f:
-        json.dump(data, f, indent=2)
-
-    print("Applied Podman tweaks: disabled SELinux labeling and enabled user namespace keep-id")
-
-except Exception as e:
-    print(f"Error applying Podman tweaks: {e}", file=sys.stderr)
-    # Restore backup
-    if os.path.exists(backup_file):
-        os.rename(backup_file, config_file)
-    sys.exit(1)
-PY
-        then
-            success "Applied Podman tweaks using python3"
-            validate_json_if_available "$config_file"
-        else
-            warning "Failed to apply Podman tweaks with python3"
-            # Restore backup if it exists
-            [ -f "${config_file}.backup" ] && mv "${config_file}.backup" "$config_file" 2>/dev/null || true
-            return 1
-        fi
-    else
-        warning "Neither jq nor python3 available, cannot apply Podman tweaks to $config_file"
-        return 1
-    fi
 
     # Clean up backup file
     rm -f "${config_file}.backup" 2>/dev/null || true

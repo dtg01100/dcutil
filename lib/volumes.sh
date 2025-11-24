@@ -488,7 +488,15 @@ mount_volume() {
                 echo ""
                 read -r -p "Copy files from host to container as demonstration? (y/N): " copy_files
                 if [[ "$copy_files" =~ ^[Yy] ]]; then
-                    if docker cp "$host_path/." "$CONTAINER_ID$container_path/" 2>/dev/null; then
+                    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                        if execute_command_in_devcontainer "$PROJECT_DIR" exec mkdir -p "$container_path" 2>/dev/null &&
+                           execute_command_in_devcontainer "$PROJECT_DIR" exec cp -rL "$host_path/." "$container_path/" 2>/dev/null; then
+                            success "Files copied to container"
+                            info "Note: This is a one-time copy, not a live bind mount"
+                        else
+                            warning "Failed to copy files to container"
+                        fi
+                    elif docker cp "$host_path/." "$CONTAINER_ID$container_path/" 2>/dev/null; then
                         success "Files copied to container"
                         info "Note: This is a one-time copy, not a live bind mount"
                     else
@@ -509,7 +517,11 @@ mount_volume() {
             read -r -p "Recreate container with volume '$volume_name'? (y/N): " recreate
             if [[ "$recreate" =~ ^[Yy] ]]; then
                 info "Recreating container with volume mount..."
-                devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
+                if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                    execute_command_in_devcontainer "$PROJECT_DIR" down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
+                else
+                    devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
+                fi
                 warning "Volume '$volume_name' will be available after container restart"
             fi
             ;;
@@ -561,7 +573,13 @@ unmount_volume() {
     fi
 
     if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
-        if docker exec "$CONTAINER_ID" umount "$container_path" 2>/dev/null; then
+        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            if execute_command_in_devcontainer "$PROJECT_DIR" exec umount "$container_path" 2>/dev/null; then
+                success "Volume '$volume_name' unmounted successfully"
+            else
+                warning "Volume '$volume_name' was not mounted or failed to unmount"
+            fi
+        elif docker exec "$CONTAINER_ID" umount "$container_path" 2>/dev/null; then
             success "Volume '$volume_name' unmounted successfully"
         else
             warning "Volume '$volume_name' was not mounted or failed to unmount"

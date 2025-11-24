@@ -92,7 +92,15 @@ execute_shutdown_action() {
                 info "Executing custom shutdown command: $SHUTDOWN_ACTION"
                 
                 # Execute shutdown command in container
-                if docker exec "$container_name" sh -c "$SHUTDOWN_ACTION" >/dev/null 2>&1; then
+                if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                    if execute_command_in_devcontainer "$PROJECT_DIR" exec sh -c "$SHUTDOWN_ACTION" >/dev/null 2>&1; then
+                        success "Custom shutdown command executed successfully"
+                        return 0
+                    else
+                        error "Failed to execute custom shutdown command"
+                        return 1
+                    fi
+                elif docker exec "$container_name" sh -c "$SHUTDOWN_ACTION" >/dev/null 2>&1; then
                     success "Custom shutdown command executed successfully"
                     return 0
                 else

@@ -178,7 +178,13 @@ apply_vscode_customizations() {
         local vscode_settings
         vscode_settings=$(echo "$CUSTOMIZATIONS_CONFIG" | jq '.vscode.settings' 2>/dev/null || echo "{}")
         
-        if ! docker exec "$CONTAINER_NAME" sh -c "echo '$vscode_settings' > '$settings_file'" 2>/dev/null; then
+        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            if ! execute_command_in_devcontainer "$PROJECT_DIR" exec sh -c "echo '$vscode_settings' > '$settings_file'" 2>/dev/null; then
+                warning "Could not write VS Code settings"
+            else
+                info "VS Code settings applied"
+            fi
+        elif ! docker exec "$CONTAINER_NAME" sh -c "echo '$vscode_settings' > '$settings_file'" 2>/dev/null; then
             warning "Could not write VS Code settings"
         else
             info "VS Code settings applied"
