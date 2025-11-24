@@ -37,9 +37,15 @@ info "Using official devcontainer CLI with dcutil enhancements"
 source "$LIB_DIR/api_official_cli.sh"
 
 source "$LIB_DIR/docker.sh"
-source "$LIB_DIR/volumes.sh"
-source "$LIB_DIR/security.sh"
-source "$LIB_DIR/init.sh"
+if [ -f "$LIB_DIR/volumes.sh" ]; then
+    source "$LIB_DIR/volumes.sh"
+fi
+if [ -f "$LIB_DIR/security.sh" ]; then
+    source "$LIB_DIR/security.sh"
+fi
+if [ -f "$LIB_DIR/init.sh" ]; then
+    source "$LIB_DIR/init.sh"
+fi
 
 # Load optional modules for enhanced functionality
 if [ -f "$LIB_DIR/features.sh" ]; then
