@@ -253,42 +253,11 @@ parse_devcontainer_config() {
 }
 
 
-# Build devcontainer image
-docker_build() {
-    info "Building devcontainer image..."
-    check_docker_daemon
-    parse_devcontainer_config
-    
-    # Check if enhanced build configuration is available
-    if command -v parse_build_config >/dev/null 2>&1 && parse_build_config >/dev/null 2>&1; then
-        # Use enhanced build for custom configurations
-        docker_build_enhanced
-    else
-        # Fall back to standard image pull/build
-        if [ -n "${IMAGE_NAME:-}" ]; then
-            info "Pulling image: $IMAGE_NAME"
-            if command -v execute_container_command >/dev/null 2>&1; then
-                if execute_container_command pull "$IMAGE_NAME"; then
-                    success "Image pulled successfully: $IMAGE_NAME"
-                else
-                    error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-            else
-                if docker pull "$IMAGE_NAME"; then
-                    success "Image pulled successfully: $IMAGE_NAME"
-                else
-                    error_exit "Failed to pull image: $IMAGE_NAME" "$EXIT_DEVCONTAINER_ERROR"
-                fi
-            fi
-        else
-            error_exit "No image or build configuration specified" "$EXIT_CONFIG_ERROR"
-        fi
-    fi
-}
 
 # Start devcontainer
 docker_up() {
     local project_dir="${1:-}"
+    shift 1  # Remove project_dir from arguments
 
     # If project_dir is not provided, use current working directory
     if [ -z "$project_dir" ]; then
@@ -296,469 +265,35 @@ docker_up() {
     fi
 
     PROJECT_DIR="$project_dir"
-    info "Starting devcontainer setup..."
-    check_docker_daemon
 
-    # Debug summary
-    info "DEVCONTAINER_CONFIG_FILE: ${DEVCONTAINER_CONFIG_FILE:-<none>}"
-    info "Working dir: $PROJECT_DIR"
-    info "Looking for compose: $(command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode && echo yes || echo no)"
-
-    # Parse build configuration first (if available)
-    if command -v parse_build_config >/dev/null 2>&1; then
-        info "Parsing build configuration..."
-        parse_build_config >/dev/null 2>&1 || true
-        info "parse_build_config completed"
-    fi
-
-
-    parse_devcontainer_config
-    info "parse_devcontainer_config completed"
-
-    info "Image: $IMAGE_NAME"
-    info "ContainerUser: $CONTAINER_USER, RemoteUser: $REMOTE_USER, Workspace: $WORKSPACE_FOLDER"
-    info "MOUNT_COUNT: ${#MOUNTS[@]}"
-    info "TMPFS_COUNT: ${#TMPFS_LIST[@]}"
-    
-    # Merge image metadata with devcontainer.json if needed
-    if command -v merge_image_metadata >/dev/null 2>&1 && needs_metadata_merging >/dev/null 2>&1; then
-        merge_image_metadata
-    fi
-    
-    # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
-        docker_compose_up
-        success "Devcontainer started successfully"
-        return 0
-    fi
-    
-    # Override image name for custom builds
-    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
-        # Generate image name from project directory
-        IMAGE_NAME="dcutil-${PWD##*/}:custom"
-        info "Using custom build image: $IMAGE_NAME"
-
-        # Build the custom image using enhanced build logic
-        docker_build "$PROJECT_DIR"
-    fi
-    
-    # Generate container name from project directory (resolve existing container first)
-    CONTAINER_NAME=$(get_container_name_for_project "$PROJECT_DIR")
-    info "Using container name: $CONTAINER_NAME"
-
-    info "Devcontainer config summary: image=$IMAGE_NAME workspace=$WORKSPACE_FOLDER containerUser=$CONTAINER_USER mounts=${#MOUNTS[@]}"
-
-    # Build custom image if needed
-    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
-        docker_build
-    fi
-
-    # Check if project-home option is enabled
-    if [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" = true ]; then
-        info "Setting container home folder to project directory..."
-        # Add project directory as home mount
-        HOME_MOUNT="type=bind,source=$PROJECT_DIR,target=/home/$CONTAINER_USER"
-        info "HOME_MOUNT: $HOME_MOUNT"
-    fi
-    
-    # Build mount arguments from JSON config
-    MOUNT_ARGS=()
-    for mount in "${MOUNTS[@]}"; do
-        # Mount is already in Docker format: "source=...,target=...,type=..."
-        MOUNT_ARGS+=("--mount" "$mount")
-    done
-
-add_mount_to_devcontainer() {
-    local src="$1"
-    local tgt="$2"
-    local typ="${3:-bind}"
-    local recreate="${4:-}"
-    local cfg="${DEVCONTAINER_CONFIG_FILE:-.devcontainer/devcontainer.json}"
-
-    if [ ! -f "$cfg" ]; then
-        error "Could not find devcontainer.json to add mount"
-        return 1
-    fi
-
-    if ! command -v jq >/dev/null 2>&1; then
-        if command -v python3 >/dev/null 2>&1; then
-            info "jq not available, using python3 as fallback to modify devcontainer.json"
-            # Use python3 to safely check for duplicates and append the mount
-            if ! python3 - "$cfg" "$src" "$tgt" "$typ" <<'PY'
-import sys, json
-cfg, src, tgt, typ = sys.argv[1:]
-with open(cfg, 'r') as f:
-    data = json.load(f)
-mounts = data.get('mounts') or []
-# Check duplicates
-for m in mounts:
-    if isinstance(m, dict):
-        if m.get('source') == src or m.get('target') == tgt:
-            sys.exit(0)
-    elif isinstance(m, str):
-        if f"source={src}" in m or f"target={tgt}" in m:
-            sys.exit(0)
-# Append mount
-if isinstance(mounts, list):
-    mounts.append({"type": typ, "source": src, "target": tgt})
-else:
-    mounts = [{"type": typ, "source": src, "target": tgt}]
-data['mounts'] = mounts
-with open(cfg, 'w') as f:
-    json.dump(data, f, indent=2)
-print('ok')
-PY
-            then
-                validate_json_if_available "$cfg" || warning "Updated devcontainer.json may be invalid"
-                info "Added mount to $cfg: $typ $src -> $tgt"
-                # Optionally ask to recreate below
-            else
-                warning "Failed to update $cfg with python fallback"
-                return 1
-            fi
-        else
-            warning "jq and python3 not available, cannot add mount to devcontainer.json"
-            return 1
-        fi
-    fi
-
-    # Normalize type
-    typ="${typ:-bind}"
-
-    # Robust duplicate detection using jq (handles both object and string mount formats)
-    if jq -e --arg src "$src" --arg tgt "$tgt" --arg typ "$typ" '
-            .mounts[]? as $m |
-            if ($m|type) == "object" then
-                ($m.source == $src) or ($m.target == $tgt) or ($m.type == $typ and $m.source == $src and $m.target == $tgt)
-            elif ($m|type) == "string" then
-                ($m | contains("target=" + $tgt)) or ($m | contains("source=" + $src))
-            else
-                false
-            end
-        ' "$cfg" >/dev/null 2>&1; then
-        info "Mount for target $tgt or source $src already exists in devcontainer.json"
-        return 0
-    fi
-
-    local tmp
-    tmp=$(mktemp "${cfg}.XXXXXX")
-
-    if jq -e '.mounts' "$cfg" >/dev/null 2>&1; then
-        if ! jq --arg src "$src" --arg tgt "$tgt" --arg typ "$typ" '.mounts += [{type:$typ, source:$src, target:$tgt}]' "$cfg" > "$tmp"; then
-            rm -f "$tmp" || true
-            error "Failed to append mount to $cfg"
-            return 1
-        fi
-    else
-        if ! jq --arg src "$src" --arg tgt "$tgt" --arg typ "$typ" '. + { mounts: [ { type: $typ, source: $src, target: $tgt } ] }' "$cfg" > "$tmp"; then
-            rm -f "$tmp" || true
-            error "Failed to add mounts array to $cfg"
-            return 1
-        fi
-    fi
-
-    mv "$tmp" "$cfg"
-    validate_json_if_available "$cfg" || warning "Updated devcontainer.json may be invalid"
-    info "Added mount to $cfg: $typ $src -> $tgt"
-
-    # Optionally recreate container to apply new mount
-    if [ "$recreate" = "yes" ] || [ "$recreate" = "prompt" ]; then
-        if [ "$recreate" = "prompt" ] && [ -t 0 ]; then
-            echo "Do you want to recreate the container now to apply mount? (y/N): "
-            read -r _choice
-            if [[ ! "$_choice" =~ ^[Yy] ]]; then
-                return 0
-            fi
-        fi
-
-        if command -v devcontainer_rebuild >/dev/null 2>&1; then
-            info "Recreating devcontainer to apply mount (preserving agents and volumes)..."
-            devcontainer_rebuild --preserve-agents --preserve-volumes --force
-        else
-            warning "devcontainer_rebuild not available; cannot recreate container automatically"
-        fi
-    fi
-
-    return 0
-}
-    
-    # Only add default workspace mount if none are specified in config
-    if [ ${#MOUNTS[@]} -eq 0 ] && [ "${DCUTIL_PROJECT_HOME_ENABLED:-false}" != true ]; then
-        local mount_spec="type=bind,source=$PROJECT_DIR,target=$WORKSPACE_FOLDER,consistency=cached"
-        info "Adding default mount: $mount_spec"
-        MOUNT_ARGS+=("--mount" "$mount_spec")
-    fi
-    
-    # Add home mount if enabled
-    if [ -n "${HOME_MOUNT:-}" ]; then
-        info "Adding HOME_MOUNT to MOUNT_ARGS: $HOME_MOUNT"
-        MOUNT_ARGS+=("--mount" "$HOME_MOUNT")
-        info "MOUNT_ARGS now: ${MOUNT_ARGS[*]}"
-    fi
-    
-    # Build environment variables using environment module if available
-    ENV_ARGS=()
-    if command -v build_container_env_args >/dev/null 2>&1; then
-        # Use environment module for comprehensive environment handling
-        parse_environment_config
-        while IFS= read -r env_arg; do
-            ENV_ARGS+=("$env_arg")
-        done < <(build_container_env_args)
-    else
-        # Fallback to basic environment variables
-        ENV_ARGS+=("-e" "REMOTE_USER=$REMOTE_USER")
-        ENV_ARGS+=("-e" "WORKSPACE_FOLDER=$WORKSPACE_FOLDER")
-        
-        # Add container environment variables if parsed
-        for env_var in "${CONTAINER_ENV[@]}"; do
-            if [ -n "$env_var" ]; then
-                ENV_ARGS+=("-e" "$env_var")
-            fi
-        done
-        
-        # Add VS Code server environment
-        ENV_ARGS+=("-e" "GITHUB_TOKEN=${GITHUB_TOKEN:-}")
-        ENV_ARGS+=("-e" "NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=4096}")
-    fi
-    
-    # Build port mappings
-    PORT_ARGS=()
-    # Default SSH port mapping - publish container port 2222 to a random host port to avoid collisions
-    PORT_ARGS+=("-p" "2222")
-    # Add any app ports from devcontainer.json
-    for p in "${APP_PORTS[@]}"; do
-        if [ -n "$p" ]; then
-            PORT_ARGS+=("-p" "$p")
-        fi
-    done
-
-    # Create container
-    info "Creating container: $CONTAINER_NAME"
-
-    # Build additional mount args for optional paths
-    local OPTIONAL_MOUNTS=()
-    if [ -d "/run/user/1000/keyring" ]; then
-        OPTIONAL_MOUNTS+=("-v" "/run/user/1000/keyring:/run/user/1000/keyring")
-    fi
-    if [ -d "/tmp/.X11-unix" ]; then
-        OPTIONAL_MOUNTS+=("-v" "/tmp/.X11-unix:/tmp/.X11-unix")
-    fi
-
-    # Check if the expected container is already running
-    local running_container
-    running_container=$(docker ps --filter "name=^${CONTAINER_NAME}$" --format '{{.ID}}' 2>/dev/null | head -1)
-    if [ -n "$running_container" ]; then
-        success "Devcontainer is already running"
-        return 0
-    fi
-
-    # If a container exists with the intended name (but not running), rename it to avoid collisions
-    if docker ps -a --filter "name=^${CONTAINER_NAME}$" --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-        info "Container name $CONTAINER_NAME already exists; renaming existing container to avoid collision"
-        if ! rename_conflicting_container "$CONTAINER_NAME"; then
-            warning "Failed to rename existing container; will attempt to create with a unique name"
-            CONTAINER_NAME="${CONTAINER_NAME}-new-$(date +%s)"
-            info "Using new container name: $CONTAINER_NAME"
-        fi
-    fi
-
-    # Remove any stopped containers for this project to avoid conflicts
-    local existing_cids
-    existing_cids=$(docker ps -a --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format '{{.ID}}' 2>/dev/null || true)
-    if [ -n "$existing_cids" ]; then
-        info "Removing existing stopped container(s) for project: $existing_cids"
-        for cid in $existing_cids; do
-            docker rm -f "$cid" 2>/dev/null || true
-        done
-    fi
-
-    # Also remove stale orphan containers matching the naming pattern (free ports)
-    docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format "{{.ID}} {{.Names}} {{.Status}}" | while read -r id name status; do
-        if echo "$status" | grep -qE "Exited|Created|Dead"; then
-            info "Removing stale orphan container: $name ($id)"
-            docker rm -f "$id" 2>/dev/null || true
-        else
-            info "Stopping and removing running orphan container: $name ($id)"
-            docker rm -f "$id" 2>/dev/null || true
-        fi
-    done || true
-
-    docker create \
-        --name "$CONTAINER_NAME" \
-        --hostname "${PROJECT_DIR##*/}" \
-        --user "$CONTAINER_USER" \
-        --workdir "$WORKSPACE_FOLDER" \
-        --label "devcontainer.local_folder=$PROJECT_DIR" \
-        --label "devcontainer=true" \
-        --cap-add=SYS_PTRACE \
-        --security-opt="seccomp=unconfined" \
-        "${OPTIONAL_MOUNTS[@]}" \
-        "${PORT_ARGS[@]}" \
-        "${ENV_ARGS[@]}" \
-        "${MOUNT_ARGS[@]}" \
-        "$IMAGE_NAME" \
-        /bin/sh -c "while sleep 1000; do :; done" &
-    local create_pid=$!
-    wait $create_pid
-    local create_result=$?
-
-    if [ $create_result -ne 0 ]; then
-        error "Failed to create devcontainer (docker create exited with $create_result)"
-        # Try to get more info about the failure
-        docker logs "$CONTAINER_NAME" 2>/dev/null || true
-        error_exit "Failed to create devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-    fi
-    
-    # Get the container ID
-    local container_id
-    container_id=$(docker inspect -f '{{.Id}}' "$CONTAINER_NAME" 2>/dev/null)
-    
-    info "Container created: $container_id"
-    
-    # Start container
-    if ! docker start "$CONTAINER_NAME" 2>/dev/null; then
-        # If start failed because container already exists and is running, consider it OK
-        if docker container inspect "$CONTAINER_NAME" &>/dev/null && docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
-            warning "Container $CONTAINER_NAME is already running; proceeding"
-        else
-            error_exit "Failed to start devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-    fi
-    
-    # Wait for container to be ready
-    sleep 2
-
-    # Finalize container start
-    finalize_container_start "$CONTAINER_NAME" true
-}
-
-# Run post-create commands
-run_post_create_commands() {
-    local config_file=""
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    fi
-    
-    if [ -n "$DEVCONTAINER_CONFIG_FILE" ] && command -v jq &> /dev/null && jq -e '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-        POST_CREATE_CMD=$(jq -r '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE")
-        info "Running post-create command..."
-        if ! docker exec "$CONTAINER_NAME" /bin/sh -c "$POST_CREATE_CMD" 2>/dev/null; then
-            warning "Post-create command failed (continuing anyway)"
-        fi
-    fi
-}
-
-finalize_container_start() {
-    local cont_name="$1"
-    local was_created="${2:-false}"
-
-    info "Finalizing container start: $cont_name (was_created=$was_created)"
-
-    if [ "$was_created" = true ]; then
-        run_post_create_commands
-    fi
-
-    if command -v execute_lifecycle_commands >/dev/null 2>&1; then
-        execute_lifecycle_commands
-    fi
-
-    if command -v install_features >/dev/null 2>&1 && has_features >/dev/null 2>&1; then
-        info "Installing Devcontainer Features..."
-        install_features
-    fi
-
-    if command -v apply_advanced_features >/dev/null 2>&1 && has_advanced_features >/dev/null 2>&1; then
-        info "Applying advanced features..."
-        apply_advanced_features
-    fi
-
-    if command -v execute_post_start_command >/dev/null 2>&1; then
-        execute_post_start_command
-    fi
-
-    if command -v apply_remote_environment >/dev/null 2>&1; then
-        parse_environment_config
-        apply_remote_environment "$cont_name"
-    fi
-
-    if command -v setup_user_environment >/dev/null 2>&1; then
-        parse_environment_config
-        setup_user_environment "$cont_name"
-    fi
-
-    if command -v execute_post_attach_command >/dev/null 2>&1; then
-        execute_post_attach_command
-    fi
-
-    if command -v apply_tool_integration >/dev/null 2>&1 && has_tool_integration >/dev/null 2>&1; then
-        info "Applying tool integration features..."
-        apply_tool_integration
-    fi
-
-    if command -v apply_user_env_probe >/dev/null 2>&1 && has_user_env_probe >/dev/null 2>&1; then
-        info "Applying user environment probing..."
-        apply_user_env_probe
-    fi
-
-    success "Devcontainer started successfully"
+    info "Using official devcontainer CLI with dcutil enhancements..."
+    devcontainer_cli_up "$project_dir" "$@"
+    return $?
 }
 
 # Stop devcontainer
 docker_down() {
-    info "Stopping devcontainer..."
-    
-    # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
-        docker_compose_down
-        return 0
-    fi
-    
-    # Check if container exists
-    if command -v execute_container_command >/dev/null 2>&1; then
-        if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
-            info "No running devcontainer found"
-            success "Devcontainer stopped"
-            return 0
-        fi
-        
-        # Stop container
-        if ! execute_container_command stop "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-    else
-        if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-            info "No running devcontainer found"
-            success "Devcontainer stopped"
-            return 0
-        fi
-        
-        # Stop container
-        if ! docker stop "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "Failed to stop devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-        fi
-    fi
-    
-    success "Devcontainer stopped"
+    info "Using official devcontainer CLI to stop container with dcutil enhancements..."
+    devcontainer_cli_down "$PROJECT_DIR"
+    return $?
 }
 
 # Restart devcontainer
 docker_restart() {
     info "Restarting devcontainer..."
-    
+
     # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_restart
         return 0
     fi
-    
+
     # Check if container exists
     if command -v execute_container_command >/dev/null 2>&1; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
-        
+
         # Restart container
         if ! execute_container_command restart "$CONTAINER_NAME" &>/dev/null; then
             error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
@@ -767,22 +302,30 @@ docker_restart() {
         if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
             error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
-        
+
         # Restart container
         if ! docker restart "$CONTAINER_NAME" &>/dev/null; then
             error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
-    
+
+    # Execute post-start lifecycle commands (handles postStartCommand)
+    if command -v execute_post_start_lifecycle_commands >/dev/null 2>&1; then
+        execute_post_start_lifecycle_commands
+    fi
+
     success "Devcontainer restarted successfully"
 }
 
 # Enter devcontainer
 docker_enter() {
     local project_dir="${1:-}"
-    info "Entering container..."
 
-# Check if we're in Docker Compose mode
+    info "(Using dcutil's enhanced entry UX with containers started via official CLI)"
+
+    info "Entering container (using dcutil implementation)..."
+
+    # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         if [ -t 0 ]; then
             docker_compose_exec /bin/bash
@@ -879,6 +422,12 @@ docker_enter() {
 
     # Now enter the running container
     if [ "$container_running" = true ]; then
+        # Execute postAttachCommand if configured (runs when client connects to container)
+        if command -v execute_post_attach_command >/dev/null 2>&1; then
+            info "Running postAttachCommand for container attachment..."
+            execute_post_attach_command
+        fi
+
         if command -v execute_container_command >/dev/null 2>&1; then
             if [ -t 0 ]; then
                 execute_container_command exec -it "$CONTAINER_NAME" /bin/bash
@@ -1043,6 +592,10 @@ docker_run() {
     local project_dir="$1"
     shift  # Remove project_dir from arguments
     validate_run_command "$@"
+
+    # Additional validation for the command string
+    local cmd_string
+    cmd_string=$(validate_user_input "$*" "command")
     info "Running command in container: $*"
     check_docker_daemon
     
@@ -1053,7 +606,7 @@ docker_run() {
         error_exit "No running devcontainer found for $project_dir" "$EXIT_DEVCONTAINER_ERROR"
     fi
     
-    if ! docker exec "$container_id" "$@"; then
+    if ! docker exec "$container_id" /bin/sh -c "$*"; then
         error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
     fi
 }
@@ -1190,7 +743,7 @@ devcontainer_rebuild() {
                 echo "  --preserve-agents     Preserve installed agents"
                 echo "  --preserve-all        Preserve all data (volumes, SSH, agents)"
                 echo "  --help, -h           Show this help"
-                exit $EXIT_SUCCESS
+                exit "$EXIT_SUCCESS"
                 ;;
             *)
                 error_exit "Unknown rebuild option: $1. Use 'dcutil rebuild --help' for usage." 1
@@ -1270,13 +823,6 @@ devcontainer_rebuild() {
     success "Devcontainer rebuilt successfully"
 }
 
-# Wrapper functions that call Docker-native operations directly
-devcontainer_up() {
-    info "Starting devcontainer setup..."
-    docker_up "$PROJECT_DIR"
-    success "Devcontainer started successfully"
-}
-
 # Execute container command with backend support
 execute_container_command() {
     local cmd="$1"
@@ -1317,24 +863,6 @@ exec_in_container() {
 # Backwards-compatible alias used across the codebase
 run_in_container() {
     exec_in_container "$@"
-}
-
-
-devcontainer_down() {
-    info "Stopping devcontainer..."
-    docker_down "$PROJECT_DIR"
-    success "Devcontainer stopped"
-}
-
-devcontainer_restart() {
-    info "Restarting devcontainer..."
-    docker_restart "$PROJECT_DIR"
-    success "Devcontainer restarted successfully"
-}
-
-devcontainer_enter() {
-    info "Entering container..."
-    docker_enter "$PROJECT_DIR"
 }
 
 devcontainer_status() {
@@ -1604,8 +1132,8 @@ devcontainer_run() {
 }
 
 devcontainer_build() {
-    info "Building devcontainer image..."
-    docker_build "$PROJECT_DIR"
+    info "Using official devcontainer CLI for build with dcutil enhancements..."
+    devcontainer_cli_build "$PROJECT_DIR"
     success "Build completed"
 }
 

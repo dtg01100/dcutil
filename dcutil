@@ -7,23 +7,35 @@ VERSION="v1.0.8"
 
 set -euo pipefail
 
-# Source all modules
+# Source core functionality first
+source "$(dirname "${BASH_SOURCE[0]}")/lib/core.sh"
+
+# Always use official devcontainer CLI as primary engine with dcutil enhancements
+info "Using official devcontainer CLI with dcutil enhancements"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/api_official_cli.sh"
+
+# Source other dcutil modules for enhanced functionality
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 if [ -d "$SCRIPT_DIR/lib" ]; then
     LIB_DIR="$SCRIPT_DIR/lib"
 else
     LIB_DIR="$SCRIPT_DIR/../lib"
 fi
-source "$LIB_DIR/core.sh"
+
 source "$LIB_DIR/docker.sh"
 source "$LIB_DIR/volumes.sh"
 source "$LIB_DIR/security.sh"
 source "$LIB_DIR/init.sh"
-# features module is optional
+
+# Load optional modules for enhanced functionality
 if [ -f "$LIB_DIR/features.sh" ]; then
     source "$LIB_DIR/features.sh"
 fi
-# lifecycle module is optional
+
+if [ -f "$LIB_DIR/lockfile.sh" ]; then
+    source "$LIB_DIR/lockfile.sh"
+fi
+
 if [ -f "$LIB_DIR/lifecycle.sh" ]; then
     source "$LIB_DIR/lifecycle.sh"
 fi
@@ -53,8 +65,8 @@ if [ -f "$LIB_DIR/podman.sh" ]; then
 fi
 
 # Initialize backend system
-if command -v init_container_backend >/dev/null 2>&1; then
-    init_container_backend
+if command -v init_podman_backend >/dev/null 2>&1; then
+    init_podman_backend
 fi
 
 # Test function to verify improvements
@@ -129,7 +141,7 @@ _source_dcutil_completion() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman version help completion test"
+    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman lockfile version help completion test"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
@@ -244,6 +256,7 @@ local -a commands
         'shutdown:Container shutdown actions'
         'rebuild:Rebuild devcontainer with preservation options'
         'schema:Devcontainer configuration schema validation'
+        'lockfile:Devcontainer lockfile management'
          'podman:Podman backend configuration and status'
          'version:Show version information'
          'completion:Generate completion script'
@@ -1122,6 +1135,9 @@ elif [ "$COMMAND" = "podman" ]; then
     case "${1:-}" in
         "status")
             # Show Podman backend status
+            if command -v init_podman_backend >/dev/null 2>&1; then
+                init_podman_backend >/dev/null 2>&1
+            fi
             if command -v show_backend_status >/dev/null 2>&1; then
                 show_backend_status
             else
@@ -1499,10 +1515,11 @@ case "$COMMAND" in
             print_up_usage
             exit $EXIT_SUCCESS
         fi
-        devcontainer_up
+
+        enhanced_dcutil_command "up" "$@"
         ;;
     "down")
-        devcontainer_down
+        enhanced_dcutil_command "down" "$@"
         ;;
 
     "features")
@@ -1521,7 +1538,7 @@ case "$COMMAND" in
         devcontainer_enter
         ;;
     "build")
-        devcontainer_build
+        enhanced_dcutil_command "build" "$@"
         ;;
     "clean")
         devcontainer_clean
@@ -1536,7 +1553,7 @@ case "$COMMAND" in
          devcontainer_list
          ;;
      "run")
-         devcontainer_run "$@"
+         enhanced_dcutil_command "run" "$@"
          ;;
      "check")
          devcontainer_check

@@ -10,6 +10,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 INITIALIZE_COMMAND=""
 ON_CREATE_COMMAND=""
 UPDATE_CONTENT_COMMAND=""
+POST_CREATE_COMMAND=""
+POST_START_COMMAND=""
 POST_ATTACH_COMMAND=""
 WAIT_FOR=""
 
@@ -33,7 +35,19 @@ parse_lifecycle_config() {
             UPDATE_CONTENT_COMMAND=$(jq -r '.updateContentCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
             info "updateContentCommand found"
         fi
-        
+
+        # Parse postCreateCommand
+        if jq -e '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            POST_CREATE_COMMAND=$(jq -r '.postCreateCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            info "postCreateCommand found"
+        fi
+
+        # Parse postStartCommand
+        if jq -e '.postStartCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            POST_START_COMMAND=$(jq -r '.postStartCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            info "postStartCommand found"
+        fi
+
         # Parse postAttachCommand
         if jq -e '.postAttachCommand' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             POST_ATTACH_COMMAND=$(jq -r '.postAttachCommand' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
@@ -51,23 +65,26 @@ parse_lifecycle_config() {
     return 1
 }
 
-# Execute initializeCommand
+# Execute initializeCommand on the host system (not in container)
 execute_initialize_command() {
     if [ -z "${INITIALIZE_COMMAND:-}" ]; then
         return 0
     fi
 
-    info "Running initializeCommand..."
+    info "Running initializeCommand on host system..."
 
+    # For initializeCommand, execute on the host system, not in the container
     # Check if command is object (parallel execution)
     if command -v jq &> /dev/null && echo "$INITIALIZE_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
-        execute_parallel_commands "$INITIALIZE_COMMAND" "initializeCommand"
+        # For parallel commands, run them on host as well
+        execute_parallel_commands_host "$INITIALIZE_COMMAND" "initializeCommand"
     else
-        # Single command or array
-        execute_lifecycle_command "$INITIALIZE_COMMAND" "initializeCommand"
+        # Single command or array - run on host
+        execute_lifecycle_command_host "$INITIALIZE_COMMAND" "initializeCommand"
     fi
+    local exit_code=$?
 
-    if [ $? -eq 0 ]; then
+    if [ $exit_code -eq 0 ]; then
         success "initializeCommand completed successfully"
     else
         warning "initializeCommand failed (continuing anyway)"
@@ -89,8 +106,9 @@ execute_on_create_command() {
         # Single command or array
         execute_lifecycle_command "$ON_CREATE_COMMAND" "onCreateCommand"
     fi
-    
-    if [ $? -eq 0 ]; then
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
         success "onCreateCommand completed successfully"
     else
         warning "onCreateCommand failed (continuing anyway)"
@@ -112,8 +130,9 @@ execute_update_content_command() {
         # Single command or array
         execute_lifecycle_command "$UPDATE_CONTENT_COMMAND" "updateContentCommand"
     fi
-    
-    if [ $? -eq 0 ]; then
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
         success "updateContentCommand completed successfully"
     else
         warning "updateContentCommand failed (continuing anyway)"
@@ -135,23 +154,72 @@ execute_post_attach_command() {
         # Single command or array
         execute_lifecycle_command "$POST_ATTACH_COMMAND" "postAttachCommand"
     fi
-    
-    if [ $? -eq 0 ]; then
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
         success "postAttachCommand completed successfully"
     else
         warning "postAttachCommand failed (continuing anyway)"
     fi
 }
 
-# Execute a lifecycle command (single command or array)
+# Execute postCreateCommand
+execute_post_create_command() {
+    if [ -z "${POST_CREATE_COMMAND:-}" ]; then
+        return 0
+    fi
+
+    info "Running postCreateCommand..."
+
+    # Check if command is object (parallel execution)
+    if command -v jq &> /dev/null && echo "$POST_CREATE_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        execute_parallel_commands "$POST_CREATE_COMMAND" "postCreateCommand"
+    else
+        # Single command or array
+        execute_lifecycle_command "$POST_CREATE_COMMAND" "postCreateCommand"
+    fi
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        success "postCreateCommand completed successfully"
+    else
+        warning "postCreateCommand failed (continuing anyway)"
+    fi
+}
+
+# Execute postStartCommand
+execute_post_start_command() {
+    if [ -z "${POST_START_COMMAND:-}" ]; then
+        return 0
+    fi
+
+    info "Running postStartCommand..."
+
+    # Check if command is object (parallel execution)
+    if command -v jq &> /dev/null && echo "$POST_START_COMMAND" | jq -e 'type == "object"' >/dev/null 2>&1; then
+        execute_parallel_commands "$POST_START_COMMAND" "postStartCommand"
+    else
+        # Single command or array
+        execute_lifecycle_command "$POST_START_COMMAND" "postStartCommand"
+    fi
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        success "postStartCommand completed successfully"
+    else
+        warning "postStartCommand failed (continuing anyway)"
+    fi
+}
+
+# Execute a lifecycle command (single command or array) - in container when possible
 execute_lifecycle_command() {
     local command_json="$1"
     local command_name="$2"
-    
+
     if [ -z "$command_json" ] || [ "$command_json" = "null" ]; then
         return 0
     fi
-    
+
     # Check if it's an array
     if command -v jq &> /dev/null && echo "$command_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
         # Execute array of commands sequentially
@@ -187,7 +255,47 @@ execute_lifecycle_command() {
             fi
         fi
     fi
-    
+
+    return 0
+}
+
+# Execute a lifecycle command (single command or array) - on host system
+execute_lifecycle_command_host() {
+    local command_json="$1"
+    local command_name="$2"
+
+    if [ -z "$command_json" ] || [ "$command_json" = "null" ]; then
+        return 0
+    fi
+
+    # Check if it's an array
+    if command -v jq &> /dev/null && echo "$command_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+        # Execute array of commands sequentially on host
+        local commands=()
+        local i=0
+        while IFS= read -r cmd; do
+            if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
+                commands[i]="$cmd"
+                ((i++))
+            fi
+        done < <(echo "$command_json" | jq -r '.[]' 2>/dev/null)
+
+        for cmd in "${commands[@]}"; do
+            info "[$command_name] Executing on host: $cmd"
+            if ! /bin/sh -c "$cmd"; then
+                error "[$command_name] Command failed on host: $cmd"
+                return 1
+            fi
+        done
+    else
+        # Single command
+        info "[$command_name] Executing on host: $command_json"
+        if ! /bin/sh -c "$command_json"; then
+            error "[$command_name] Command failed on host: $command_json"
+            return 1
+        fi
+    fi
+
     return 0
 }
 
@@ -195,17 +303,17 @@ execute_lifecycle_command() {
 execute_parallel_commands() {
     local commands_json="$1"
     local command_name="$2"
-    
+
     if [ -z "$commands_json" ] || [ "$commands_json" = "null" ]; then
         return 0
     fi
-    
+
     info "[$command_name] Executing parallel commands..."
-    
+
     # Extract command names and execute in parallel
     local pids=()
     local command_names=()
-    
+
     # Get all command names
     if command -v jq &> /dev/null; then
         while IFS= read -r name; do
@@ -214,16 +322,16 @@ execute_parallel_commands() {
             fi
         done < <(echo "$commands_json" | jq -r 'keys[]' 2>/dev/null || echo "")
     fi
-    
+
     # Execute each command in parallel
     for cmd_name in "${command_names[@]}"; do
         if command -v jq &> /dev/null; then
             local cmd_value
             cmd_value=$(echo "$commands_json" | jq -r ".[\"$cmd_name\"]" 2>/dev/null)
-            
+
             if [ -n "$cmd_value" ] && [ "$cmd_value" != "null" ]; then
                 info "[$command_name] Starting parallel command: $cmd_name"
-                
+
                     # Execute command in background
                 (
                     if echo "$cmd_value" | jq -e 'type == "array"' >/dev/null 2>&1; then
@@ -246,12 +354,12 @@ execute_parallel_commands() {
                         fi
                     fi
                 ) &
-                
+
                 pids+=($!)
             fi
         fi
     done
-    
+
     # Wait for all parallel commands to complete
     local failed_pids=()
     for pid in "${pids[@]}"; do
@@ -259,13 +367,83 @@ execute_parallel_commands() {
             failed_pids+=("$pid")
         fi
     done
-    
+
     if [ ${#failed_pids[@]} -gt 0 ]; then
         error "[$command_name] Some parallel commands failed"
         return 1
     fi
-    
+
     success "[$command_name] All parallel commands completed successfully"
+    return 0
+}
+
+# Execute parallel commands on host system
+execute_parallel_commands_host() {
+    local commands_json="$1"
+    local command_name="$2"
+
+    if [ -z "$commands_json" ] || [ "$commands_json" = "null" ]; then
+        return 0
+    fi
+
+    info "[$command_name] Executing parallel commands on host..."
+
+    # Extract command names and execute in parallel on host
+    local pids=()
+    local command_names=()
+
+    # Get all command names
+    if command -v jq &> /dev/null; then
+        while IFS= read -r name; do
+            if [ -n "$name" ] && [ "$name" != "null" ]; then
+                command_names+=("$name")
+            fi
+        done < <(echo "$commands_json" | jq -r 'keys[]' 2>/dev/null || echo "")
+    fi
+
+    # Execute each command in parallel on host
+    for cmd_name in "${command_names[@]}"; do
+        if command -v jq &> /dev/null; then
+            local cmd_value
+            cmd_value=$(echo "$commands_json" | jq -r ".[\"$cmd_name\"]" 2>/dev/null)
+
+            if [ -n "$cmd_value" ] && [ "$cmd_value" != "null" ]; then
+                info "[$command_name] Starting parallel command on host: $cmd_name"
+
+                # Execute command in background on host
+                (
+                    if echo "$cmd_value" | jq -e 'type == "array"' >/dev/null 2>&1; then
+                        # Array command
+                        echo "$cmd_value" | jq -r '.[]' 2>/dev/null | while IFS= read -r cmd; do
+                            if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
+                                /bin/sh -c "$cmd"
+                            fi
+                        done
+                    else
+                        # Single command
+                        /bin/sh -c "$cmd_value"
+                    fi
+                ) &
+
+                pids+=($!)
+            fi
+        fi
+    done
+
+    # Wait for all parallel commands to complete
+    local failed_pids=()
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            failed_pids+=("$pid")
+        fi
+    done
+
+    if [ ${#failed_pids[@]} -gt 0 ]; then
+        error "[$command_name] Some parallel commands failed on host"
+        return 1
+    fi
+
+    success "[$command_name] All parallel commands completed successfully on host"
     return 0
 }
 
@@ -274,36 +452,53 @@ execute_lifecycle_commands() {
     if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
         return 0
     fi
-    
+
     local wait_for_value="${WAIT_FOR:-updateContentCommand}"
-    
+
     info "Executing lifecycle commands with waitFor=$wait_for_value"
-    
+
     # Execute initializeCommand first if configured
     execute_initialize_command
-    
+
     # Always execute onCreateCommand first
     execute_on_create_command
-    
+
     # Execute updateContentCommand
     execute_update_content_command
-    
+
+    # Execute postCreateCommand
+    execute_post_create_command
+
     # Wait for specific command if waitFor is set
     case "$wait_for_value" in
         "onCreateCommand")
-            # Wait after onCreateCommand (already done)
+            # Wait after onCreateCommand
             ;;
         "updateContentCommand")
-            # Wait after updateContentCommand (already done)
+            # Wait after updateContentCommand
             ;;
         "postCreateCommand")
-            # Wait will be handled by the main docker.sh script
+            # Wait after postCreateCommand
             ;;
         *)
             warning "Unknown waitFor value: $wait_for_value"
             ;;
     esac
-    
+
+    return 0
+}
+
+# Execute post start lifecycle commands
+execute_post_start_lifecycle_commands() {
+    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+        return 0
+    fi
+
+    info "Executing post-start lifecycle commands"
+
+    # Execute postStartCommand
+    execute_post_start_command
+
     return 0
 }
 
@@ -320,6 +515,12 @@ show_lifecycle_info() {
     fi
     if [ -n "${UPDATE_CONTENT_COMMAND:-}" ]; then
         echo "  updateContentCommand: $UPDATE_CONTENT_COMMAND"
+    fi
+    if [ -n "${POST_CREATE_COMMAND:-}" ]; then
+        echo "  postCreateCommand: $POST_CREATE_COMMAND"
+    fi
+    if [ -n "${POST_START_COMMAND:-}" ]; then
+        echo "  postStartCommand: $POST_START_COMMAND"
     fi
     if [ -n "${POST_ATTACH_COMMAND:-}" ]; then
         echo "  postAttachCommand: $POST_ATTACH_COMMAND"

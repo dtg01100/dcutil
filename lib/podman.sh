@@ -44,7 +44,6 @@ auto_detect_backend() {
                 if check_podman_availability; then
                     PODMAN_BACKEND_ENABLED=true
                     preference="podman"
-                    info "Using Podman backend (environment variable)"
                 else
                     warning "Podman requested but not available, falling back to Docker"
                 fi
@@ -52,7 +51,6 @@ auto_detect_backend() {
             "docker"|"false"|"0")
                 PODMAN_BACKEND_ENABLED=false
                 preference="docker"
-                info "Using Docker backend (environment variable)"
                 ;;
             *)
                 warning "Unknown backend '$DCUTIL_BACKEND', using auto-detection"
@@ -66,16 +64,14 @@ auto_detect_backend() {
             # Check if Docker is available for fallback
             if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
                 PODMAN_FALLBACK_ENABLED=true
-                info "Podman available with Docker fallback"
             else
                 PODMAN_FALLBACK_ENABLED=false
-                info "Podman available without Docker fallback"
             fi
         fi
         
         # Default to Docker if neither Podman nor Docker are preferred
         if [ "$PODMAN_AVAILABLE" = false ]; then
-            info "Using Docker backend (Podman not available)"
+            :
         fi
     fi
     
@@ -411,19 +407,173 @@ validate_backend_config() {
 # Initialize Podman backend
 init_podman_backend() {
     info "Initializing Podman backend support..."
-    
+
     # Auto-detect backend preference
     auto_detect_backend
-    
+
     # Validate configuration
     validate_backend_config
-    
+
     if [ "$PODMAN_BACKEND_ENABLED" = true ]; then
         success "Podman backend initialized successfully"
         info "Using Podman version $PODMAN_VERSION"
-    else
-        info "Using Docker backend"
+
+        # Offer to apply Podman-specific tweaks to devcontainer.json
+        offer_podman_tweaks
     fi
+}
+
+# Offer to apply Podman-specific tweaks to devcontainer.json
+offer_podman_tweaks() {
+    local config_file=""
+
+    # Find devcontainer.json
+    if [ -f ".devcontainer/devcontainer.json" ]; then
+        config_file=".devcontainer/devcontainer.json"
+    elif [ -f ".devcontainer.json" ]; then
+        config_file=".devcontainer.json"
+    elif [ -f "devcontainer.json" ]; then
+        config_file="devcontainer.json"
+    else
+        # No devcontainer.json found, skip offering tweaks
+        return 0
+    fi
+
+    # Check if tweaks are already applied
+    if command -v jq >/dev/null 2>&1; then
+        local has_security_opts
+        local has_run_args
+        has_security_opts=$(jq -e '.securityOpt // empty' "$config_file" 2>/dev/null || echo "false")
+        has_run_args=$(jq -e '.runArgs // empty' "$config_file" 2>/dev/null || echo "false")
+
+        if [ "$has_security_opts" != "false" ] || [ "$has_run_args" != "false" ]; then
+            # Tweaks already appear to be applied
+            return 0
+        fi
+    fi
+
+    # Offer to apply Podman tweaks
+    if confirm_prompt "Podman detected. Apply Podman-specific tweaks to $config_file? (recommended for better compatibility)"; then
+        apply_podman_tweaks "$config_file"
+    fi
+
+    # Find devcontainer.json
+    if [ -f ".devcontainer/devcontainer.json" ]; then
+        config_file=".devcontainer/devcontainer.json"
+    elif [ -f ".devcontainer.json" ]; then
+        config_file=".devcontainer.json"
+    elif [ -f "devcontainer.json" ]; then
+        config_file="devcontainer.json"
+    else
+        # No devcontainer.json found, skip offering tweaks
+        return 0
+    fi
+
+    # Check if tweaks are already applied
+    if command -v jq >/dev/null 2>&1; then
+        local has_security_opts
+        local has_run_args
+        has_security_opts=$(jq -e '.securityOpt // empty' "$config_file" 2>/dev/null || echo "false")
+        has_run_args=$(jq -e '.runArgs // empty' "$config_file" 2>/dev/null || echo "false")
+        info "has_security_opts: $has_security_opts, has_run_args: $has_run_args"
+
+        if [ "$has_security_opts" != "false" ] || [ "$has_run_args" != "false" ]; then
+            # Tweaks already appear to be applied
+            info "Tweaks already applied, skipping"
+            return 0
+        fi
+    else
+        info "jq not available, will offer tweaks anyway"
+    fi
+
+    # Offer to apply Podman tweaks
+    info "About to prompt for tweaks..."
+    if confirm_prompt "Podman detected. Apply Podman-specific tweaks to $config_file? (recommended for better compatibility)"; then
+        apply_podman_tweaks "$config_file"
+    fi
+}
+
+# Apply Podman-specific tweaks to devcontainer.json
+apply_podman_tweaks() {
+    local config_file="$1"
+
+    if [ ! -f "$config_file" ]; then
+        warning "Config file $config_file not found"
+        return 1
+    fi
+
+    info "Applying Podman-specific tweaks to $config_file..."
+
+    if command -v jq >/dev/null 2>&1; then
+        # Create backup
+        cp "$config_file" "${config_file}.backup" 2>/dev/null || true
+
+        # Apply tweaks using jq
+        if jq '. + {
+            "securityOpt": ["label:disable"],
+            "runArgs": ["--userns=keep-id"]
+        }' "$config_file" > "${config_file}.tmp" 2>/dev/null; then
+            mv "${config_file}.tmp" "$config_file"
+            success "Applied Podman tweaks: disabled SELinux labeling and enabled user namespace keep-id"
+            validate_json_if_available "$config_file"
+        else
+            warning "Failed to apply Podman tweaks with jq"
+            # Restore backup if it exists
+            [ -f "${config_file}.backup" ] && mv "${config_file}.backup" "$config_file" 2>/dev/null || true
+            return 1
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
+        # Fallback to python3
+        info "jq not available, using python3 to apply Podman tweaks"
+        if python3 - "$config_file" <<'PY'
+import sys, json, os
+config_file = sys.argv[1]
+
+# Create backup
+backup_file = config_file + '.backup'
+try:
+    with open(config_file, 'r') as f:
+        data = json.load(f)
+
+    # Create backup
+    with open(backup_file, 'w') as f:
+        json.dump(data, f, indent=2)
+
+    # Apply Podman tweaks
+    if 'securityOpt' not in data:
+        data['securityOpt'] = ["label:disable"]
+    if 'runArgs' not in data:
+        data['runArgs'] = ["--userns=keep-id"]
+
+    # Write back
+    with open(config_file, 'w') as f:
+        json.dump(data, f, indent=2)
+
+    print("Applied Podman tweaks: disabled SELinux labeling and enabled user namespace keep-id")
+
+except Exception as e:
+    print(f"Error applying Podman tweaks: {e}", file=sys.stderr)
+    # Restore backup
+    if os.path.exists(backup_file):
+        os.rename(backup_file, config_file)
+    sys.exit(1)
+PY
+        then
+            success "Applied Podman tweaks using python3"
+            validate_json_if_available "$config_file"
+        else
+            warning "Failed to apply Podman tweaks with python3"
+            # Restore backup if it exists
+            [ -f "${config_file}.backup" ] && mv "${config_file}.backup" "$config_file" 2>/dev/null || true
+            return 1
+        fi
+    else
+        warning "Neither jq nor python3 available, cannot apply Podman tweaks to $config_file"
+        return 1
+    fi
+
+    # Clean up backup file
+    rm -f "${config_file}.backup" 2>/dev/null || true
 }
 
 # Cleanup Podman backend state

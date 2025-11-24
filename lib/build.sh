@@ -18,7 +18,12 @@ BUILD_SQUASH=false
 # Check if build configuration is specified
 is_custom_build() {
     if command -v jq &> /dev/null; then
+        # Check for build property
         if jq -e '.build' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+            return 0
+        fi
+        # Check for features property (requires custom build to incorporate features)
+        if jq -e '.features' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             return 0
         fi
     fi
@@ -135,18 +140,24 @@ docker_build_enhanced() {
 
     info "Building Docker image with enhanced configuration..."
     check_docker_daemon
-    
+
+    # If features are configured, warn user about better approach with the official CLI
+    if command -v has_features >/dev/null 2>&1 && has_features; then
+        warning "Features detected - recommended to use official devcontainer CLI for proper feature handling"
+        info "For best experience with features, consider using: devcontainer build instead of dcutil build"
+    fi
+
     # Validate build files exist
     if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "Dockerfile" ]; then
         if [ ! -f "$BUILD_DOCKERFILE" ]; then
             error_exit "Dockerfile not found: $BUILD_DOCKERFILE" "$EXIT_CONFIG_ERROR"
         fi
     fi
-    
+
     if [ ! -d "$BUILD_CONTEXT" ]; then
         error_exit "Build context directory not found: $BUILD_CONTEXT" "$EXIT_CONFIG_ERROR"
     fi
-    
+
     # Build docker build command as array for safe execution
     local build_cmd=("docker" "build")
 
@@ -176,7 +187,7 @@ docker_build_enhanced() {
     fi
 
     # Add dockerfile path
-    if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "Dockerfile" ]; then
+    if [ -n "$BUILD_DOCKERFILE" ]; then
         build_cmd+=("-f" "$BUILD_DOCKERFILE")
     fi
 
@@ -282,12 +293,12 @@ validate_build_config() {
 # Clean build artifacts
 clean_build_artifacts() {
     info "Cleaning build artifacts..."
-    
+
     # Remove intermediate images if any
     docker image prune -f
-    
+
     # Remove dangling images
     docker image prune -f --filter "dangling=true"
-    
+
     success "Build artifacts cleaned"
 }

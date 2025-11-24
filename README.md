@@ -40,6 +40,81 @@ A comprehensive devcontainer utility script providing **100% Devcontainer Specif
 - **Backend Switching**: Runtime backend selection via environment variables
 - **Enterprise Ready**: Rootless support, enhanced security, OCI compliance
 
+## Installation
+
+### Homebrew (Linux)
+
+```bash
+# Install dcutil from the custom tap
+brew install dtg01100/dcutil/dcutil
+
+# Install required dependencies
+brew install jq devcontainer
+
+# Install a container runtime (choose one)
+sudo apt-get install docker.io       # Docker
+# or
+brew install podman                  # Podman
+
+# Optional: Install additional tools for full functionality
+brew install git docker-compose node
+```
+
+**Note**: Currently Linux-only. The Homebrew formula is automatically updated when new releases are published on GitHub.
+
+### Manual Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/dtg01100/dcutil.git
+cd dcutil
+
+# Make executable
+chmod +x dcutil
+
+# Install dependencies
+# Ubuntu/Debian
+sudo apt-get install jq curl
+
+# macOS
+brew install jq curl
+
+# Install devcontainer CLI
+npm install -g @devcontainers/cli
+
+# Install container runtime
+# Docker: https://docs.docker.com/get-docker/
+# Podman: https://podman.io/getting-started/installation/
+```
+
+### Dependencies
+
+**Required:**
+- `jq` - JSON processing
+- `devcontainer` - Official Microsoft devcontainer CLI
+- `curl` - HTTP client for templates/features
+- Docker or Podman - Container runtime
+
+**Optional:**
+- `git` - Git operations
+- `docker-compose` / `podman-compose` - Compose support
+- `node` / `npm` - For various agents and tools
+
+### Post-Installation
+
+After installation, you can verify everything works:
+
+```bash
+# Check version
+dcutil version
+
+# Run tests
+dcutil test
+
+# Get help
+dcutil help
+```
+
 ## Commands
 
 ### Core Container Management

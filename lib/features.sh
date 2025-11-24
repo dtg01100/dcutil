@@ -230,7 +230,7 @@ parse_feature_spec() {
     echo "$feature_id:$feature_version"
 }
 
-# Download feature definition
+# Download feature definition and extract dependencies
 download_feature() {
     local feature_spec="$1"
     local parsed_spec
@@ -293,9 +293,46 @@ FEATURE_INSTALL_SCRIPT
         chmod +x "$install_script_file"
     fi
 
+    # Extract dependencies from feature definition for dependency resolution
+    # Parse dependsOn and installsAfter from the downloaded feature definition
+    local depends_on=()
+    local installs_after=()
+
+    if command -v jq &> /dev/null && [ -f "$feature_json_file" ]; then
+        # Extract dependsOn array if it exists
+        if jq -e '.dependsOn' "$feature_json_file" >/dev/null 2>&1; then
+            while IFS= read -r dep; do
+                if [ -n "$dep" ] && [ "$dep" != "null" ]; then
+                    depends_on+=("$dep")
+                fi
+            done < <(jq -r '.dependsOn[] // empty' "$feature_json_file" 2>/dev/null)
+        fi
+
+        # Extract installsAfter array if it exists
+        if jq -e '.installsAfter' "$feature_json_file" >/dev/null 2>&1; then
+            while IFS= read -r dep; do
+                if [ -n "$dep" ] && [ "$dep" != "null" ]; then
+                    installs_after+=("$dep")
+                fi
+            done < <(jq -r '.installsAfter[] // empty' "$feature_json_file" 2>/dev/null)
+        fi
+    fi
+
+    # Store dependency info for later use during installation order resolution
+    # Create dependency tracking files
+    if [ ${#depends_on[@]} -gt 0 ]; then
+        printf '%s\n' "${depends_on[@]}" > "$cache_dir/dependsOn.list"
+        info "Feature $feature_name depends on: ${depends_on[*]}"
+    fi
+
+    if [ ${#installs_after[@]} -gt 0 ]; then
+        printf '%s\n' "${installs_after[@]}" > "$cache_dir/installsAfter.list"
+        info "Feature $feature_name installs after: ${installs_after[*]}"
+    fi
+
     # Copy the feature definition as feature.json for compatibility
     cp "$feature_json_file" "$cache_dir/feature.json"
-    
+
     success "Feature cached: $feature_id@$feature_version"
     echo "$cache_dir"
 }
@@ -345,9 +382,9 @@ install_feature() {
     local feature_spec="$1"
     local install_dir="$2"
     local feature_config="$3"
-    
+
     info "Installing feature: $feature_spec"
-    
+
     # Download feature
     local feature_dir
     feature_dir=$(download_feature "$feature_spec") || return 1
@@ -394,15 +431,143 @@ install_feature() {
     fi
 }
 
-# Install all configured features
+# Resolve feature dependency order for installation
+resolve_feature_install_order() {
+    info "Resolving feature dependency order..."
+
+    local requested_features=("$@")
+    local resolved_order=()
+    local visited=()
+    local visiting=()
+
+    # Dependency map - stores dependencies for each feature
+    declare -A feature_deps=()
+
+    # Build dependency map
+    for feature_id in "${requested_features[@]}"; do
+        local cache_key
+        cache_key=$(parse_feature_spec "$feature_id" | cut -d: -f1)
+        cache_key="${cache_key//\//_}_$(parse_feature_spec "$feature_id" | cut -d: -f2)"
+        local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
+
+        local deps=()
+
+        # Check dependsOn from devcontainer.json for user-specified dependencies
+        if command -v jq &> /dev/null && [ -f "$DEVCONTAINER_CONFIG_FILE" ]; then
+            # Check if the feature has specific dependencies in user config
+            local feature_key
+            feature_key=$(basename "${feature_id%:*}")  # Get just the feature name
+            if jq -e ".features.\"$feature_key\".dependsOn" "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+                while IFS= read -r dep; do
+                    if [ -n "$dep" ] && [ "$dep" != "null" ]; then
+                        deps+=("$dep")
+                    fi
+                done < <(jq -r ".features.\"$feature_key\".dependsOn[]" "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            fi
+        fi
+
+        # Get dependencies from feature definition (if cached)
+        if [ -f "$cache_dir/dependsOn.list" ]; then
+            while IFS= read -r dep; do
+                if [ -n "$dep" ]; then
+                    deps+=("$dep")
+                fi
+            done < "$cache_dir/dependsOn.list"
+        fi
+
+        if [ -f "$cache_dir/installsAfter.list" ]; then
+            while IFS= read -r dep; do
+                if [ -n "$dep" ]; then
+                    deps+=("$dep")  # We'll treat installsAfter as weaker dependencies for now
+                fi
+            done < "$cache_dir/installsAfter.list"
+        fi
+
+        feature_deps["$feature_id"]="${deps[*]}"
+    done
+
+    # Recursive function to visit feature and its dependencies
+    visit_feature() {
+        local feature="$1"
+
+        # Check for circular dependency
+        for v in "${visiting[@]}"; do
+            if [ "$v" = "$feature" ]; then
+                error "Circular dependency detected involving: $feature"
+                return 1
+            fi
+        done
+
+        # Check if already visited
+        for v in "${visited[@]}"; do
+            if [ "$v" = "$feature" ]; then
+                return 0
+            fi
+        done
+
+        # Check if feature exists in requested features
+        local feature_exists=false
+        for req in "${requested_features[@]}"; do
+            if [ "$req" = "$feature" ]; then
+                feature_exists=true
+                break
+            fi
+        done
+
+        if [ "$feature_exists" = false ]; then
+            # Not in requested features, skip
+            return 0
+        fi
+
+        # Add to visiting list
+        visiting+=("$feature")
+
+        # Visit dependencies first
+        local deps_str="${feature_deps[$feature]:-}"
+        if [ -n "$deps_str" ]; then
+            for dep in $deps_str; do
+                if ! visit_feature "$dep"; then
+                    return 1
+                fi
+            done
+        fi
+
+        # Remove from visiting and add to visited
+        local new_visiting=()
+        for v in "${visiting[@]}"; do
+            if [ "$v" != "$feature" ]; then
+                new_visiting+=("$v")
+            fi
+        done
+        visiting=("${new_visiting[@]}")
+
+        visited+=("$feature")
+        resolved_order+=("$feature")
+
+        return 0
+    }
+
+    # Visit all requested features
+    for feature in "${requested_features[@]}"; do
+        if ! visit_feature "$feature"; then
+            error "Failed to resolve dependencies for feature: $feature"
+            return 1
+        fi
+    done
+
+    # Return resolved order
+    echo "${resolved_order[@]}"
+}
+
+# Install all configured features with dependency resolution
 install_features() {
     if ! parse_features_config; then
         info "No features configured"
         return 0
     fi
-    
-    info "Installing ${#FEATURES_IDS[@]} feature(s)..."
-    
+
+    info "Installing ${#FEATURES_IDS[@]} feature(s) with dependency resolution..."
+
     # Initialize installation log
     echo "# Devcontainer Features Installation Log" > "$FEATURES_INSTALL_LOG"
     {
@@ -410,13 +575,43 @@ install_features() {
     } >> "$FEATURES_INSTALL_LOG"
     echo "# Project: $PROJECT_DIR" >> "$FEATURES_INSTALL_LOG"
     echo "" >> "$FEATURES_INSTALL_LOG"
-    
+
     # Load inputs if any
     load_input_values
-    
+
+    # Check for overrideFeatureInstallOrder in devcontainer.json
+    local install_order=()
+    if command -v jq &> /dev/null && jq -e '.overrideFeatureInstallOrder' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+        info "Using overrideFeatureInstallOrder from devcontainer.json"
+        while IFS= read -r ordered_feature; do
+            if [ -n "$ordered_feature" ] && [ "$ordered_feature" != "null" ]; then
+                install_order+=("$ordered_feature")
+            fi
+        done < <(jq -r '.overrideFeatureInstallOrder[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+    else
+        # Resolve dependencies to determine installation order
+        info "Resolving feature installation order based on dependencies..."
+        local resolved_order
+        resolved_order=$(resolve_feature_install_order "${FEATURES_IDS[@]}")
+        if [ -n "$resolved_order" ]; then
+            install_order=()
+            if [ -n "$resolved_order" ]; then
+                # Split the resolved order string into array elements
+                while IFS= read -r line; do
+                    [ -n "$line" ] && install_order+=("$line")
+                done < <(printf '%s\n' "$resolved_order")
+            fi
+        else
+            # Fallback to original order
+            install_order=("${FEATURES_IDS[@]}")
+        fi
+    fi
+
+    info "Feature installation order: ${install_order[*]}"
+
     local failed_features=()
-    
-    for feature_id in "${FEATURES_IDS[@]}"; do
+
+    for feature_id in "${install_order[@]}"; do
         local feature_spec="$feature_id"
         local feature_config
         feature_config="${FEATURES_CONFIG_MAP[$feature_id]}"
@@ -424,7 +619,7 @@ install_features() {
             failed_features+=("$feature_spec")
         fi
     done
-    
+
     # Report results
     if [ ${#failed_features[@]} -eq 0 ]; then
         success "All features installed successfully"
@@ -469,7 +664,7 @@ show_features_info() {
         # Show version if available in config or parsed spec
         if command -v jq &> /dev/null; then
             local version
-            version=$(echo "$feature_config" | jq -r '.version // "'$feature_version'"' 2>/dev/null || echo "$feature_version")
+            version=$(echo "$feature_config" | jq -r ".version // \"$feature_version\"" 2>/dev/null || echo "$feature_version")
             echo "      Version: ${version:-$feature_version}"
         else
             echo "      Version: $feature_version"
@@ -538,6 +733,54 @@ validate_features_config() {
         local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
         if [ ! -d "$cache_dir" ]; then
             warnings+=("Feature not cached: $feature_id@$feature_version")
+        else
+            # Validate user-provided options against feature schema if cache exists
+            local feature_def_json="$cache_dir/devcontainer-feature.json"
+            if [ -f "$feature_def_json" ]; then
+                # Check if feature_config has user-provided options to validate
+                if [ "$feature_config" != "{}" ] && command -v jq &> /dev/null; then
+                    # Get all options specified by the user (excluding version and standard keys)
+                    local user_options=()
+                    if echo "$feature_config" | jq -e 'keys[]' >/dev/null 2>&1; then
+                        while IFS= read -r key; do
+                            # Skip standard keys like "version", "installAfter", etc.
+                            if [ "$key" != "version" ] && [ "$key" != "installsAfter" ] && [ "$key" != "dependsOn" ]; then
+                                user_options+=("$key")
+                            fi
+                        done < <(echo "$feature_config" | jq -r 'keys[]' 2>/dev/null)
+                    fi
+
+                    # Check each user-provided option against feature definition
+                    for option_name in "${user_options[@]}"; do
+                        # Check if this option is defined in the feature's schema
+                        if ! jq -e ".options[\"$option_name\"]" "$feature_def_json" >/dev/null 2>&1; then
+                            warnings+=("Feature $feature_id does not accept option: $option_name")
+                        fi
+                    done
+
+                    # Additional validation: ensure required options are provided
+                    if jq -e '.options' "$feature_def_json" >/dev/null 2>&1; then
+                        while IFS= read -r required_option; do
+                            if [ -n "$required_option" ] && [ "$required_option" != "null" ]; then
+                                local required_status
+                                required_status=$(jq -r ".options[\"$required_option\"].required // false" "$feature_def_json" 2>/dev/null || echo "false")
+                                if [ "$required_status" = "true" ] || [ "$required_status" = "true\nrequired" ]; then
+                                    local found=false
+                                    for user_opt in "${user_options[@]}"; do
+                                        if [ "$user_opt" = "$required_option" ]; then
+                                            found=true
+                                            break
+                                        fi
+                                    done
+                                    if [ "$found" = false ]; then
+                                        warnings+=("Feature $feature_id requires option: $required_option")
+                                    fi
+                                fi
+                            fi
+                        done < <(jq -r '.options | to_entries[] | select(.value.required == true) | .key' "$feature_def_json" 2>/dev/null || echo "")
+                    fi
+                fi
+            fi
         fi
     done
     

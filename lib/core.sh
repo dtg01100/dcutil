@@ -100,6 +100,46 @@ validate_run_command() {
     if [ $# -eq 0 ]; then
         error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" "$EXIT_INVALID_ARGS"
     fi
+
+    # Basic input validation - check for obviously dangerous patterns
+    local cmd_string="$*"
+    if [[ "$cmd_string" =~ (\$\(|\`|\$\{.*\$\{.*\}) ]]; then
+        warning "Command contains potentially dangerous shell constructs. Use with caution."
+    fi
+}
+
+# Validate and sanitize user input
+validate_user_input() {
+    local input="$1"
+    local input_type="${2:-general}"
+
+    # Remove null bytes and other dangerous characters
+    input=$(printf '%s' "$input" | tr -d '\000-\037\177')
+
+    # Length limits based on input type
+    case "$input_type" in
+        "command")
+            if [ ${#input} -gt 10000 ]; then
+                error_exit "Command too long (max 10000 characters)" "$EXIT_INVALID_ARGS"
+            fi
+            ;;
+        "path")
+            if [ ${#input} -gt 4096 ]; then
+                error_exit "Path too long (max 4096 characters)" "$EXIT_INVALID_ARGS"
+            fi
+            # Basic path validation
+            if [[ "$input" =~ \.\. ]]; then
+                warning "Path contains '..' which may be unsafe"
+            fi
+            ;;
+        "agent")
+            if [[ ! "$input" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                error_exit "Invalid agent name format (only alphanumeric, dash, and underscore allowed)" "$EXIT_INVALID_ARGS"
+            fi
+            ;;
+    esac
+
+    echo "$input"
 }
 
 validate_init_mode() {

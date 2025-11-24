@@ -50,7 +50,8 @@ probe_user_environment() {
     info "Probing user environment with $USER_ENV_PROBE..."
     
     # Create temporary script to probe environment
-    local probe_script="/tmp/dcutil_probe_$$"
+    local probe_script
+    probe_script=$(mktemp)
     
     # Create probe script that outputs environment variables
     cat > "$probe_script" << 'EOF'
@@ -134,8 +135,10 @@ apply_probed_environment() {
         if [ -n "$CONTAINER_NAME" ]; then
             # Validate variable name contains only valid identifier characters
             if [[ "$var_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
-                # Use printf %q to safely quote the value
-                if docker exec "$CONTAINER_NAME" sh -c "export $var_name=$(printf '%q' "$var_value")" 2>/dev/null; then
+                # Use docker exec with proper environment variable setting
+                # This is safer than shell injection
+                if docker exec -e "$var_name=$var_value" "$CONTAINER_NAME" sh -c "export $var_name" 2>/dev/null ||
+                   docker exec "$CONTAINER_NAME" sh -c "echo 'export $var_name=\"\$var_name\"' >> /etc/environment 2>/dev/null || echo 'export $var_name=\"$var_value\"' >> ~/.bashrc" 2>/dev/null; then
                     info "Applied: $var_name"
                 else
                     warning "Failed to apply: $var_name"
