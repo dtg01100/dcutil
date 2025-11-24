@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.5] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Numeric Validation**: Added validation for dialog dimensions to ensure numeric values before arithmetic operations
+- **Array Bounds**: Added bounds checking before array access to prevent unbound variable errors in template selection
+- **Robust Parsing**: Enhanced dialog_maxsize parsing to handle non-numeric output gracefully
+
 ## [1.3.4] - 2025-11-24
 
 ### 🐛 Bug Fixes
