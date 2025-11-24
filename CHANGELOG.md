@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.6] - 2025-11-24
+
+### 🔧 Technical Improvements
+- **Shellcheck Compliance**: Addressed all shellcheck warnings and improved code quality
+- **Code Quality**: Enhanced parameter expansion and variable handling for better portability
+- **Robustness**: Improved array handling and dimension calculations
+
+### Technical Details
+- Fixed unquoted array expansion by using direct array access instead of mapfile
+- Added proper quoting for all dialog variables to prevent globbing and word splitting
+- Improved parameter expansion for string trimming using bash built-ins
+- Enhanced exit statement quoting for consistent behavior
+- Streamlined dimension calculations and removed unused variables
+
 ## [1.3.5] - 2025-11-24
 
 ### 🐛 Bug Fixes
