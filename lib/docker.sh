@@ -63,9 +63,18 @@ get_container_name_for_project() {
         return 1
     fi
 
+    # Detect backend if not set
+    if [ -z "$DETECTED_BACKEND" ]; then
+        detect_cli_backend "$project_dir"
+    fi
+
     # Look for a container with a matching label first
     local container_name
-    container_name=$(docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+    if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+        container_name=$(podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+    else
+        container_name=$(docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+    fi
     if [ -n "$container_name" ]; then
         echo "$container_name"
         return 0
@@ -832,8 +841,18 @@ devcontainer_rebuild() {
 execute_container_command() {
     local cmd="$1"
     shift
-    
-    if command -v execute_podman_command >/dev/null 2>&1 && [ "$PODMAN_BACKEND_ENABLED" = true ]; then
+
+    # Use detected backend if set, otherwise fall back to dcutil's setting
+    local backend="${DETECTED_BACKEND:-}"
+    if [ -z "$backend" ]; then
+        if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+            backend="podman"
+        else
+            backend="docker"
+        fi
+    fi
+
+    if [ "$backend" = "podman" ] && command -v execute_podman_command >/dev/null 2>&1; then
         execute_podman_command "$cmd" "$@"
     else
         docker "$cmd" "$@"

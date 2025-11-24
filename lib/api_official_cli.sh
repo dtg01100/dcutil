@@ -5,6 +5,37 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Global variable to cache detected backend for the current project
+# Defined in core.sh
+
+# Detect which backend the devcontainer CLI is using for a project
+detect_cli_backend() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    if [ -z "$project_dir" ]; then
+        return 1
+    fi
+
+    # Check Docker first
+    if command -v docker >/dev/null 2>&1 && \
+       docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
+        DETECTED_BACKEND="docker"
+        return 0
+    fi
+
+    # Check Podman
+    if command -v podman >/dev/null 2>&1 && \
+       podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
+        DETECTED_BACKEND="podman"
+        return 0
+    fi
+
+    # Fallback to dcutil's backend setting
+    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+        DETECTED_BACKEND="podman"
+    else
+        DETECTED_BACKEND="docker"
+    fi
+}
 
 # Verify devcontainer CLI version compatibility
 verify_devcontainer_cli() {
@@ -73,6 +104,9 @@ devcontainer_cli_up() {
     
     info "Starting devcontainer using official CLI..."
     execute_devcontainer_cli "up" "${args[@]}"
+
+    # Detect which backend the CLI used
+    detect_cli_backend "$project_dir"
 }
 
 # Wrapper for devcontainer down
@@ -92,11 +126,15 @@ devcontainer_cli_down() {
     
     info "Stopping devcontainer using official CLI..."
     
-    # Use docker to stop the specific container if we know its name
+    # Use detected backend to stop the specific container
     # The devcontainer CLI may not have a direct down command
     if [ -n "$container_name" ]; then
-        if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
-            if docker stop "$container_name" && docker rm "$container_name"; then
+        local backend_cmd="docker"
+        if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+            backend_cmd="podman"
+        fi
+        if $backend_cmd ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            if $backend_cmd stop "$container_name" && $backend_cmd rm "$container_name"; then
                 success "Container stopped and removed: $container_name"
             else
                 error_exit "Failed to stop container: $container_name" "$EXIT_DEVCONTAINER_ERROR"
@@ -148,14 +186,18 @@ devcontainer_cli_exec() {
     # Execute command in the devcontainer using devcontainer CLI
     info "Executing command in devcontainer using official CLI..."
     
-    # devcontainer CLI doesn't have direct exec command, so use docker exec for now
+    # devcontainer CLI doesn't have direct exec command, so use backend exec
     # In future, we could use the devcontainer CLI's way to identify and access the container
     local container_name
     container_name=$(get_current_devcontainer_name)
-    
+
     if [ -n "$container_name" ]; then
-        if docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
-            docker exec -it "$container_name" "${cmd[@]}"
+        local backend_cmd="docker"
+        if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+            backend_cmd="podman"
+        fi
+        if $backend_cmd ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            $backend_cmd exec -it "$container_name" "${cmd[@]}"
         else
             error_exit "Container not running: $container_name" "$EXIT_DEVCONTAINER_ERROR"
         fi

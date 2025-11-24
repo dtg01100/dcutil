@@ -1,44 +1,23 @@
-# dcutil - Complete Devcontainer Specification Implementation
+# dcutil
 
-A comprehensive devcontainer utility script providing **100% Devcontainer Specification compliance** with advanced features for managing development containers. Includes robust error handling, intelligent auto-completion, and support for all specification features.
+A command-line tool for managing development containers with enhanced user experience, intelligent auto-completion, and robust error handling. Supports all Devcontainer Specification features through seamless integration with container runtimes.
 
 ## Features
 
-### ✅ 100% Devcontainer Specification Compliant
-
-#### Core Features
-- **Complete orchestration support**: Image, Dockerfile, and Docker Compose containers
-- **Advanced lifecycle management**: onCreateCommand, updateContentCommand, postAttachCommand
-- **Devcontainer Features**: Full feature installation, caching, and management
-- **Security features**: updateRemoteUserUID, overrideCommand, entrypoint control
-- **Port management**: forwardPorts, portsAttributes with rich configuration
-- **Workspace mounting**: Advanced workspaceMount with consistency options
-
-#### Extended Features
-- **userEnvProbe**: Shell-based environment variable extraction with dynamic expansion
-- **hostRequirements**: System requirements validation (CPU, memory, storage, GPU)
-- **shutdownAction**: Configurable container shutdown behavior
-- **Tool integration**: VS Code extensions, settings, and customizations
-- **Image metadata merging**: Combine image labels with devcontainer.json
-- **Dynamic variables**: `${localEnv:VAR}` and `${config:setting}` syntax support
-
-#### User Experience
-- **Intelligent auto-completion** for bash and zsh (no installation required)
-- **Robust error handling** with specific exit codes and actionable messages
-- **Hermetic AI agent installation** with portable Python binaries
-- **Comprehensive validation** for all configurations and inputs
-- **Colored output** for better visibility and debugging
-- **Automatic project detection** with multiple fallback strategies
-- **Interactive container entry** with smart startup prompts
-- **Cross-platform portability** with env-based shebangs and relative paths
+- **Container Management**: Start, stop, restart, and monitor development containers
+- **Project Initialization**: Interactive wizard for creating devcontainer configurations with templates and features
+- **Volume Management**: Create, manage, and backup persistent volumes
+- **AI Agent Installation**: Install coding assistants (opencode, aider, etc.) in containers
+- **Auto-Completion**: Intelligent shell completion for commands and options
+- **Backend Support**: Automatic detection and support for Docker and Podman
+- **Error Handling**: Clear error messages with actionable guidance
+- **Cross-Platform**: Works on Linux, macOS, and other Unix-like systems
 
 #### Container Backend Support
-- **Docker Backend**: Full Docker CLI compatibility with all features
-- **Podman Backend**: Complete Podman support with rootless containers
-- **Docker-Native Mode**: Direct Docker API usage without devcontainer CLI dependency
+- **Docker**: Full compatibility with Docker daemon
+- **Podman**: Support for rootless containers and daemonless operation
 - **Auto-Detection**: Automatically detects and uses available container runtime
-- **Backend Switching**: Runtime backend selection via environment variables
-- **Enterprise Ready**: Rootless support, enhanced security, OCI compliance
+- **Backend Selection**: Choose backend via `DCUTIL_BACKEND` environment variable
 
 ## Installation
 
@@ -180,64 +159,20 @@ When using `--project-home`, the project directory will be mounted as the home d
 
 ### Container Backend Selection
 
-dcutil supports both Docker and Podman as container backends:
+dcutil supports both Docker and Podman. Set the backend via environment variable:
 
 ```bash
-# Auto-detect backend (default)
+# Use Docker (default)
 ./dcutil up
 
-# Force Docker backend
-DCUTIL_BACKEND=docker ./dcutil up
-
-# Force Podman backend
+# Use Podman
 DCUTIL_BACKEND=podman ./dcutil up
 
-# Check current backend
+# Check status
 ./dcutil status
 ```
 
-#### Backend Features
 
-**Docker Backend:**
-- Full Docker CLI compatibility
-- All existing workflows preserved
-- Traditional daemon-based architecture
-
-**Podman Backend:**
-- Rootless container support
-- No persistent daemon required
-- Enhanced security model
-- Direct OCI runtime integration
-- Kubernetes YAML support (`podman play kube`)
-- Enterprise-grade capabilities
-
-**Auto-Detection:**
-- Prefers Podman if available
-- Falls back to Docker automatically
-- Seamless backend switching
-- Consistent command interface across backends
-
-### Docker-Native Mode
-
-dcutil supports a Docker-native mode that operates without requiring the devcontainer CLI, providing enhanced performance and reliability:
-
-```bash
-# Use Docker-native mode (no devcontainer CLI required)
-./dcutil up
-
-# The script automatically detects when devcontainer CLI is unavailable
-# and switches to Docker-native mode seamlessly
-```
-
-#### Docker-Native Features
-- **No External Dependencies**: Works with just Docker/Podman installed
-- **Enhanced Performance**: Direct API calls eliminate CLI overhead
-- **Robust Container Management**: Advanced naming, collision prevention, and cleanup
-- **Environment Sanitization**: Proper handling of environment variables for Docker compatibility
-- **Lifecycle Command Execution**: Full support for onCreateCommand, updateContentCommand, postAttachCommand
-- **Tool Integration**: VS Code extensions, settings, and customizations
-- **Volume Management**: Atomic JSON operations with file locking for concurrent access
-- **Race Condition Prevention**: File locking and retry logic for multi-process operations
 
 ### Initialization
 
@@ -455,9 +390,9 @@ dcutil includes comprehensive error handling with specific exit codes:
 
 All errors provide clear, actionable messages to help resolve issues quickly.
 
-## Devcontainer Specification Compliance
+## Devcontainer Specification
 
-dcutil implements **100% of the Devcontainer Specification** including:
+dcutil supports the full Devcontainer Specification, including:
 
 ### ✅ Complete Feature Set
 - **Orchestration**: Image, Dockerfile, and Docker Compose containers
@@ -525,48 +460,39 @@ dcutil implements **100% of the Devcontainer Specification** including:
 
 ## Requirements
 
-- **Container Runtime**: Docker or Podman
-- **Devcontainer CLI**: Optional - `npm install -g @devcontainers/cli` (only needed for legacy devcontainer CLI mode)
-- **Bash or Zsh**: For auto-completion support (optional)
-- **jq**: For JSON processing and volume management (optional, enhances some features)
+- Bash or Zsh shell
+- Docker or Podman container runtime
+- Official devcontainer CLI (`npm install -g @devcontainers/cli`)
+- jq (optional, for enhanced JSON processing in volume management)
+- curl (for fetching templates and features during initialization)
 
-**Note**: dcutil works out-of-the-box with just Docker/Podman installed. No additional dependencies required for core functionality.
+## Testing
 
-## Testing & Validation
-
-Run the comprehensive test suite to validate all features:
+Run the test suite to validate functionality:
 
 ```bash
-# Test all features
-./test_final_compliance.sh
+# Run all tests
+./test.sh
 
-# Test specific modules
-dcutil userprobe validate
-dcutil hostrequirements validate
-dcutil shutdown validate
-
-# Test configuration parsing
-dcutil merging show
-dcutil advanced info
+# Test specific components
+dcutil schema validate
+dcutil features validate
 ```
 
-## Architecture
+## Error Handling
 
-### Modular Design
-- **Core modules**: Fundamental utilities and validation
-- **Feature modules**: Specialized functionality (userprobe, hostrequirements, etc.)
-- **Integration modules**: Tool and IDE integration
-- **Orchestration modules**: Docker Compose and advanced container management
+dcutil provides clear error messages and uses specific exit codes:
+- `0`: Success
+- `1`: Invalid arguments
+- `2`: Missing dependencies
+- `3`: Container runtime errors
+- `4`: Devcontainer operation failures
+- `5`: Permission errors
+- `6`: Configuration errors
 
-### Error Handling
-Comprehensive error handling with specific exit codes:
-- `0` - Success
-- `1` - Invalid arguments
-- `2` - Missing dependencies
-- `3` - Docker daemon errors
-- `4` - Container operation failures
-- `5` - Permission errors
-- `6` - Configuration errors
+## Developer Information
+
+For technical details about dcutil's architecture, implementation approach, and contribution guidelines, see [DEVELOPER.md](DEVELOPER.md).
 
 ## Testing & CI Integration
 
@@ -584,7 +510,8 @@ dcutil features validate
 ```
 
 ### CI Integration
-A GitHub Actions workflow is ready for automated testing:
+
+GitHub Actions workflow for automated testing:
 
 ```yaml
 name: Test dcutil
@@ -600,10 +527,9 @@ jobs:
           sudo apt-get install -y docker.io jq
           npm install -g @devcontainers/cli
       - name: Run tests
-        run: |
-          ./test_final_compliance.sh
+        run: ./test.sh
 ```
 
 ## Contributing
 
-This implementation provides a complete, production-ready Devcontainer solution. For issues or feature requests, please use the GitHub issue tracker.
+Contributions welcome. Please submit issues and pull requests on GitHub. See [DEVELOPER.md](DEVELOPER.md) for technical details and contribution guidelines.

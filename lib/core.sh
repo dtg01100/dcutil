@@ -21,6 +21,36 @@ NC='\033[0m' # No Color
 
 # Global variables
 PROJECT_DIR=""
+DETECTED_BACKEND=""
+
+# Detect which backend the devcontainer CLI is using for a project
+detect_cli_backend() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    if [ -z "$project_dir" ]; then
+        return 1
+    fi
+
+    # Check Docker first
+    if command -v docker >/dev/null 2>&1 && \
+       docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
+        DETECTED_BACKEND="docker"
+        return 0
+    fi
+
+    # Check Podman
+    if command -v podman >/dev/null 2>&1 && \
+       podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
+        DETECTED_BACKEND="podman"
+        return 0
+    fi
+
+    # Fallback to dcutil's backend setting
+    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+        DETECTED_BACKEND="podman"
+    else
+        DETECTED_BACKEND="docker"
+    fi
+}
 
 # Error handling functions
 error_exit() {
