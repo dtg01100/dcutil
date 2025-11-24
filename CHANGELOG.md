@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Verification**: Added `verify-dialog` command for manual testing and debugging dialog UI issues
+- **Dialog Stability**: Improved dialog detection with `safe_dialog()` wrapper and proper terminal sizing
+- **Syntax Fixes**: Fixed bash regex parsing issues in dialog output handling
+
 ## [1.3.3] - 2025-11-24
 
 ### 🐛 Bug Fixes
