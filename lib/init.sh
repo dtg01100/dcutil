@@ -395,11 +395,9 @@ wizard_with_dialog() {
     if [ "$selected_template_num" = "$i" ]; then
         selected_template="custom"
     elif [ -n "$selected_template_num" ] && [[ "$selected_template_num" =~ ^[0-9]+$ ]] && [ "$selected_template_num" -gt 0 ] && [ "$selected_template_num" -le $((i-1)) ]; then
-        # Convert space-separated template_names to array and get the selected one
-        local template_array
-        mapfile -t template_array <<< "$template_names"
-        if [ ${#template_array[@]} -gt 0 ] && [ $((selected_template_num-1)) -lt ${#template_array[@]} ]; then
-            selected_template="${template_array[$((selected_template_num-1))]}"
+        # Convert template_names array to get the selected one
+        if [ ${#template_names[@]} -gt 0 ] && [ $((selected_template_num-1)) -lt ${#template_names[@]} ]; then
+            selected_template="${template_names[$((selected_template_num-1))]}"
         fi
     fi
     info "Selected template: $selected_template"
@@ -604,7 +602,7 @@ EOF
     # Check if running interactively
     if ! [ -t 0 ] || ! [ -t 1 ]; then
         warning "Non-interactive environment detected. Use 'dcutil init fast' for automated setup."
-        exit $EXIT_INVALID_ARGS
+        exit "$EXIT_INVALID_ARGS"
     fi
 
     # Get available templates and features
