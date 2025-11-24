@@ -191,25 +191,128 @@ choose_features() {
     echo "$selected_features"
 }
 
+# Wrapper for dialog to ensure stderr goes to /dev/tty if available
+safe_dialog() {
+    local output rc
+    # Prefer --stdout to capture selection output reliably
+    if [ -c /dev/tty ] && [ -w /dev/tty ]; then
+        output=$(dialog --stdout "$@" 2>/dev/tty)
+        rc=$?
+        printf "%s" "$output"
+        return $rc
+    else
+        output=$(dialog --stdout "$@" 2>/dev/null)
+        rc=$?
+        printf "%s" "$output"
+        return $rc
+    fi
+}
+
+# Compute dialog sizes based on terminal dimensions
+compute_dialog_dims() {
+    local default_h="$1" default_w="$2" default_list="$3"
+    local min_lines=10 min_cols=40
+    local lines cols
+
+    lines=$(tput lines 2>/dev/null || echo 24)
+    cols=$(tput cols 2>/dev/null || echo 80)
+
+    if [ "$lines" -lt "$min_lines" ] || [ "$cols" -lt "$min_cols" ]; then
+        echo "0 0 0"
+        return 0
+    fi
+
+    local max_h=$((lines - 4))
+    if [ "$max_h" -lt 8 ]; then
+        max_h=8
+    fi
+
+    local h="$default_h"
+    if [ "$h" -gt "$max_h" ]; then
+        h="$max_h"
+    fi
+
+    local max_w=$((cols - 4))
+    if [ "$max_w" -lt 30 ]; then
+        max_w=30
+    fi
+
+    local w="$default_w"
+    if [ "$w" -gt "$max_w" ]; then
+        w="$max_w"
+    fi
+
+    local list_h="$default_list"
+    local max_list_h=$((h - 4))
+    if [ "$list_h" -gt "$max_list_h" ]; then
+        list_h="$max_list_h"
+    fi
+
+    if [ "$h" -lt 6 ] || [ "$w" -lt 30 ]; then
+        echo "0 0 0"
+        return 0
+    fi
+
+    echo "$h $w $list_h"
+    return 0
+}
+
+# Verify that dialog shows a UI and user can interact with it
+verify_dialog() {
+    # Do a quick non-intrusive visual check. Use infobox to display for a second.
+    # Use --print-maxsize to silently verify dialog can display; this avoids prompting users in CI
+    if safe_dialog --print-maxsize >/dev/null 2>&1; then
+        return 0
+    fi
+    # If print-maxsize fails, give the in-terminal visual check as a fallback only for manual debugging
+    if [ "${DCUTIL_FORCE_DIALOG:-0}" = "1" ]; then
+        safe_dialog --title "Dialog Test" --infobox "Testing dialog - you should briefly see a dialog box (this is a test)" 3 60 >/dev/tty 2>/dev/tty &
+        sleep 1
+        # Now confirm with a yesno prompt
+        safe_dialog --title "Dialog Test" --yesno "Did you see the dialog box?" 6 60 >/dev/tty 2>/dev/tty
+        return $?
+    fi
+    return 1
+}
+
 # Check if dialog is available for enhanced UI
 has_dialog() {
-    # Basic checks
+    # Allow forcing dialog usage for debugging
+    if [ "${DCUTIL_FORCE_DIALOG:-0}" = "1" ]; then
+        if command -v dialog >/dev/null 2>&1; then
+            return 0
+        fi
+    fi
+
+    # Basic binary check
     if ! command -v dialog >/dev/null 2>&1; then
         return 1
     fi
-    if ! [ -t 0 ] || ! [ -t 1 ] || ! [ -n "$TERM" ]; then
+
+    # Ensure we are attached to a terminal and TERM is sane
+    if ! [ -t 0 ] || ! [ -t 1 ] || [ -z "$TERM" ] || [ "$TERM" = "dumb" ]; then
         return 1
     fi
+
+    # Ensure we have a writable controlling tty available
     if ! [ -c /dev/tty ] || ! [ -w /dev/tty ]; then
         return 1
     fi
 
-    # Test if dialog can actually run without displaying (print max size)
-    if dialog --stdout --print-maxsize >/dev/null 2>&1; then
-        return 0
-    else
+    # Ensure the terminal is large enough for dialog widgets
+    local lines cols
+    lines=$(tput lines 2>/dev/null || echo 24)
+    cols=$(tput cols 2>/dev/null || echo 80)
+    if [ "$lines" -lt 10 ] || [ "$cols" -lt 40 ]; then
         return 1
     fi
+
+    # Test dialog with a non-displaying command
+    if dialog --print-maxsize >/dev/null 2>&1; then
+        return 0
+    fi
+
+    return 1
 }
 
 # Enhanced wizard with dialog interface
@@ -237,9 +340,16 @@ wizard_with_dialog() {
 
     template_list="$template_list $i Custom-image"
     local selected_template_num
-    selected_template_num=$(dialog --stdout --title "Devcontainer Template Selection" \
-        --menu "Choose a devcontainer template:" 30 80 20 \
-        "$template_list" 2>/dev/null)
+    # Compute dims for menu
+    read -r d_h d_w d_list <<< "$(compute_dialog_dims 30 80 20)"
+    if [ "$d_h" -eq 0 ]; then
+        # Terminal too small for dialog menu
+        return 2
+    fi
+
+    selected_template_num=$(safe_dialog --title "Devcontainer Template Selection" \
+        --menu "Choose a devcontainer template:" "$d_h" "$d_w" "$d_list" \
+        "$template_list")
     local dialog_exit=$?
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
@@ -247,7 +357,7 @@ wizard_with_dialog() {
         return 1
     elif [ $dialog_exit -ne 0 ]; then
         # Error
-        return 1
+        return 2
     fi
 
     local selected_template=""
@@ -276,9 +386,9 @@ wizard_with_dialog() {
 
     if [ -n "$feature_list" ]; then
         local selected_feature_nums
-        selected_feature_nums=$(dialog --stdout --title "Devcontainer Features" \
+        selected_feature_nums=$(safe_dialog --title "Devcontainer Features" \
             --checklist "Select additional features to install:" 20 70 10 \
-            $feature_list 2>/dev/null)
+            $feature_list)
         dialog_exit=$?
 
         if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
@@ -313,27 +423,27 @@ wizard_with_dialog() {
     local project_basename
     project_basename=$(basename "$PROJECT_DIR" 2>/dev/null || echo "project")
     local default_name="dcutil-$project_basename"
-    container_name=$(dialog --stdout --title "Container Configuration" \
-        --inputbox "Container name:" 8 40 "$default_name" 2>/dev/null)
+    container_name=$(safe_dialog --title "Container Configuration" \
+        --inputbox "Container name:" 8 40 "$default_name")
 
     # Workspace folder
     local workspace_folder
-    workspace_folder=$(dialog --stdout --title "Container Configuration" \
-        --inputbox "Workspace folder inside container:" 8 40 "/workspaces" 2>/dev/null)
+    workspace_folder=$(safe_dialog --title "Container Configuration" \
+        --inputbox "Workspace folder inside container:" 8 40 "/workspaces")
 
     # Container user
     local container_user
-    container_user=$(dialog --stdout --title "Container Configuration" \
-        --inputbox "Container user (name or UID[:GID]):" 8 40 "vscode" 2>/dev/null)
+    container_user=$(safe_dialog --title "Container Configuration" \
+        --inputbox "Container user (name or UID[:GID]:" "$d_h" "$d_w" "vscode")
 
     # Mount options
-    dialog --title "Mount Options" \
-        --yesno "Map host project directory to container workspace?" 6 50 2>/dev/null
+    safe_dialog --title "Mount Options" \
+        --yesno "Map host project directory to container workspace?" 6 50
     mount_choice=$?
 
     # Chown options
-    dialog --title "Permissions" \
-        --yesno "Set ownership of workspace to container user?" 6 50 2>/dev/null
+    safe_dialog --title "Permissions" \
+        --yesno "Set ownership of workspace to container user?" 6 50
     chown_choice=$?
 
     # Clear dialog artifacts
