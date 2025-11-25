@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.4.0] - 2025-11-25
+## [1.4.1] - 2025-11-25
 
 ### 🚀 Features
 - **Environment Export**: Added `dcutil environment export-env` command to output environment variables matching devcontainer CLI settings
