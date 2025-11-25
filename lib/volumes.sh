@@ -12,16 +12,24 @@ open_lock() {
 
     if command -v flock &>/dev/null; then
         if [ "$exclusive" = true ]; then
-            exec 9>"$lockfile" || return 1
-            flock -x 9 || return 1
+            exec 100>"$lockfile" || return 1
+            flock -x 100 || return 1
         else
-            exec 9<"$lockfile" || return 1
-            flock -s 9 || return 1
+            exec 100<"$lockfile" || return 1
+            flock -s 100 || return 1
         fi
-        echo "9"
+        echo "100"
         return 0
     fi
     return 1
+}
+
+close_lock() {
+    local fd="$1"
+    if command -v flock &>/dev/null && [ -n "$fd" ]; then
+        flock -u "$fd" 2>/dev/null || true
+        exec "$fd">&- 2>/dev/null || true
+    fi
 }
 
 
@@ -43,30 +51,10 @@ ensure_volume_config() {
     local lockfile
     lockfile="${volume_file}.lock"
 
-    # Create and acquire exclusive lock while validating/initializing the file
-    if command -v flock &>/dev/null; then
-        exec 9>"$lockfile" || true
-        flock -x 9 || true
-    fi
-
     if [ ! -f "$volume_file" ]; then
         echo '{"volumes": {}}' > "$volume_file"
-        validate_json_if_available "$volume_file" || true
+        validate_json_if_available "$volume_file"
         success "Initialized volume config at $volume_file"
-    else
-        if command -v jq &>/dev/null; then
-            if ! jq -e . "$volume_file" >/dev/null 2>&1; then
-                warning "Invalid JSON detected in $volume_file. Backing up and re-initializing."
-                cp "$volume_file" "${volume_file}.bak" 2>/dev/null || true
-                echo '{"volumes": {}}' > "$volume_file"
-            fi
-        fi
-    fi
-
-    # Release the lock acquired during initialization
-    if command -v flock &>/dev/null; then
-        flock -u 9 || true
-        exec 9>&- || true
     fi
 
     return 0
@@ -78,18 +66,12 @@ get_volume_config_file() {
     # Strip surrounding quotes if present
     cfg="${cfg#\"}"
     cfg="${cfg%\"}"
-    cfg="${cfg#\'}"
-    cfg="${cfg%\'}"
 
     if [ -n "$cfg" ]; then
-        # Normalize relative paths against PROJECT_DIR and resolve to absolute path
-        if [[ "$cfg" != /* ]]; then
-            if [ -n "${PROJECT_DIR:-}" ]; then
-                cfg=$(realpath -m "$PROJECT_DIR/$cfg" 2>/dev/null || echo "$PROJECT_DIR/$cfg")
-            else
-                cfg=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
-            fi
-        else
+        if [ -f "$cfg" ]; then
+        echo "$cfg"
+        return 0
+    else
             cfg=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
         fi
 
@@ -132,12 +114,6 @@ add_volume() {
     local lockfile
     lockfile="${volume_file}.lock"
 
-    # Acquire exclusive lock during addition
-    local fd=""
-    if command -v flock &>/dev/null; then
-        fd=$(open_lock "$lockfile" true)
-    fi
-
     # Check if volume already exists
     local volume_exists=false
     if command -v jq &>/dev/null; then
@@ -151,10 +127,7 @@ add_volume() {
     fi
 
     if [ "$volume_exists" = true ]; then
-        if command -v flock &>/dev/null; then
-            flock -u 9 || true
-            exec 9>&- || true
-        fi
+        close_lock "$fd"
         error_exit "Volume '$volume_name' already exists" "$EXIT_CONFIG_ERROR"
     fi
 
@@ -170,17 +143,11 @@ add_volume() {
             else
                 if confirm_prompt "Host path '$host_path' does not exist. Create it? (y/N):"; then
                     mkdir -p "$host_path" || {
-                        if command -v flock &>/dev/null; then
-                            flock -u 9 || true
-                            exec 9>&- || true
-                        fi
+                    close_lock "$fd"
                         error_exit "Failed to create host path '$host_path'" "$EXIT_CONFIG_ERROR"
                     }
                 else
-                    if command -v flock &>/dev/null; then
-                        flock -u 9 || true
-                        exec 9>&- || true
-                    fi
+                    close_lock "$fd"
                     info "Volume addition cancelled"
                     return 0
                 fi
@@ -201,10 +168,7 @@ add_volume() {
             warning "Failed to update volume file using jq; printing current file for debugging"
             head -n 200 "$volume_file" 2>/dev/null || true
             rm -f "$temp_file" || true
-            if command -v flock &>/dev/null; then
-                flock -u 9 || true
-                exec 9>&- || true
-            fi
+            close_lock "$fd"
             error_exit "Failed to update volume config using jq" "$EXIT_CONFIG_ERROR"
         fi
         mv "$temp_file" "$volume_file"
@@ -212,10 +176,7 @@ add_volume() {
         error_exit "jq is required for volume management" "$EXIT_CONFIG_ERROR"
     fi
 
-    if command -v flock &>/dev/null; then
-        flock -u 9 || true
-        exec 9>&- || true
-    fi
+    close_lock "$fd"
 
     success "Added volume '$volume_name'"
     info "  Host path: $host_path"
@@ -270,10 +231,9 @@ list_volumes() {
             fi
         fi
 
-        if command -v flock &>/dev/null; then
-            flock -u 9 || true
-            exec 9>&- || true
-        fi
+        # if command -v flock &>/dev/null; then
+        #     close_lock "$fd"
+        # fi
 
         if [ "$found" = true ]; then
             break
@@ -321,10 +281,9 @@ remove_volume() {
     fi
 
     if [ "$volume_exists" = false ]; then
-        if command -v flock &>/dev/null; then
-            flock -u 9 || true
-            exec 9>&- || true
-        fi
+        # if command -v flock &>/dev/null; then
+        #     close_lock "$fd"
+        # fi
         error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
@@ -340,10 +299,9 @@ remove_volume() {
     fi
     if [[ ! "$confirm" =~ ^[Yy] ]]; then
         info "Volume removal cancelled"
-        if command -v flock &>/dev/null; then
-            flock -u 9 || true
-            exec 9>&- || true
-        fi
+        # if command -v flock &>/dev/null; then
+        #     close_lock "$fd"
+        # fi
         return 0
     fi
 
@@ -356,7 +314,7 @@ remove_volume() {
             head -n 200 "$volume_file" 2>/dev/null || true
             rm -f "$temp_file" || true
             if command -v flock &>/dev/null; then
-                flock -u 9 || true
+                close_lock 9
                 exec 9>&- || true
             fi
             error_exit "Failed to update volume config using jq" "$EXIT_CONFIG_ERROR"
@@ -367,7 +325,7 @@ remove_volume() {
     fi
 
     if command -v flock &>/dev/null; then
-        flock -u 9 || true
+        close_lock 9
         exec 9>&- || true
     fi
 
@@ -433,16 +391,15 @@ mount_volume() {
 
     # Validate volume exists
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
-        if command -v flock &>/dev/null; then
-            flock -u 9 || true
-            exec 9>&- || true
-        fi
+        # if command -v flock &>/dev/null; then
+        #     close_lock "$fd"
+        # fi
         error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
     fi
 
     # Release shared lock after reading configuration
     if command -v flock &>/dev/null; then
-        flock -u 9 || true
+        close_lock 9
         exec 9>&- || true
     fi
 

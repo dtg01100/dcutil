@@ -132,6 +132,30 @@ check_docker_daemon() {
     check_container_daemon "$@"
 }
 
+# Helper function to validate devcontainer JSON with devcontainer CLI
+validate_devcontainer_json() {
+    local fp="$1"
+    if [ -z "$fp" ] || [ ! -f "$fp" ]; then
+        error_exit "JSON file not found for validation: $fp" "$EXIT_CONFIG_ERROR"
+    fi
+
+    # Validate with devcontainer CLI - this is a hard requirement
+    # Use the project directory for workspace folder which is set in calling contexts
+    if ! devcontainer read-configuration --workspace-folder "${PROJECT_DIR:-.}" --config "$fp" >/dev/null 2>&1; then
+        error_exit "Generated devcontainer configuration at $fp is invalid" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Helper function to apply VSCode customizations if integration modules exist and customizations are configured
+apply_vscode_customizations_if_available() {
+    if command -v parse_customizations_config >/dev/null 2>&1 && command -v apply_vscode_customizations >/dev/null 2>&1; then
+        if parse_customizations_config 2>/dev/null; then
+            info "Applying VS Code customizations..."
+            apply_vscode_customizations
+        fi
+    fi
+}
+
 # Parse devcontainer.json configuration
 parse_devcontainer_config() {
     local config_file=""
@@ -148,8 +172,8 @@ parse_devcontainer_config() {
     
     DEVCONTAINER_CONFIG_FILE=$(realpath -m "$config_file" 2>/dev/null || echo "$config_file")
     
-    # Validate JSON
-    validate_json_if_available "$DEVCONTAINER_CONFIG_FILE"
+    # Validate devcontainer JSON specially since it may contain comments
+    validate_devcontainer_json "$DEVCONTAINER_CONFIG_FILE"
     
     # Check if this is a Docker Compose configuration
     if command -v jq &> /dev/null && parse_compose_config 2>/dev/null; then
@@ -276,8 +300,17 @@ docker_up() {
     PROJECT_DIR="$project_dir"
 
     info "Using official devcontainer CLI with dcutil enhancements..."
+    local result
     devcontainer_cli_up "$project_dir" "$@"
-    return $?
+    result=$?
+
+    # If container startup was successful, apply VS Code customizations if configured
+    if [ $result -eq 0 ]; then
+        # Apply VSCode customizations if integration modules exist and customizations are configured
+        apply_vscode_customizations_if_available
+    fi
+
+    return $result
 }
 
 # Stop devcontainer
@@ -322,6 +355,9 @@ docker_restart() {
     if command -v execute_post_start_lifecycle_commands >/dev/null 2>&1; then
         execute_post_start_lifecycle_commands
     fi
+
+    # Apply VS Code customizations after restart if they exist
+    apply_vscode_customizations_if_available
 
     success "Devcontainer restarted successfully"
 }
@@ -436,6 +472,9 @@ docker_enter() {
             info "Running postAttachCommand for container attachment..."
             execute_post_attach_command
         fi
+
+        # Apply VS Code customizations if configured and first connection
+        apply_vscode_customizations_if_available
 
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
             if [ -t 0 ]; then
@@ -607,14 +646,21 @@ docker_run() {
     cmd_string=$(validate_user_input "$*" "command")
     info "Running command in container: $*"
     check_docker_daemon
-    
+
     local container_id
     container_id=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1)
-    
+
     if [ -z "$container_id" ]; then
         error_exit "No running devcontainer found for $project_dir" "$EXIT_DEVCONTAINER_ERROR"
     fi
-    
+
+    # Apply VS Code customizations if container is running and customizations exist
+    if [ -n "$container_id" ]; then
+        # Set CONTAINER_NAME for apply_vscode_customizations to work properly
+        CONTAINER_NAME=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1)
+        apply_vscode_customizations_if_available
+    fi
+
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
         execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$*"
         return $?
@@ -1033,12 +1079,12 @@ check_devcontainer_config() {
 
     info "Found configuration file: $config_file"
 
-    # Check JSON syntax
-    if ! jq empty "$config_file" 2>/dev/null; then
-        error "Invalid JSON in $config_file"
+    # Validate with devcontainer CLI instead of strict JSON validation to handle comments
+    if ! devcontainer read-configuration --workspace-folder "$(pwd)" --config "$config_file" >/dev/null 2>&1; then
+        error "Invalid devcontainer configuration in $config_file"
         issues_found=true
     else
-        success "JSON syntax is valid"
+        success "Devcontainer configuration is valid"
     fi
 
     # Check for duplicate mounts
@@ -1085,6 +1131,28 @@ check_devcontainer_config() {
     else
         success "Devcontainer configuration looks good"
         return 0
+    fi
+}
+
+docker_build() {
+    local workspace_folder="${1:-$PROJECT_DIR}"
+    info "Building devcontainer image..."
+
+    # Run the official build with potential customizations
+    if command -v devcontainer >/dev/null 2>&1; then
+        local result
+        devcontainer build --workspace-folder "$workspace_folder"
+        result=$?
+
+        # If build was successful and we have customizations, they should be handled by the devcontainer CLI
+        # But make sure integration module is available for post-build operations
+        if [ $result -eq 0 ] && command -v parse_customizations_config >/dev/null 2>&1; then
+            info "Build completed successfully, customizations will be applied during container startup"
+        fi
+
+        return $result
+    else
+        error_exit "devcontainer CLI not found" "$EXIT_DEVCONTAINER_ERROR"
     fi
 }
 

@@ -45,18 +45,16 @@ run_test() {
 
     echo -e "${BLUE}Running${NC}: $test_name"
 
-    if eval "$test_cmd"; then
-        if [ $? -eq "$expected_exit" ]; then
-            test_pass "$test_name"
-        else
-            test_fail "$test_name (expected exit $expected_exit, got $?)"
-        fi
+    # Disable exit-on-error for this command so we can capture non-zero exits
+    set +e
+    eval "$test_cmd"
+    local rc=$?
+    set -e
+
+    if [ $rc -eq "$expected_exit" ]; then
+        test_pass "$test_name"
     else
-        if [ $? -eq "$expected_exit" ]; then
-            test_pass "$test_name"
-        else
-            test_fail "$test_name (expected exit $expected_exit, got $?)"
-        fi
+        test_fail "$test_name (expected exit $expected_exit, got $rc)"
     fi
 }
 
@@ -131,6 +129,38 @@ run_test "Docker library syntax" "bash -n \"$SCRIPT_DIR/lib/docker.sh\""
 
 # Test API library syntax
 run_test "API library syntax" "bash -n \"$SCRIPT_DIR/lib/api_official_cli.sh\""
+
+# Additional feature unit tests
+
+# Test: parse_feature_spec - short format
+run_test "parse_feature_spec short" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; parse_feature_spec \"node\" | grep -q \"^ghcr.io/devcontainers/features/node:latest$\"'"
+
+# Test: parse_feature_spec - medium format
+run_test "parse_feature_spec medium" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; parse_feature_spec \"devcontainers/features/node:18\" | grep -q \"^ghcr.io/devcontainers/features/node:18$\"'"
+
+# Test: parse_feature_spec - full format
+run_test "parse_feature_spec full" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; parse_feature_spec \"ghcr.io/devcontainers/features/node:18\" | grep -q \"^ghcr.io/devcontainers/features/node:18$\"'"
+
+# Test: get_effective_feature_spec - normalize git numeric version
+run_test "get_effective_feature_spec git numeric->latest" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; get_effective_feature_spec \"git:1\" \"{}\" | grep -q \"^ghcr.io/devcontainers/features/git:latest$\"'"
+
+# Test: validate_feature_cache_dir
+run_test "validate_feature_cache_dir" "bash -c 'tmpdir=$(mktemp -d); mkdir -p \"$tmpdir/src\"; echo \"{}\" > \"$tmpdir/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpdir/src/install.sh\"; chmod +x \"$tmpdir/src/install.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; validate_feature_cache_dir \"$tmpdir\"'"
+
+# Test: parse_features_config mapping
+run_test "parse_features_config mapping" "bash -c 'source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/docker.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; PROJECT_DIR=\"$(cd .. >/dev/null && pwd)\"; export PROJECT_DIR; parse_devcontainer_config; parse_features_config >/dev/null; printf "%s\n" \"${FEATURES_IDS[@]}\" | grep -q \"ghcr.io/devcontainers/features/git\"'"
+
+# Test: resolve_feature_install_order
+run_test "resolve_feature_install_order" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_a_latest/src\"; echo \"{\\\"id\\\":\\\"a\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_a_latest/devcontainer-feature.json\"; printf \"ghcr.io/devcontainers/features/b:latest\\n\" > \"$tmpcache/ghcr.io_devcontainers_features_a_latest/dependsOn.list\"; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_b_latest/src\"; echo \"{\\\"id\\\":\\\"b\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_b_latest/devcontainer-feature.json\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; resolve_feature_install_order \"ghcr.io/devcontainers/features/a:latest\" \"ghcr.io/devcontainers/features/b:latest\" | sed -n 1,2p | grep -q \"ghcr.io/devcontainers/features/b:latest\"'"
+
+# Test: Features install dry-run
+run_test "Features install dry-run" "\"$DCUTIL\" features install --dry-run >/dev/null" 
+
+# Test: install_feature host mode with mock cached script
+run_test "install_feature host mock" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src\"; echo \"{\\\"id\\\":\\\"git\\\",\\\"version\\\":\\\"1.3.4\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; chmod +x \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; export FEATURES_FORCE_HOST_INSTALL=true; install_feature ghcr.io/devcontainers/features/git:latest'"
+
+# Test: sanitize_features_json mapping of numeric keys
+run_test "sanitize_features_json mapping" "bash -c 'tmpproj=$(mktemp -d); mkdir -p \"$tmpproj/.devcontainer\"; cat > \"$tmpproj/.devcontainer/devcontainer.json\" <<JD\n{\n  \"name\": \"tmpl\",\n  \"features\": {\n    \"1\": {},\n    \"ghcr.io/devcontainers/features/2\": {}\n  }\n}\nJD\n; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/template_integration.sh\"; fetch_available_features_official() { echo \"[{\\\"id\\\":\\\"git\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"},{\\\"id\\\":\\\"docker-in-docker\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"}]\"; }; cd \"$tmpproj\"; sanitize_features_json; grep -q \"ghcr.io/devcontainers/features/git\" .devcontainer/devcontainer.json'"
 
 # Summary
 echo

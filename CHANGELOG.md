@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0] - 2025-11-25
+
+### 🚀 Features
+- **Environment Export**: Added `dcutil environment export-env` command to output environment variables matching devcontainer CLI settings
+- **VSCode Integration**: Enhanced environment variable handling to match VSCode devcontainer environment
+- **Docker CLI Environment Export**: Export DOCKER_HOST, DEVCONTAINER_CONFIG, and other settings for compatible Docker CLI usage
+
+### 🛠️ Improvements
+- **Devcontainer CLI Validation**: Rely exclusively on devcontainer CLI for validation instead of fallback methods
+- **Hard Dependency**: Properly enforce devcontainer CLI as hard requirement without fallbacks
+- **Environment Consistency**: Align with official devcontainer environment variable handling
+
 ## [1.3.7] - 2025-11-24
 
 ### 🧹 Cleanup

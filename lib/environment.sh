@@ -287,6 +287,103 @@ list_environment_config() {
     fi
 }
 
+# Export environment variables that replicate devcontainer CLI environment
+export_devcontainer_env() {
+    local config_file=""
+    if [ -f ".devcontainer/devcontainer.json" ]; then
+        config_file=".devcontainer/devcontainer.json"
+    elif [ -f ".devcontainer.json" ]; then
+        config_file=".devcontainer.json"
+    else
+        error_exit "No devcontainer configuration found" "$EXIT_CONFIG_ERROR"
+    fi
+
+    info "Exporting devcontainer environment variables..."
+
+    # Export the configuration file path
+    echo "export DEVCONTAINER_CONFIG=\"$(realpath "$config_file")\""
+
+    # Export workspace folder
+    echo "export DEVCONTAINER_WORKSPACE_FOLDER=\"$(pwd)\""
+
+    # Export container engine settings
+    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+        echo "export DEVCONTAINER_CONTAINER_ENGINE=\"podman\""
+        # Podman typically does not need special DOCKER_HOST setting if using rootless
+        if command -v podman >/dev/null 2>&1; then
+            # Check if we need to set CONTAINER_HOST for podman
+            local podman_socket
+            podman_socket=$(podman info --format '{{.Host.RemoteSocket.Path}}' 2>/dev/null || echo "")
+            if [ -n "$podman_socket" ]; then
+                echo "export CONTAINER_HOST=\"$podman_socket\""
+            fi
+        fi
+    else
+        # For Docker, export DOCKER_HOST if using remote Docker
+        if [ -n "${DOCKER_HOST:-}" ]; then
+            echo "export DOCKER_HOST=\"${DOCKER_HOST}\""
+        else
+            # If no custom DOCKER_HOST, use default
+            echo "# export DOCKER_HOST=\"unix:///var/run/docker.sock\" # uncomment if needed"
+        fi
+        echo "export DEVCONTAINER_CONTAINER_ENGINE=\"docker\""
+    fi
+
+    # Export environment variables from configuration
+    if command -v jq >/dev/null 2>&1; then
+        if jq -e '.containerEnv' "$config_file" >/dev/null 2>&1; then
+            while IFS='=' read -r key val; do
+                if [ -n "$key" ] && [ -n "$val" ]; then
+                    # Sanitize key: allow only alphanumeric and underscores
+                    local sanitized_key
+                    sanitized_key=$(echo "$key" | sed 's/[^a-zA-Z0-9_]/_/g')
+                    if [[ "$sanitized_key" =~ ^[0-9] ]]; then
+                        sanitized_key="_$sanitized_key"
+                    fi
+                    echo "export $sanitized_key=\"$val\""
+                fi
+            done < <(jq -r '.containerEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$config_file" 2>/dev/null || echo "")
+        fi
+
+        if jq -e '.remoteEnv' "$config_file" >/dev/null 2>&1; then
+            while IFS='=' read -r key val; do
+                if [ -n "$key" ] && [ -n "$val" ]; then
+                    # Expand variables in values
+                    local expanded_val
+                    expanded_val=$(expand_environment_variables "$val")
+                    echo "export $key=\"$expanded_val\""
+                fi
+            done < <(jq -r '.remoteEnv | to_entries[] | "\(.key)=\(.value|tostring)"' "$config_file" 2>/dev/null || echo "")
+        fi
+
+        # Export user settings
+        local container_user
+        container_user=$(jq -r '.containerUser // "vscode"' "$config_file" 2>/dev/null || echo "vscode")
+        echo "export DEVCONTAINER_CONTAINER_USER=\"$container_user\""
+
+        local remote_user
+        remote_user=$(jq -r '.remoteUser // .containerUser // "vscode"' "$config_file" 2>/dev/null || echo "vscode")
+        echo "export DEVCONTAINER_REMOTE_USER=\"$remote_user\""
+    fi
+
+    # Export backend information
+    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+        echo "export CONTAINER_ENGINE=\"podman\""
+    else
+        echo "export CONTAINER_ENGINE=\"docker\""
+    fi
+
+    # Export the devcontainer CLI location as well
+    echo "export DEVCONTAINER_CLI=\"$(command -v devcontainer 2>/dev/null || echo "")\""
+
+    # Export project-specific container name that devcontainer CLI would use
+    local container_name
+    container_name=$(get_current_devcontainer_name "$(pwd)" 2>/dev/null || echo "")
+    if [ -n "$container_name" ]; then
+        echo "export DEVCONTAINER_CONTAINER_NAME=\"$container_name\""
+    fi
+}
+
 # CLI interface for environment management
 environment_cli() {
     local cmd="$1"
@@ -319,6 +416,9 @@ environment_cli() {
             parse_environment_config
             setup_user_environment "$container_id"
             ;;
+        "export-env")
+            export_devcontainer_env
+            ;;
         "help"|"-h"|"--help")
             echo "Usage: dcutil environment <command>"
             echo ""
@@ -327,6 +427,7 @@ environment_cli() {
             echo "  validate                Validate environment variables"
             echo "  apply-remote [cid]      Apply remote environment to container"
             echo "  setup-user [cid]        Set up user environment in container"
+            echo "  export-env              Export environment variables matching devcontainer CLI"
             echo "  help                    Show this help"
             ;;
         *)

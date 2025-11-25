@@ -258,7 +258,7 @@ validate_user_input() {
 
 validate_init_mode() {
     local mode="${1:-}"
-    local valid_modes="fast wizard --fast --wizard --help -h"
+    local valid_modes="fast wizard --fast --wizard --help -h --non-interactive -n"
 
     if [ -n "$mode" ] && [[ ! " $valid_modes " =~ $mode ]]; then
         error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." "$EXIT_INVALID_ARGS"

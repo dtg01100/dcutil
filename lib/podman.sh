@@ -518,7 +518,12 @@ apply_podman_tweaks() {
         }' "$config_file" > "${config_file}.tmp" 2>/dev/null; then
             mv "${config_file}.tmp" "$config_file"
             success "Applied Podman tweaks: disabled SELinux labeling and enabled user namespace keep-id"
-            validate_json_if_available "$config_file"
+            # Validate with devcontainer CLI instead of strict JSON validation to handle comments
+            if command -v devcontainer >/dev/null 2>&1; then
+                devcontainer read-configuration --config "$config_file" >/dev/null 2>&1 || error_exit "Modified devcontainer config is invalid" "$EXIT_CONFIG_ERROR"
+            else
+                error_exit "devcontainer CLI not available for configuration validation" "$EXIT_DEVCONTAINER_ERROR"
+            fi
         else
             warning "Failed to apply Podman tweaks with jq"
             # Restore backup if it exists

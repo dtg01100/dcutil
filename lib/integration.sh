@@ -143,55 +143,160 @@ parse_image_metadata() {
 
 # Apply VS Code customizations
 apply_vscode_customizations() {
+    # First check if there are any VSCode customizations to apply
     if [ -z "${CUSTOMIZATIONS_CONFIG:-}" ]; then
+        info "No VSCode customizations to apply"
         return 0
     fi
-    
-    info "Applying VS Code customizations..."
-    
-    # Create VS Code settings directory in container
-    local vscode_settings_dir="/home/${CONTAINER_USER:-vscode}/.vscode"
-    if ! docker exec "$CONTAINER_NAME" mkdir -p "$vscode_settings_dir" 2>/dev/null; then
-        warning "Could not create VS Code settings directory"
+
+    # Check if there are extensions or settings in the customizations
+    local has_extensions=false
+    local has_settings=false
+
+    if command -v jq &> /dev/null; then
+        if echo "$CUSTOMIZATIONS_CONFIG" | jq -e '.vscode.extensions' >/dev/null 2>&1; then
+            local extension_count
+            extension_count=$(echo "$CUSTOMIZATIONS_CONFIG" | jq '.vscode.extensions | length' 2>/dev/null || echo "0")
+            if [ "$extension_count" -gt 0 ]; then
+                has_extensions=true
+            fi
+        fi
+
+        if echo "$CUSTOMIZATIONS_CONFIG" | jq -e '.vscode.settings' >/dev/null 2>&1; then
+            local settings_obj
+            settings_obj=$(echo "$CUSTOMIZATIONS_CONFIG" | jq '.vscode.settings' 2>/dev/null || echo "{}")
+            if [ "$settings_obj" != "{}" ] && [ "$settings_obj" != "null" ]; then
+                has_settings=true
+            fi
+        fi
     fi
-    
+
+    if [ "$has_extensions" != true ] && [ "$has_settings" != true ]; then
+        info "No VSCode extensions or settings to apply"
+        return 0
+    fi
+
+    info "Applying VS Code customizations..."
+
+    # Check if container is running before attempting installation
+    if [ -z "${CONTAINER_NAME:-}" ]; then
+        error_exit "No container name defined for applying VS Code customizations" "$EXIT_CONFIG_ERROR"
+    fi
+
+    # Verify container is running
+    if ! is_container_running "$CONTAINER_NAME"; then
+        error_exit "Container must be running to install VS Code extensions" "$EXIT_DEVCONTAINER_ERROR"
+    fi
+
+    # Create VS Code settings directory in container
+    local vscode_settings_dir="/home/${CONTAINER_USER:-vscode}/.vscode-server/data/User"
+    execute_in_container sh -c "mkdir -p '$vscode_settings_dir'" 2>/dev/null || true
+
     # Apply VS Code extensions
-    if command -v jq &> /dev/null && echo "$CUSTOMIZATIONS_CONFIG" | jq -e '.vscode.extensions' >/dev/null 2>&1; then
+    if [ "$has_extensions" = true ] && command -v jq &> /dev/null; then
         local extensions
         extensions=$(echo "$CUSTOMIZATIONS_CONFIG" | jq -r '.vscode.extensions[]' 2>/dev/null || echo "")
-        
+
         if [ -n "$extensions" ]; then
             info "Installing VS Code extensions..."
-            echo "$extensions" | while IFS= read -r extension; do
-                if [ -n "$extension" ]; then
-                    info "Installing extension: $extension"
-                    # Note: Actual extension installation would require VS Code CLI
-                    # For now, we just log the intended installation
+
+            # Loop through each extension and install
+            local extension_list=()
+            local i=0
+            while IFS= read -r extension; do
+                if [ -n "$extension" ] && [ "$extension" != "null" ]; then
+                    extension_list[i]="$extension"
+                    ((i++))
+                fi
+            done <<< "$extensions"
+
+            for extension in "${extension_list[@]}"; do
+                info "Installing VS Code extension: $extension"
+
+                # Check if VS Code server exists in container
+                local vs_code_cmd="code-server"
+                local has_vscode_server=false
+
+                if command_exists_in_container "code-server"; then
+                    has_vscode_server=true
+                elif command_exists_in_container "code"; then
+                    vs_code_cmd="code"
+                    has_vscode_server=true
+                fi
+
+                if [ "$has_vscode_server" = true ]; then
+                    # Install extension using code command
+                    if execute_in_container sh -c "$vs_code_cmd --install-extension '$extension' --force" 2>/dev/null; then
+                        success "Extension $extension installed successfully"
+                    else
+                        warning "Failed to install VS Code extension: $extension"
+                    fi
+                else
+                    # If VS Code server is not available, just log the extension
+                    info "VS Code server not found in container, extension $extension will be installed when VS Code connects to container"
                 fi
             done
         fi
     fi
-    
+
     # Apply VS Code settings
-    if command -v jq &> /dev/null && echo "$CUSTOMIZATIONS_CONFIG" | jq -e '.vscode.settings' >/dev/null 2>&1; then
+    if [ "$has_settings" = true ] && command -v jq &> /dev/null; then
         local settings_file="$vscode_settings_dir/settings.json"
-        local vscode_settings
-        vscode_settings=$(echo "$CUSTOMIZATIONS_CONFIG" | jq '.vscode.settings' 2>/dev/null || echo "{}")
-        
-        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-            if ! execute_command_in_devcontainer "$PROJECT_DIR" sh -c "echo '$vscode_settings' > '$settings_file'" 2>/dev/null; then
-                warning "Could not write VS Code settings"
-            else
+        local settings_object
+        settings_object=$(echo "$CUSTOMIZATIONS_CONFIG" | jq '.vscode.settings' 2>/dev/null || echo "{}")
+
+        # If settings object is empty or null, skip this step
+        if [ "$(echo "$settings_object" | jq -r 'if . == null or . == {} then "empty" else "not_empty" end' 2>/dev/null)" = "not_empty" ]; then
+            # Create the settings file with proper JSON
+            execute_in_container sh -c "mkdir -p '$(dirname "$settings_file")' && echo '$settings_object' > '$settings_file'" 2>/dev/null || warning "Could not write VS Code settings"
+
+            if [ $? -eq 0 ]; then
                 info "VS Code settings applied"
+            else
+                warning "Could not write VS Code settings to container"
             fi
-        elif ! docker exec "$CONTAINER_NAME" sh -c "echo '$vscode_settings' > '$settings_file'" 2>/dev/null; then
-            warning "Could not write VS Code settings"
-        else
-            info "VS Code settings applied"
         fi
     fi
-    
+
     success "VS Code customizations applied"
+}
+
+# Helper function to check if container is running
+is_container_running() {
+    local container_name="$1"
+    if command -v execute_container_command >/dev/null 2>&1; then
+        if execute_container_command container inspect "$container_name" &>/dev/null; then
+            execute_container_command container inspect "$container_name" | grep -q '"Running": true'
+            return $?
+        fi
+    else
+        if docker container inspect "$container_name" &>/dev/null; then
+            docker container inspect "$container_name" | grep -q '"Running": true'
+            return $?
+        fi
+    fi
+    return 1  # Container is not running
+}
+
+# Helper function to execute commands in the container using the appropriate method
+execute_in_container() {
+    local command="$1"
+    shift
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" "$command" "$@"
+    else
+        docker exec "$CONTAINER_NAME" "$command" "$@"
+    fi
+}
+
+# Helper function to check if a command exists in the container
+command_exists_in_container() {
+    local cmd="$1"
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" sh -c "command -v '$cmd'" &>/dev/null
+    else
+        docker exec "$CONTAINER_NAME" sh -c "command -v '$cmd'" &>/dev/null
+    fi
 }
 
 # Apply tool customizations

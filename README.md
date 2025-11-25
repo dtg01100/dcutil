@@ -127,6 +127,7 @@ dcutil help
 ### Orchestration & Utilities
 - `compose <cmd>` - Docker Compose environments (up, down, restart, logs, exec, status, scale, config)
 - `volumes <cmd>` - Volume management (list, add, remove, mount, unmount, status, backup, restore)
+- `environment <cmd>` - Environment configuration (export-env, info, validate)
 - `init` - Initialize a devcontainer (fast or wizard mode)
 - `install-agent <agent>` - Install AI agent inside the devcontainer
 - `completion` - Generate shell completion scripts
@@ -306,6 +307,40 @@ Would you like to start the devcontainer first? (y/N): y
 - **User-Friendly Prompts**: Clear options for different scenarios
 - **Non-Intrusive**: Non-interactive mode maintains script compatibility
 - **Seamless Experience**: No need to manually check/start containers
+
+### Environment Configuration
+
+Use the `environment` command to manage environment configuration for devcontainers, including exporting the same environment variables used by the devcontainer CLI:
+
+```bash
+# Export environment variables that match devcontainer CLI environment
+./dcutil environment export-env
+
+# Source the environment variables in your current shell
+eval "$(./dcutil environment export-env)"
+
+# Or save to a file and source it
+./dcutil environment export-env > env_vars.sh
+source env_vars.sh
+
+# Show environment configuration
+./dcutil environment info
+
+# Validate environment configuration
+./dcutil environment validate
+```
+
+#### Export Environment Variables
+The `export-env` command generates shell export statements that replicate the environment settings used by the devcontainer CLI, including:
+- `DEVCONTAINER_CONFIG` - Path to the devcontainer.json configuration file
+- `DEVCONTAINER_WORKSPACE_FOLDER` - Current workspace directory path
+- `DEVCONTAINER_CONTAINER_ENGINE` - Container engine being used (docker/podman)
+- `DEVCONTAINER_CONTAINER_USER` - Container user setting from configuration
+- `DEVCONTAINER_REMOTE_USER` - Remote user setting from configuration
+- `DEVCONTAINER_CLI` - Path to the devcontainer CLI executable
+- `DEVCONTAINER_CONTAINER_NAME` - Name of the container that would be created
+
+Use this to run Docker/Podman commands with the same environment settings that devcontainer would use.
 
 ### Installing AI Agents
 

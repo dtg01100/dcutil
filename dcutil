@@ -986,106 +986,15 @@ elif [ "$COMMAND" = "features" ]; then
     # Features command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for features modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
-    # Check for features subcommands
-    case "${1:-}" in
-        "install")
-            # Install features
-            if command -v install_features >/dev/null 2>&1; then
-                install_features
-            else
-                error_exit "Features installation not available. No features configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "info")
-            # Show features info
-            if command -v show_features_info >/dev/null 2>&1; then
-                show_features_info
-            else
-                error_exit "Features info not available. No features configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "validate")
-            # Validate features configuration
-            if command -v validate_features_config >/dev/null 2>&1; then
-                validate_features_config
-            else
-                error_exit "Features validation not available. No features configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "clean")
-            # Clean features cache
-            if command -v clean_features_cache >/dev/null 2>&1; then
-                clean_features_cache
-            else
-                error_exit "Features clean not available. No features configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "update")
-            # Update features
-            if command -v update_features >/dev/null 2>&1; then
-                update_features
-            else
-                error_exit "Features update not available. No features configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "check-updates")
-            # Check for feature updates
-            if command -v check_features_updates >/dev/null 2>&1; then
-                check_features_updates
-            else
-                error_exit "Features update check not available. No features configuration found." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        "help"|"-h"|"--help")
-            cat << 'EOF'
-Usage: dcutil features <command> [options]
 
-Devcontainer Features commands for adding tools and runtimes:
-
-Commands:
-  install        Install all configured features
-  info           Show features configuration and status
-  validate       Validate features configuration
-  clean          Clean features cache and installation
-  update         Update all features (re-download and install)
-  check-updates  Check for available feature updates
-
-Examples:
-  dcutil features install
-  dcutil features info
-  dcutil features validate
-  dcutil features clean
-  dcutil features update
-
-Requires a devcontainer.json with features property containing feature specifications.
-EOF
-            exit $EXIT_SUCCESS
-            ;;
-        "")
-            # Default: install features
-            if command -v install_features >/dev/null 2>&1; then
-                install_features
-            else
-                error_exit "No features configured or features module not available." "$EXIT_CONFIG_ERROR"
-            fi
-            exit $EXIT_SUCCESS
-            ;;
-        *)
-            error_exit "Unknown features subcommand: ${1:-}. Use 'dcutil features help' for usage." "$EXIT_INVALID_ARGS"
-;;
-     esac
- elif [ "$COMMAND" = "environment" ]; then
+    # Use the features_cli function which handles all subcommands
+    features_cli "$@"
+    exit $EXIT_SUCCESS
+elif [ "$COMMAND" = "environment" ]; then
     # Environment command doesn't need project directory
     determine_project_dir
     shift 1
@@ -1375,12 +1284,17 @@ Usage: dcutil features <command> [options]
 Devcontainer Features commands for adding tools and runtimes:
 
 Commands:
-  install        Install all configured features
-  info           Show features configuration and status
-  validate       Validate features configuration
-  clean          Clean features cache and installation
-  update         Update all features (re-download and install)
-  check-updates  Check for available feature updates
+  install              Install all configured features
+  info                 Show features configuration and status
+  validate             Validate features configuration
+  clean                Clean features cache and installation
+  update               Update all features (re-download and install)
+  check-updates        Check for available feature updates
+  test [target]        Test Features (similar to devcontainer CLI)
+  package <target>     Package Features (similar to devcontainer CLI)
+  publish <target>     Package and publish Features (similar to devcontainer CLI)
+  resolve-dependencies Resolve dependency graph from configuration (similar to devcontainer CLI)
+  generate-docs        Generate documentation for configured features (similar to devcontainer CLI)
 
 Examples:
   dcutil features install
@@ -1388,6 +1302,10 @@ Examples:
   dcutil features validate
   dcutil features clean
   dcutil features update
+  dcutil features test .
+  dcutil features package ./my-feature
+  dcutil features resolve-dependencies
+  dcutil features generate-docs
 
 Requires a devcontainer.json with features property containing feature specifications.
 EOF

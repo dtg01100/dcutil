@@ -12,7 +12,7 @@ init_mode() {
     validate_init_mode "$INIT_MODE"
 
     case "$INIT_MODE" in
-        "--fast"|"fast")
+        "--fast"|"fast"|"--non-interactive"|"-n")
             info "Creating devcontainer configuration using official devcontainer templates..."
             
             # Auto-detect language and use appropriate template
@@ -20,7 +20,7 @@ init_mode() {
             template_id=$(detect_project_template)
             
             # Set template arguments based on template
-            local template_args='{"imageVariant": "noble"}'
+            local template_args='{}'
             case "$template_id" in
                 *"go"*)
                     template_args='{}'
@@ -92,10 +92,10 @@ init_mode() {
             ;;
         "--wizard"|"wizard")
             # Check if running interactively for wizard mode
-            if ! [ -t 0 ] || ! [ -t 1 ]; then
-                warning "Non-interactive environment detected. Use 'dcutil init fast' for automated setup."
-                exit "$EXIT_INVALID_ARGS"
-            fi
+            # if ! [ -t 0 ] || ! [ -t 1 ]; then
+            #     warning "Non-interactive environment detected. Use 'dcutil init fast' for automated setup."
+            #     exit "$EXIT_INVALID_ARGS"
+            # fi
             
             # Use enhanced wizard with official template integration
             wizard_with_official_integration

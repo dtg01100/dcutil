@@ -37,8 +37,19 @@ Uses specific exit codes for different failure modes:
 - `5`: Permission errors
 - `6`: Configuration errors
 
+## Environment Export Implementation
+
+The `environment export-env` command exports environment variables to match those used by the devcontainer CLI for consistency with VSCode's devcontainer functionality:
+
+- Implemented in `lib/environment.sh`
+- Uses `devcontainer read-configuration` as the authoritative source for validation
+- Generates shell export statements for key environment variables
+- Provides easy integration for users who need to run Docker commands with the same environment settings
+
 ## Contributing
 
 When modifying backend operations, ensure they respect the `DETECTED_BACKEND` variable to maintain consistency with the devcontainer CLI's runtime choice.
 
 For new features, prefer extending the official CLI integration over adding direct runtime calls unless the CLI genuinely lacks support.
+
+Environment variable handling should leverage the devcontainer CLI as the primary validation and configuration source.
