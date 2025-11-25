@@ -805,12 +805,17 @@ EOF
                  set_chown=true
              fi
 
-             mount_project_to_container=false
-             mounts_snippet=""
-             if [[ "$mount_choice" =~ ^[Yy] ]]; then
-                 mount_project_to_container=true
-                 mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
-             fi
+mount_project_to_container=false
+              mounts_snippet=""
+              if [[ "$mount_choice" =~ ^[Yy] ]]; then
+                  mount_project_to_container=true
+                  # Only add explicit mounts if not using images with built-in workspace mounting
+                  # Official devcontainer images (mcr.microsoft.com/devcontainers/*) include
+                  # workspace mounting features, so explicit mounts would cause conflicts
+                  if [[ "$image" != *"mcr.microsoft.com/devcontainers/"* ]]; then
+                      mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
+                  fi
+              fi
 
             # Default chown snippet based on numeric/user input
             chown_snippet=""
@@ -916,7 +921,7 @@ elif [ "$wizard_with_dialog_failed" = true ]; then
             ]
         }
     },
-    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git vim nano; else apt-get update && apt-get install -y --no-install-recommends curl git vim nano; fi; if command -v npm >/dev/null && [ -f package.json ]; then npm install; fi; if command -v pip >/dev/null && [ -f requirements.txt ]; then pip install -r requirements.txt; fi; if command -v go >/dev/null && [ -f go.mod ]; then go mod download; fi; mkdir -p $workspace_folder${chown_snippet}'"
+    "postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends curl git vim nano && mkdir -p $workspace_folder"
 }
 EOF
             then
