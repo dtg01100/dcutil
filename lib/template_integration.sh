@@ -376,14 +376,18 @@ wizard_with_official_integration() {
     read -r -p "Add additional extensions (comma-separated) []: " additional_extensions
     
     # Build final extensions array
-    local all_extensions="$suggested_extensions"
+    local all_extensions_array
+    all_extensions_array=$(echo "$suggested_extensions" | jq '.')
     if [ -n "$additional_extensions" ]; then
         IFS=',' read -ra additional_exts <<< "$additional_extensions"
         for ext in "${additional_exts[@]}"; do
             ext=$(echo "$ext" | xargs)  # trim whitespace
-            all_extensions=$(echo "$all_extensions" | jq ". + [\"$ext\"]")
+            all_extensions_array=$(echo "$all_extensions_array" | jq ". + [\"$ext\"]")
         done
     fi
+    
+    # Remove duplicates
+    all_extensions_array=$(echo "$all_extensions_array" | jq 'unique')
     
     # Step 5: Apply configuration
     echo ""
@@ -437,7 +441,7 @@ EOF
                     template_metadata=$(devcontainer templates metadata "$selected_template_id" 2>/dev/null || echo '{}')
                     
                     # Add VS Code extensions to existing configuration
-                    jq '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.extensions = ((.customizations.vscode.extensions // []) + '"$all_extensions"' | unique)' \
+                    jq '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.extensions = ((.customizations.vscode.extensions // []) + '"$all_extensions_array"' | unique)' \
                         .devcontainer/devcontainer.json > .devcontainer/devcontainer.json.tmp && \
                         mv .devcontainer/devcontainer.json.tmp .devcontainer/devcontainer.json
                 fi
