@@ -555,8 +555,14 @@ init_mode() {
             remote_user="$container_user"
             set_chown=true
             mount_project_to_container=true
+            
+            # Check if the base image already includes workspace mounting features
+            # The base:ubuntu image includes common-utils and git features that handle mounting
+            base_image="mcr.microsoft.com/devcontainers/base:ubuntu"
             mounts_snippet=""
-            if [ "$mount_project_to_container" = true ]; then
+            
+            # Only add explicit mounts if not using base images with built-in workspace mounting
+            if [ "$mount_project_to_container" = true ] && [[ "$base_image" != *"base:"* ]]; then
                 mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
             fi
 
@@ -566,12 +572,12 @@ init_mode() {
                 chown_snippet=""
             fi
 
-            # Create basic devcontainer.json
+# Create basic devcontainer.json
             if ! cat > .devcontainer/devcontainer.json << EOF
 {
     "name": "Basic Dev Container",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
-    $mounts_snippet
+    "image": "$base_image",
+    
     "workspaceFolder": "$workspace_folder",
     "remoteUser": "$remote_user",
     "containerUser": "$container_user",
@@ -583,7 +589,7 @@ init_mode() {
             ]
         }
     },
-    "postCreateCommand": "bash -lc 'set -eux; if command -v sudo >/dev/null; then sudo apt-get update && sudo apt-get install -y --no-install-recommends curl git; else apt-get update && apt-get install -y --no-install-recommends curl git; fi; mkdir -p $workspace_folder$chown_snippet'"
+    "postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends curl git && mkdir -p $workspace_folder"
 }
 EOF
             then
