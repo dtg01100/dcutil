@@ -238,9 +238,251 @@ list_available_features() {
     fi
 }
 
-# Export functions for use in main dcutil
-export -f fetch_available_templates_official get_fallback_templates
-export -f fetch_available_features_official get_fallback_features
-export -f detect_project_template suggest_features_for_project
-export -f apply_official_template enhance_with_dcutil_additions
-export -f get_template_metadata list_available_templates list_available_features
+# Enhanced wizard mode with official devcontainer integration
+wizard_with_official_integration() {
+    local templates_json
+    templates_json=$(fetch_available_templates_official)
+
+    local features_json
+    features_json=$(fetch_available_features_official)
+
+    info "Devcontainer Initialization Wizard (Powered by Official Templates)"
+    echo "=================================================================="
+    
+    # Step 1: Project type detection and selection
+    echo ""
+    echo "🔍 Step 1: Project Type Detection"
+    echo "----------------------------------------"
+    
+    local detected_template
+    detected_template=$(detect_project_template)
+    local detected_name
+    detected_name=$(echo "$templates_json" | jq -r ".[] | select(.id == \"${detected_template#ghcr.io/devcontainers/templates/}\") | .name" 2>/dev/null || echo "Unknown")
+    
+    echo "Automatically detected: $detected_name (${detected_template#ghcr.io/devcontainers/templates/})"
+    echo ""
+    
+    if [ -t 0 ] && [ -t 1 ]; then
+        echo "Would you like to use the detected template or choose a different one?"
+        echo "1) Use detected template: $detected_name"
+        echo "2) Choose from available templates"
+        echo "3) Use custom image"
+        read -r -p "Select option [1]: " project_choice
+        project_choice=${project_choice:-1}
+    else
+        project_choice="1"
+    fi
+    
+    local selected_template_id="$detected_template"
+    local template_args='{"imageVariant": "noble"}'
+    
+    case "$project_choice" in
+        2)
+            echo ""
+            echo "Available templates:"
+            echo "$templates_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"'
+            echo ""
+            read -r -p "Enter template ID [ubuntu]: " user_template
+            user_template=${user_template:-ubuntu}
+            selected_template_id="ghcr.io/devcontainers/templates/$user_template"
+            ;;
+        3)
+            echo ""
+            read -r -p "Enter custom Docker image: " custom_image
+            selected_template_id="custom:$custom_image"
+            template_args="{}"
+            ;;
+    esac
+    
+    # Step 2: Feature selection
+    echo ""
+    echo "🛠️  Step 2: Feature Selection"
+    echo "----------------------------------------"
+    
+    echo "Available features:"
+    echo "$features_json" | jq -r '.[] | "  \(.id) (\(.registry)): \(.name) - \(.description)"'
+    echo ""
+    echo "Enter comma-separated feature IDs to include [git,common-utils]: "
+    read -r features_input
+    features_input=${features_input:-"git,common-utils"}
+    
+    # Build features array
+    local features_array="[]"
+    if [ -n "$features_input" ]; then
+        IFS=',' read -ra feature_ids <<< "$features_input"
+        for feature_id in "${feature_ids[@]}"; do
+            feature_id=$(echo "$feature_id" | xargs)  # trim whitespace
+            if [[ "$feature_id" != "custom:"* ]]; then
+                features_array=$(echo "$features_array" | jq ". + [{\"id\": \"ghcr.io/devcontainers/features/$feature_id\", \"options\": {}}]")
+            fi
+        done
+    fi
+    
+    # Step 3: Advanced configuration
+    echo ""
+    echo "⚙️  Step 3: Advanced Configuration"
+    echo "----------------------------------------"
+    
+    if [ -t 0 ] && [ -t 1 ]; then
+        read -r -p "Container name [$(basename "$PROJECT_DIR")]: " container_name
+        container_name=${container_name:-$(basename "$PROJECT_DIR")}
+        
+        read -r -p "Workspace folder [/workspaces/$(basename "$PROJECT_DIR")]: " workspace_folder
+        workspace_folder=${workspace_folder:-/workspaces/$(basename "$PROJECT_DIR")}
+        
+        read -r -p "Container user [vscode]: " container_user
+        container_user=${container_user:-vscode}
+        
+        read -r -p "Remote user [$container_user]: " remote_user
+        remote_user=${remote_user:-$container_user}
+    else
+        container_name=$(basename "$PROJECT_DIR")
+        workspace_folder="/workspaces/$(basename "$PROJECT_DIR")"
+        container_user="vscode"
+        remote_user="vscode"
+    fi
+    
+    # Step 4: VS Code extensions
+    echo ""
+    echo "📦 Step 4: VS Code Extensions"
+    echo "----------------------------------------"
+    
+    # Suggest extensions based on project type
+    local suggested_extensions="[]"
+    case "$selected_template_id" in
+        *"go"*)
+            suggested_extensions='["golang.Go", "ms-vscode.vscode-json", "ms-vscode.git"]'
+            ;;
+        *"javascript-node"*)
+            suggested_extensions='["dbaeumer.vscode-eslint", "ms-vscode.vscode-json", "ms-vscode.git"]'
+            ;;
+        *"python"*)
+            suggested_extensions='["ms-python.python", "ms-python.vscode-pylance", "ms-vscode.vscode-json", "ms-vscode.git"]'
+            ;;
+        *"java"*)
+            suggested_extensions='["redhat.java", "vscjava.vscode-java-pack", "ms-vscode.vscode-json", "ms-vscode.git"]'
+            ;;
+        *"rust"*)
+            suggested_extensions='["rust-lang.rust", "ms-vscode.vscode-json", "ms-vscode.git"]'
+            ;;
+        *)
+            suggested_extensions='["ms-vscode.vscode-json", "ms-vscode.git"]'
+            ;;
+    esac
+    
+    echo "Suggested extensions for this project type:"
+    echo "$suggested_extensions" | jq -r '.[]'
+    echo ""
+    read -r -p "Add additional extensions (comma-separated) []: " additional_extensions
+    
+    # Build final extensions array
+    local all_extensions="$suggested_extensions"
+    if [ -n "$additional_extensions" ]; then
+        IFS=',' read -ra additional_exts <<< "$additional_extensions"
+        for ext in "${additional_exts[@]}"; do
+            ext=$(echo "$ext" | xargs)  # trim whitespace
+            all_extensions=$(echo "$all_extensions" | jq ". + [\"$ext\"]")
+        done
+    fi
+    
+    # Step 5: Apply configuration
+    echo ""
+    echo "🚀 Step 5: Creating Configuration"
+    echo "----------------------------------------"
+    
+    if [[ "$selected_template_id" == custom:* ]]; then
+        # Handle custom image
+        local custom_image="${selected_template_id#custom:}"
+        
+        # Create devcontainer.json for custom image
+        if ! cat > .devcontainer/devcontainer.json << EOF
+{
+    "name": "$container_name",
+    "image": "$custom_image",
+    "workspaceFolder": "$workspace_folder",
+    "remoteUser": "$remote_user",
+    "containerUser": "$container_user",
+    "customizations": {
+        "vscode": {
+            "extensions": $(echo "$all_extensions" | jq '.')
+        }
+    }
+}
+EOF
+        then
+            error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
+        fi
+        
+    else
+        # Use official template with devcontainer CLI
+        if command -v devcontainer >/dev/null 2>&1; then
+            info "Applying official template: $selected_template_id"
+            
+            if ! devcontainer templates apply \
+                --workspace-folder "$PROJECT_DIR" \
+                --template-id "$selected_template_id" \
+                --features "$features_array" \
+                --template-args "$template_args" \
+                >/dev/null 2>&1; then
+                
+                error_exit "Failed to apply official template" "$EXIT_DEVCONTAINER_ERROR"
+            fi
+            
+            # Enhance with our customizations using devcontainer CLI metadata
+            if [ -f ".devcontainer/devcontainer.json" ]; then
+                # Use devcontainer CLI to enhance the configuration
+                if command -v jq >/dev/null 2>&1; then
+                    # Get template metadata to understand what was applied
+                    local template_metadata
+                    template_metadata=$(devcontainer templates metadata "$selected_template_id" 2>/dev/null || echo '{}')
+                    
+                    # Add VS Code extensions to existing configuration
+                    jq '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.extensions = ((.customizations.vscode.extensions // []) + '"$all_extensions"' | unique)' \
+                        .devcontainer/devcontainer.json > .devcontainer/devcontainer.json.tmp && \
+                        mv .devcontainer/devcontainer.json.tmp .devcontainer/devcontainer.json
+                fi
+            fi
+        else
+            error_exit "devcontainer CLI not found. Please install it with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        fi
+    fi
+    
+    # Add our enhancement comment
+    if [ -f ".devcontainer/devcontainer.json" ]; then
+        local temp_file=".devcontainer/devcontainer.json.tmp"
+        {
+            echo "// Enhanced by dcutil wizard with custom configuration"
+            sed '1d' .devcontainer/devcontainer.json
+        } > "$temp_file"
+        mv "$temp_file" .devcontainer/devcontainer.json
+        
+        # Use devcontainer CLI to validate the configuration
+        if command -v devcontainer >/dev/null 2>&1; then
+            if ! devcontainer read-configuration --workspace-folder "$PROJECT_DIR" --config ".devcontainer/devcontainer.json" >/dev/null 2>&1; then
+                warning "Generated configuration may have issues. You can validate it with: devcontainer read-configuration --workspace-folder $PROJECT_DIR"
+            fi
+        else
+            validate_json_if_available ".devcontainer/devcontainer.json"
+        fi
+        
+        success "Devcontainer configuration created with wizard"
+        
+        # Offer to start the container
+        if [ -t 0 ] && [ -t 1 ]; then
+            echo ""
+            read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
+            start_now=${start_now:-Y}
+            if [[ "$start_now" =~ ^[Yy] ]]; then
+                info "Starting devcontainer..."
+                if command -v devcontainer_up >/dev/null 2>&1; then
+                    devcontainer_up
+                    return 0
+                fi
+            fi
+        fi
+        
+        info "Run 'dcutil up' to start the container"
+    else
+        error_exit "Failed to generate devcontainer configuration" "$EXIT_CONFIG_ERROR"
+    fi
+}

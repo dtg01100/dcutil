@@ -97,73 +97,8 @@ init_mode() {
                 exit "$EXIT_INVALID_ARGS"
             fi
             
-            info "Devcontainer Initialization Wizard (Powered by Official Templates)"
-            echo "⚠️  Note: Wizard mode is deprecated. Fast mode now auto-detects your project type!"
-            echo ""
-            
-            # For now, just use fast mode even in wizard - we can enhance this later
-            info "Using auto-detection (same as fast mode)..."
-            
-            # Auto-detect language and use appropriate template
-            local template_id
-            template_id=$(detect_project_template)
-            
-            # Set template arguments based on template
-            local template_args='{"imageVariant": "noble"}'
-            case "$template_id" in
-                *"go"*)
-                    template_args='{}'
-                    ;;
-                *"javascript-node"*)
-                    template_args='{}'
-                    ;;
-                *"python"*)
-                    template_args='{}'
-                    ;;
-                *"rust"*)
-                    template_args='{}'
-                    ;;
-                *"dotnet"*)
-                    template_args='{}'
-                    ;;
-                *"java"*)
-                    template_args='{}'
-                    ;;
-                *"ubuntu"*)
-                    template_args='{"imageVariant": "noble"}'
-                    ;;
-            esac
-            
-            # Suggest features based on project type
-            local features_json
-            features_json=$(suggest_features_for_project "$template_id")
-            
-            # Apply the official template using the devcontainer CLI
-            if command -v devcontainer >/dev/null 2>&1; then
-                info "Using official template: $template_id"
-                
-                # Apply the template with suggested features
-                if apply_official_template "$template_id" "$features_json" "$template_args"; then
-                    
-                    # Verify the configuration was created
-                    if [ ! -f ".devcontainer/devcontainer.json" ]; then
-                        error_exit "Failed to generate devcontainer configuration" "$EXIT_CONFIG_ERROR"
-                    fi
-                    
-                    # Enhance the generated configuration with dcutil-specific additions
-                    enhance_with_dcutil_additions
-                    
-                    # Skip JSON validation since official templates are already validated
-                    # validate_json_if_available ".devcontainer/devcontainer.json"
-                    success "Devcontainer configuration created using official template"
-                    
-                    info "Run 'dcutil up' to start the container"
-                else
-                    error_exit "Failed to apply official template. Please check your devcontainer CLI installation." "$EXIT_DEVCONTAINER_ERROR"
-                fi
-            else
-                error_exit "devcontainer CLI not found. Please install it with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
-            fi
+            # Use enhanced wizard with official template integration
+            wizard_with_official_integration
             ;;
         "--help"|"-h")
             echo "Usage: dcutil init [mode]"
