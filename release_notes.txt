@@ -1,0 +1,9 @@
+## Release v1.4.1 - Environment Export Functionality
+
+### 🚀 Features
+- Added `dcutil environment export-env` command to output environment variables matching devcontainer CLI settings
+- Enhanced environment variable handling to match VSCode devcontainer environment
+
+### 🛠️ Improvements
+- Use devcontainer CLI exclusively for validation instead of fallback methods
+- Properly enforce devcontainer CLI as hard requirement
