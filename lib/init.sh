@@ -548,7 +548,7 @@ init_mode() {
                 error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
             fi
 
-            # Fast mode defaults (non-interactive)
+# Fast mode defaults (non-interactive)
             repo_name="$(basename "$PROJECT_DIR")"
             workspace_folder="/workspaces/$repo_name"
             container_user="vscode"
@@ -556,9 +556,24 @@ init_mode() {
             set_chown=true
             mount_project_to_container=true
             
-            # Check if the base image already includes workspace mounting features
-            # The base:ubuntu image includes common-utils and git features that handle mounting
             base_image="mcr.microsoft.com/devcontainers/base:ubuntu"
+            mounts_snippet=""
+            
+            # Only add explicit mounts if needed to prevent conflicts
+            if [ "$mount_project_to_container" = true ]; then
+                if should_add_explicit_mounts "$base_image" "false"; then
+                    mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
+                fi
+            fi
+    
+    # For official devcontainer images, check if user specifically wants custom mount options
+    # Most users of official images want the default behavior (no explicit mounts)
+    # But we should allow opting in if needed
+    
+    # For now, skip explicit mounts for official images to prevent conflicts
+    # This can be made configurable in the future if needed
+    return 1  # false - skip explicit mounts
+}
             mounts_snippet=""
             
             # Only add explicit mounts if not using base images with built-in workspace mounting
@@ -809,10 +824,13 @@ mount_project_to_container=false
               mounts_snippet=""
               if [[ "$mount_choice" =~ ^[Yy] ]]; then
                   mount_project_to_container=true
-                  # Only add explicit mounts if not using images with built-in workspace mounting
-                  # Official devcontainer images (mcr.microsoft.com/devcontainers/*) include
-                  # workspace mounting features, so explicit mounts would cause conflicts
-                  if [[ "$image" != *"mcr.microsoft.com/devcontainers/"* ]]; then
+                  # Only add explicit mounts if needed to prevent conflicts
+                  features_enabled="false"
+                  if [ -n "$selected_features_json" ] && [ "$selected_features_json" != "[]" ]; then
+                      features_enabled="true"
+                  fi
+                  
+                  if should_add_explicit_mounts "$image" "$features_enabled"; then
                       mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
                   fi
               fi
