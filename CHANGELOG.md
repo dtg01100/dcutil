@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.7] - 2025-11-24
+
+### 🧹 Cleanup
+- **Removed accidental test file**: Cleaned up test_name_clash.sh that was accidentally added during development
+- **Code hygiene**: Maintained clean repository state without development artifacts
+
 ## [1.3.6] - 2025-11-24
 
 ### 🔧 Technical Improvements
