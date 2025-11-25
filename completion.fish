@@ -9,6 +9,7 @@ complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommand
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "build" -d "Build the devcontainer image"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "clean" -d "Remove containers, volumes, and configuration files"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "status" -d "Show container status"
+complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "stats" -d "Monitor resource usage"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "logs" -d "Show container logs"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "list" -d "List running devcontainers"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "run" -d "Run a command in the container"
@@ -31,6 +32,7 @@ complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommand
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "version" -d "Show version information"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "completion" -d "Generate completion script"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "test" -d "Test dcutil improvements"
+complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "menu" -d "Show interactive menu"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "help" -d "Show help message"
 
 # Global flags
@@ -63,6 +65,13 @@ complete -c dcutil -f -n "__fish_seen_subcommand_from ssh" -a "list" -d "List SS
 complete -c dcutil -f -n "__fish_seen_subcommand_from ssh" -a "mount" -d "Mount SSH agent socket"
 complete -c dcutil -f -n "__fish_seen_subcommand_from ssh" -a "test" -d "Test SSH connectivity"
 complete -c dcutil -f -n "__fish_seen_subcommand_from ssh" -a "connect" -d "Connect to SSH server"
+
+# Stats subcommands
+set -l dcutil_stats_subcommands show watch detailed top
+complete -c dcutil -f -n "__fish_seen_subcommand_from stats" -a "show" -d "Quick snapshot of resource usage"
+complete -c dcutil -f -n "__fish_seen_subcommand_from stats" -a "watch" -d "Live streaming view of resources"
+complete -c dcutil -f -n "__fish_seen_subcommand_from stats" -a "detailed" -d "Detailed resource information with limits"
+complete -c dcutil -f -n "__fish_seen_subcommand_from stats" -a "top" -d "Show running processes"
 
 # Compose subcommands
 set -l dcutil_compose_subcommands up down restart status list exec logs build clean

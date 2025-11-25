@@ -95,7 +95,7 @@ add_volume() {
     local mount_type="${4:-bind}"
 
     if [ -z "$volume_name" ] || [ -z "$host_path" ] || [ -z "$container_path" ]; then
-        error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type]" "$EXIT_INVALID_ARGS"
+        error_exit "💾 Usage: dcutil volumes add <name> <your_computer_path> <environment_path> [type]" "$EXIT_INVALID_ARGS"
     fi
 
     # Validate mount type
@@ -179,10 +179,10 @@ add_volume() {
     close_lock "$fd"
 
     success "Added volume '$volume_name'"
-    info "  Host path: $host_path"
-    info "  Container path: $container_path"
+    info "  On your computer: $host_path"
+    info "  In your environment: $container_path"
     info "  Mount type: $mount_type"
-    info "Use 'dcutil volumes mount $volume_name' to mount it to a running container"
+    info "💡 Use 'dcutil volumes mount $volume_name' to make it available"
 }
 
 list_volumes() {
@@ -193,7 +193,7 @@ list_volumes() {
     local lockfile
     lockfile="${volume_file}.lock"
 
-    info "Mounted volumes for this project (using config: $volume_file)"
+    info "Shared storage for this project (config: $volume_file)"
     info "Volume file path: $volume_file"
     info "Lockfile: $lockfile"
 
@@ -244,7 +244,7 @@ list_volumes() {
     done
 
     if [ "$found" = false ]; then
-        echo "  No volumes configured"
+        echo "  No shared storage configured yet"
     fi
 }
 
@@ -252,7 +252,7 @@ remove_volume() {
     local volume_name="$1"
 
     if [ -z "$volume_name" ]; then
-        error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
+        error_exit "💾 Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
     fi
 
     local volume_file
@@ -284,12 +284,12 @@ remove_volume() {
         # if command -v flock &>/dev/null; then
         #     close_lock "$fd"
         # fi
-        error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
+        error_exit "⚠️  Storage volume '$volume_name' not found. Use 'dcutil volumes list' to see available volumes." "$EXIT_CONFIG_ERROR"
     fi
 
     # Confirm removal
     echo ""
-    warning "This will remove volume configuration for '$volume_name'"
+    warning "This will remove the shared storage configuration for '$volume_name'"
     local confirm=""
     if ! [ -t 0 ]; then
         # Non-interactive: assume confirmation
@@ -338,7 +338,7 @@ remove_volume() {
             unmount_volume "$volume_name" || true
         else
             echo ""
-            read -r -p "Unmount volume from running container? (y/N): " unmount_now
+            read -r -p "Remove this storage from your running environment? (y/N): " unmount_now
             if [[ "$unmount_now" =~ ^[Yy] ]]; then
                 unmount_volume "$volume_name"
             fi

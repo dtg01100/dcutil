@@ -52,7 +52,7 @@ execute_shutdown_action() {
     # Guardrail: Confirm destructive shutdown actions
     if [ "$SHUTDOWN_ACTION" = "kill" ]; then
         echo ""
-        warning "Shutdown action 'kill' will forcefully terminate the container and may cause data loss"
+        warning "Force shutdown will terminate your environment immediately and may cause data loss"
         local confirm=""
         if [ -t 0 ]; then
             read -r -p "Are you sure? (y/N): " confirm
@@ -67,27 +67,27 @@ execute_shutdown_action() {
         fi
     fi
 
-    info "Executing shutdown action: $SHUTDOWN_ACTION for container: $container_name"
+    info "Shutting down: $container_name (action: $SHUTDOWN_ACTION)"
     
     case "$SHUTDOWN_ACTION" in
         "stop")
-            info "Stopping container gracefully..."
+            info "Stopping your environment gracefully..."
             if docker stop "$container_name" >/dev/null 2>&1; then
-                success "Container stopped successfully"
+                success "✅ Environment stopped"
                 return 0
             else
-                error "Failed to stop container"
+                error "Failed to stop environment"
                 return 1
             fi
             ;;
         "kill")
-            info "Killing container..."
-            log_dangerous_operation "shutdown" "forcefully killing container $container_name"
+            info "Force stopping your environment..."
+            log_dangerous_operation "shutdown" "forcefully stopping environment $container_name"
             if docker kill "$container_name" >/dev/null 2>&1; then
-                success "Container killed successfully"
+                success "⚠️  Environment force stopped"
                 return 0
             else
-                error "Failed to kill container"
+                error "Failed to force stop environment"
                 return 1
             fi
             ;;
@@ -96,12 +96,12 @@ execute_shutdown_action() {
             return 0
             ;;
         "shutdown")
-            info "Shutting down container..."
+            info "Shutting down your environment..."
             if docker stop "$container_name" >/dev/null 2>&1; then
-                success "Container shutdown successfully"
+                success "✅ Environment shut down"
                 return 0
             else
-                error "Failed to shutdown container"
+                error "Failed to shut down environment"
                 return 1
             fi
             ;;

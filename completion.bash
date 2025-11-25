@@ -3,16 +3,17 @@
 # Bash completion for dcutil
 # Install by sourcing this file in your .bashrc or placing it in /etc/bash_completion.d/
 
-_dcutil_completion() {
+_dcutil() {
     local cur prev cword
     _init_completion || return
 
     # Main commands
-    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman version completion test help"
+    local commands="up down restart enter build clean status stats logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman version completion test menu help"
 
     # Subcommands for various modules
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
+    local stats_commands="show watch detailed top help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
     local compose_commands="up down restart status list exec logs build clean help --help -h"
     local build_commands="info validate clean help --help -h"
@@ -116,6 +117,10 @@ _dcutil_completion() {
             ;;
         status)
             mapfile -t COMPREPLY < <(compgen -W "${status_options}" -- "${cur}")
+            return
+            ;;
+        stats)
+            mapfile -t COMPREPLY < <(compgen -W "${stats_commands}" -- "${cur}")
             return
             ;;
         logs)
@@ -230,4 +235,4 @@ _dcutil_completion() {
 }
 
 # Register the completion function
-complete -F _dcutil_completion dcutil
+complete -F _dcutil dcutil

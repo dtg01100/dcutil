@@ -1,23 +1,74 @@
 # dcutil
 
-A command-line tool for managing development containers with enhanced user experience, intelligent auto-completion, and robust error handling. Supports all Devcontainer Specification features through seamless integration with container runtimes.
+Manage your development environments with ease - **no Docker knowledge required!**
 
-## Features
+dcutil is a command-line tool that makes it simple to create, run, and manage isolated development environments. Focus on coding, not on learning container platforms.
 
-- **Container Management**: Start, stop, restart, and monitor development containers
-- **Project Initialization**: Interactive wizard for creating devcontainer configurations with templates and features
-- **Volume Management**: Create, manage, and backup persistent volumes
-- **AI Agent Installation**: Install coding assistants (opencode, aider, etc.) in containers
-- **Auto-Completion**: Intelligent shell completion for commands and options
-- **Backend Support**: Automatic detection and support for Docker and Podman
-- **Error Handling**: Clear error messages with actionable guidance
+## Why dcutil?
+
+- **Beginner-Friendly**: Plain language commands and helpful error messages
+- **No Docker Expertise Needed**: Just use `dcutil up` to start coding
+- **Guided Setup**: Interactive wizard walks you through environment creation
+- **Smart Monitoring**: Check resource usage without understanding containers  
+- **Helpful Guidance**: Every error tells you exactly what to do next
 - **Cross-Platform**: Works on Linux, macOS, and other Unix-like systems
 
-#### Container Backend Support
-- **Docker**: Full compatibility with Docker daemon
-- **Podman**: Support for rootless containers and daemonless operation
-- **Auto-Detection**: Automatically detects and uses available container runtime
-- **Backend Selection**: Choose backend via `DCUTIL_BACKEND` environment variable
+## What You Can Do
+
+- **Quick Start**: `dcutil up` - Start your development environment
+- **Interactive Setup**: `dcutil init` - Guided wizard for new projects
+- **Monitor Resources**: `dcutil stats` - See CPU, memory usage in plain language
+- **Manage Storage**: `dcutil volumes` - Handle persistent data easily
+- **Add Tools**: `dcutil features` - Install languages and tools with one command
+- **AI Assistants**: `dcutil install-agent` - Add coding helpers to your environment
+
+## For the Curious
+
+Under the hood, dcutil uses industry-standard development containers (the same technology VS Code uses). But you don't need to know that to use it effectively!
+
+- **Auto-Detection**: Automatically works with Docker or Podman
+- **Full Specification Support**: Implements the complete Devcontainer Specification
+- **Seamless Integration**: Compatible with VS Code and other dev container tools
+
+## Beginner-Friendly Features
+
+### 🎯 Interactive Menu
+
+Run `dcutil` without any arguments to see a friendly menu of common tasks:
+
+```bash
+$ dcutil
+🚀 What would you like to do?
+  1) Start my development environment
+  2) Open a shell in my environment
+  3) Stop my environment
+  ...
+```
+
+### 💡 Smart Command Suggestions
+
+Typos? No problem! dcutil suggests what you meant:
+
+```bash
+$ dcutil stauts
+💡 Did you mean: dcutil status
+```
+
+### 👋 First-Run Welcome
+
+New users see a helpful quick-start guide that appears once.
+
+### 📊 Contextual Tips
+
+Get helpful hints based on what you're doing:
+
+- After `dcutil init` → "Run 'dcutil up' to start your environment"
+- After `dcutil status` when stopped → Tips on how to start
+- After `dcutil status` when running → What you can do now
+
+### ⚠️ Clear Error Messages
+
+Every error includes the exact command to fix it - no guessing!
 
 ## Installation
 
@@ -104,6 +155,7 @@ dcutil help
 - `build` - Build the devcontainer image
 - `clean` - Remove containers, volumes, and configuration files
 - `status` - Show container status
+- `stats` - Monitor container resource usage (CPU, memory, network, disk I/O)
 - `logs` - Show container logs
 - `list` - List running devcontainers
 - `run <cmd>` - Run a command in the container
@@ -307,6 +359,57 @@ Would you like to start the devcontainer first? (y/N): y
 - **User-Friendly Prompts**: Clear options for different scenarios
 - **Non-Intrusive**: Non-interactive mode maintains script compatibility
 - **Seamless Experience**: No need to manually check/start containers
+
+### Resource Monitoring
+
+Monitor your container's resource usage in real-time with the `stats` command. **No Docker/Podman knowledge required** - just check if your code is using a lot of resources!
+
+```bash
+# Quick snapshot - "Is my code using a lot of resources?"
+dcutil stats
+
+# Watch live while running tests or builds
+dcutil stats watch
+
+# See detailed limits - "Am I hitting my memory limit?"
+dcutil stats detailed
+
+# Check what's actually running
+dcutil stats top
+```
+
+#### What You Can Check
+- **CPU Usage** - Is your code doing heavy processing?
+- **Memory Usage** - Are you running out of RAM?
+- **Network I/O** - How much data is being transferred (for web apps)
+- **Disk I/O** - File read/write activity
+- **Running Programs** - What's actually executing inside
+
+#### Beginner-Friendly Output
+The stats command explains what everything means in plain language:
+
+```
+📊 Resource Usage for Your Development Container
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O         PIDS
+12.5%     256MB / 2GB          12.8%     1.2MB / 856kB     15.2MB / 0B       42
+
+💡 What does this mean?
+
+  • CPU %      - How much processing power is being used (higher = busier)
+  • MEM USAGE  - How much memory (RAM) your code is using
+  • MEM %      - Percentage of available memory being used
+  • NET I/O    - Data sent/received over the network
+  • BLOCK I/O  - Data read from or written to disk
+  • PIDS       - Number of running programs/processes
+
+📌 Tips:
+  • High CPU (>80%)?  Your code might be processing-intensive
+  • High Memory (>80%)? Consider optimizing or increasing limits
+  • Use 'dcutil stats watch' to see live updates
+  • Use 'dcutil stats detailed' to see configured limits
+```
 
 ### Environment Configuration
 

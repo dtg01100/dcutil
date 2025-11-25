@@ -13,6 +13,7 @@ _dcutil() {
         'build:Build the devcontainer image'
         'clean:Remove containers, volumes, and configuration files'
         'status:Show container status'
+        'stats:Monitor resource usage'
         'logs:Show container logs'
         'list:List running devcontainers'
         'run:Run a command in the container'
@@ -35,6 +36,7 @@ _dcutil() {
         'version:Show version information'
         'completion:Generate completion script'
         'test:Test dcutil improvements'
+        'menu:Show interactive menu'
         'help:Show help message'
     )
 
@@ -88,6 +90,17 @@ _dcutil() {
         'build:Build Docker Compose images'
         'clean:Clean up Docker Compose environment'
         'help:Show compose help'
+        '--help:Show help'
+        '-h:Show help'
+    )
+
+    local -a stats_commands
+    stats_commands=(
+        'show:Quick snapshot of resource usage'
+        'watch:Live streaming view of resources'
+        'detailed:Detailed resource information with limits'
+        'top:Show running processes'
+        'help:Show stats help'
         '--help:Show help'
         '-h:Show help'
     )
@@ -251,6 +264,9 @@ _dcutil() {
                     ;;
                 volumes)
                     _describe 'volume command' volumes_commands
+                    ;;
+                stats)
+                    _describe 'stats command' stats_commands
                     ;;
                 ssh)
                     _describe 'ssh command' ssh_commands

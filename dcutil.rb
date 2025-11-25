@@ -4,8 +4,8 @@
 class Dcutil < Formula
   desc "Enhanced devcontainer utility with advanced features"
   homepage "https://github.com/dtg01100/dcutil"
-  url "https://github.com/dtg01100/dcutil/archive/refs/tags/v1.4.0.tar.gz"
-  sha256 "624aa77752cd29fd82455394f473e34a5db7dfb09f528e954f67cccb87b6fad0"
+  url "https://github.com/dtg01100/dcutil/archive/refs/tags/v1.5.0.tar.gz"
+  sha256 "PLACEHOLDER_SHA256_UPDATE_AFTER_RELEASE"
   license "MIT"
 
   # Linux-only for now since we don't have macOS testing
@@ -75,14 +75,18 @@ class Dcutil < Formula
 
       For shell completion, restart your shell or run:
 
-        # For bash
-        echo 'source $(brew --prefix)/etc/bash_completion.d/dcutil' >> ~/.bashrc
+        # For bash (requires bash-completion package)
+        # If you haven't already, install bash-completion:
+        # brew install bash-completion
+        # Then add to your ~/.bashrc:
+        [[ -r "$(brew --prefix)/etc/profile.d/bash_completion.sh" ]] && . "$(brew --prefix)/etc/profile.d/bash_completion.sh"
 
         # For zsh
-        echo 'fpath=($(brew --prefix)/share/zsh/site-functions $fpath)' >> ~/.zshrc
+        # Add to your ~/.zshrc before compinit:
+        fpath=($(brew --prefix)/share/zsh/site-functions $fpath)
 
         # For fish
-        # Completion is automatically installed
+        # Completion is automatically available at startup
     EOS
   end
 

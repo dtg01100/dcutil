@@ -13,7 +13,7 @@ init_mode() {
 
     case "$INIT_MODE" in
         "--fast"|"fast"|"--non-interactive"|"-n")
-            info "Creating devcontainer configuration using official devcontainer templates..."
+            info "Setting up your development environment..."
             
             # Auto-detect language and use appropriate template
             local template_id
@@ -58,7 +58,7 @@ init_mode() {
                     
                     # Verify the configuration was created
                     if [ ! -f ".devcontainer/devcontainer.json" ]; then
-                        error_exit "Failed to generate devcontainer configuration" "$EXIT_CONFIG_ERROR"
+                        error_exit "⚠️  Failed to create configuration. Please try again or check your setup." "$EXIT_CONFIG_ERROR"
                     fi
                     
                     # Enhance the generated configuration with dcutil-specific additions
@@ -66,15 +66,20 @@ init_mode() {
                     
                     # Skip JSON validation since official templates are already validated
                     # validate_json_if_available ".devcontainer/devcontainer.json"
-                    success "Devcontainer configuration created using official template"
+                    success "✅ Development environment configured successfully!"
                     
-                    # Offer to start the container immediately
+                    # Show what to do next
+                    if command -v show_contextual_tips >/dev/null 2>&1; then
+                        show_contextual_tips "not-running"
+                    fi
+                    
+                    # Offer to start the environment immediately
                     if [ -t 0 ] && [ -t 1 ]; then
                         echo ""
-                        read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
+                        read -r -p "Ready to start your development environment? (Y/n): " start_now
                         start_now=${start_now:-Y}
                         if [[ "$start_now" =~ ^[Yy] ]]; then
-                            info "Starting devcontainer..."
+                            info "Starting your environment..."
                             if command -v devcontainer_up >/dev/null 2>&1; then
                                 devcontainer_up
                                 return 0
@@ -82,12 +87,12 @@ init_mode() {
                         fi
                     fi
                     
-                    info "Run 'dcutil up' to start the container"
+                    info "💡 Run 'dcutil up' to start your environment"
                 else
-                    error_exit "Failed to apply official template. Please check your devcontainer CLI installation." "$EXIT_DEVCONTAINER_ERROR"
+                    error_exit "⚠️  Setup failed. This might be a temporary issue - please try again.\n    If the problem persists, ensure you have the latest version: brew upgrade dcutil" "$EXIT_DEVCONTAINER_ERROR"
                 fi
             else
-                error_exit "devcontainer CLI not found. Please install it with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+                error_exit "⚠️  Required tools not found.\n    Install with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
             fi
             ;;
         "--wizard"|"wizard")

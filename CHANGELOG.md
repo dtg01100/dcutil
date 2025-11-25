@@ -1,5 +1,54 @@
 # Changelog
 
+## [1.5.0] - 2025-11-25
+
+### 🚀 Features
+- **Resource Monitoring**: Added `dcutil stats` command for monitoring container resource usage
+  - Quick snapshot view with `dcutil stats show` (default)
+  - Live streaming view with `dcutil stats watch` for continuous monitoring
+  - Detailed resource information with `dcutil stats detailed` showing limits and configuration
+  - Process viewer with `dcutil stats top` to see running processes
+- **Enhanced User Experience**: Intuitive command structure with helpful aliases (watch/live/follow, detailed/full, top/ps)
+- **Resource Insights**: Track CPU usage, memory consumption, network I/O, disk I/O, and process counts
+- **Limit Awareness**: See configured resource limits and how close you are to hitting them
+
+### 🎯 Beginner-Friendly Redesign
+- **No Docker Knowledge Required**: Completely rewritten user-facing messages to eliminate container jargon
+- **Plain Language**: Commands phrased as questions users actually ask ("Is my code using a lot of resources?")
+- **Helpful Error Messages**: Every error explains what happened and shows the exact command to fix it
+- **Contextual Explanations**: All metrics include inline explanations in beginner-friendly terms
+- **Friendly Prompts**: Interactive prompts use clear, encouraging language
+- **Updated Help**: Main help completely rewritten to focus on "your development environment" not "containers"
+- **README Overhaul**: Introduction emphasizes ease of use and zero Docker expertise needed
+
+### 🛠️ Improvements
+- **Shell Completion**: Added stats command autocomplete with subcommands
+- **Help System**: Comprehensive help text explaining capabilities without technical jargon
+- **Error Handling**: Clear messages with actionable next steps, not technical error codes
+- **Visual Clarity**: Uses emojis and formatting to make output easy to scan (📊, 💡, ⚠️, ✓)
+
+### 📝 Message Improvements
+- "Development environment" instead of "devcontainer" or "container"
+- "Your environment" instead of technical container references
+- Action-oriented help: "Start your environment" not "Start the devcontainer"
+- Beginner-focused examples in all help text
+- Removed references to Docker/Podman in user-facing messages
+
+### 🎨 Command-Line UX Enhancements
+- **Interactive Menu Mode**: Run `dcutil` without arguments for a friendly menu interface with 9 common tasks
+- **Smart Command Suggestions**: Typo detection with "Did you mean?" suggestions using Levenshtein distance algorithm
+- **First-Run Experience**: Welcome screen with quick start guide for new users (shown once)
+- **Contextual Tips**: Helpful hints based on environment state integrated into key commands:
+  - After `init` → "Next: Run 'dcutil up' to start your environment"
+  - After `status` → Different tips based on running/stopped state (6 integration points)
+  - After `down`, `restart`, `clean` → Guidance on next steps
+- **Time Expectation Messages**: Clear indicators for long operations to set user expectations:
+  - `dcutil up` → "⏳ This may take a few minutes on first run..."
+  - `dcutil build` → "⏳ This may take several minutes depending on the image size..."
+  - `dcutil features install` → "⏳ This may take a few minutes depending on the features..."
+- **Enhanced Shell Completion**: Updated bash, zsh, and fish completions with `menu` and `stats` commands
+- **UX Module**: New `lib/ux.sh` (386 lines) with comprehensive helper functions for beginner-friendly interactions
+
 ## [1.4.1] - 2025-11-25
 
 ### 🚀 Features

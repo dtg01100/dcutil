@@ -103,6 +103,7 @@ devcontainer_cli_up() {
     args+=("$@")
     
     info "Starting devcontainer using official CLI..."
+    echo "⏳ This may take a few minutes on first run..."
     execute_devcontainer_cli "up" "${args[@]}"
 
     # Detect which backend the CLI used
@@ -174,6 +175,7 @@ devcontainer_cli_build() {
     args+=("$@")
     
     info "Building devcontainer image using official CLI..."
+    echo "⏳ This may take several minutes depending on the image size..."
     execute_devcontainer_cli "build" "${args[@]}"
 }
 

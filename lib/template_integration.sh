@@ -702,7 +702,7 @@ EOF
         # Offer to start the container
         if [ -t 0 ] && [ -t 1 ]; then
             echo ""
-            read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
+            read -r -p "Ready to start your development environment? (Y/n): " start_now
             start_now=${start_now:-Y}
             if [[ "$start_now" =~ ^[Yy] ]]; then
                 info "Starting devcontainer..."

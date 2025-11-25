@@ -142,7 +142,7 @@ validate_devcontainer_json() {
     # Validate with devcontainer CLI - this is a hard requirement
     # Use the project directory for workspace folder which is set in calling contexts
     if ! devcontainer read-configuration --workspace-folder "${PROJECT_DIR:-.}" --config "$fp" >/dev/null 2>&1; then
-        error_exit "Generated devcontainer configuration at $fp is invalid" "$EXIT_CONFIG_ERROR"
+        error_exit "The generated configuration at $fp has errors. Please check the file." "$EXIT_CONFIG_ERROR"
     fi
 }
 
@@ -167,7 +167,15 @@ parse_devcontainer_config() {
     elif [ -f ".devcontainer/devcontainer/devcontainer.json" ]; then
         config_file=".devcontainer/devcontainer/devcontainer.json"
     else
-        error_exit "No devcontainer configuration found. Run 'dcutil init' first." "$EXIT_CONFIG_ERROR"
+        echo ""
+        echo "⚠️  No development environment configuration found."
+        echo ""
+        echo "You need to set up your environment first:"
+        echo "  dcutil init"
+        echo ""
+        echo "This will guide you through creating a configuration."
+        echo ""
+        error_exit "Configuration required" "$EXIT_CONFIG_ERROR"
     fi
     
     DEVCONTAINER_CONFIG_FILE=$(realpath -m "$config_file" 2>/dev/null || echo "$config_file")
@@ -317,12 +325,21 @@ docker_up() {
 docker_down() {
     info "Using official devcontainer CLI to stop container with dcutil enhancements..."
     devcontainer_cli_down "$PROJECT_DIR"
-    return $?
+    local result=$?
+    
+    # Show what to do next
+    if [ $result -eq 0 ] && command -v show_contextual_tips >/dev/null 2>&1; then
+        show_contextual_tips "not-running"
+    fi
+    
+    return $result
 }
 
 # Restart devcontainer
 docker_restart() {
-    info "Restarting devcontainer..."
+    echo ""
+    echo "♻️  Restarting your development environment..."
+    echo ""
 
     # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
@@ -333,21 +350,31 @@ docker_restart() {
     # Check if container exists
     if command -v execute_container_command >/dev/null 2>&1; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+            echo "⚠️  Your environment isn't running yet."
+            echo ""
+            echo "To start it, use:"
+            echo "  dcutil up"
+            echo ""
+            error_exit "Environment not found" "$EXIT_DEVCONTAINER_ERROR"
         fi
 
         # Restart container
         if ! execute_container_command restart "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+            error_exit "Failed to restart your environment. Try 'dcutil down' then 'dcutil up'." "$EXIT_DEVCONTAINER_ERROR"
         fi
     else
         if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "No devcontainer found to restart. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+            echo "⚠️  Your environment isn't running yet."
+            echo ""
+            echo "To start it, use:"
+            echo "  dcutil up"
+            echo ""
+            error_exit "Environment not found" "$EXIT_DEVCONTAINER_ERROR"
         fi
 
         # Restart container
         if ! docker restart "$CONTAINER_NAME" &>/dev/null; then
-            error_exit "Failed to restart devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+            error_exit "Failed to restart your environment. Try 'dcutil down' then 'dcutil up'." "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
 
@@ -360,6 +387,11 @@ docker_restart() {
     apply_vscode_customizations_if_available
 
     success "Devcontainer restarted successfully"
+    
+    # Show what to do next
+    if command -v show_contextual_tips >/dev/null 2>&1; then
+        show_contextual_tips "running"
+    fi
 }
 
 # Enter devcontainer
@@ -429,20 +461,31 @@ docker_enter() {
     if [ "$container_exists" = false ]; then
         if [ -t 0 ]; then
             echo ""
-            warning "No devcontainer found for this project."
-            read -r -p "Would you like to start the devcontainer first? (y/N): " start_container
+            echo "⚠️  No development environment found for this project."
+            echo ""
+            read -r -p "Your environment isn't running. Start it now? (y/N): " start_container
             if [[ "$start_container" =~ ^[Yy] ]]; then
-                info "Starting devcontainer..."
+                echo "Starting your development environment..."
+                echo ""
                 docker_up "$project_dir"
                 # After starting, the container should exist and be running
                 container_exists=true
                 container_running=true
             else
-                info "Devcontainer not started. Run 'dcutil up' to start it."
+                echo ""
+                echo "To start it later, use:"
+                echo "  dcutil up"
+                echo ""
                 return 0
             fi
         else
-            error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+            echo ""
+            echo "⚠️  No development environment found."
+            echo ""
+            echo "To start it, use:"
+            echo "  dcutil up"
+            echo ""
+            error_exit "Environment not found" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
 
@@ -450,18 +493,29 @@ docker_enter() {
     if [ "$container_exists" = true ] && [ "$container_running" = false ]; then
         if [ -t 0 ]; then
             echo ""
-            warning "Devcontainer exists but is not running."
-            read -r -p "Would you like to start it? (y/N): " start_container
+            echo "⚠️  Your development environment exists but isn't running."
+            echo ""
+            read -r -p "Your environment isn't running. Start it now? (y/N): " start_container
             if [[ "$start_container" =~ ^[Yy] ]]; then
-                info "Starting devcontainer..."
+                echo "Starting your environment..."
+                echo ""
                 devcontainer_restart
                 container_running=true
             else
-                info "Devcontainer not started. Run 'dcutil up' to start it."
+                echo ""
+                echo "To start it later, use:"
+                echo "  dcutil up"
+                echo ""
                 return 0
             fi
         else
-            error_exit "Devcontainer is not running. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
+            echo ""
+            echo "⚠️  Your development environment is not running."
+            echo ""
+            echo "To start it, use:"
+            echo "  dcutil up"
+            echo ""
+            error_exit "Environment not running" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
 
@@ -516,12 +570,21 @@ docker_status() {
     if command -v execute_container_command >/dev/null 2>&1; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             echo "Container is not running"
+            # Show contextual tip
+            if command -v show_contextual_tips >/dev/null 2>&1; then
+                show_contextual_tips "not-running"
+            fi
             return 0
         fi
         
         # Check if container is running
         if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
             echo "Container is running"
+            
+            # Show contextual tip
+            if command -v show_contextual_tips >/dev/null 2>&1; then
+                show_contextual_tips "running"
+            fi
             
             # Show container details
             local container_ip
@@ -542,12 +605,21 @@ docker_status() {
     else
         if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
             echo "Container is not running"
+            # Show contextual tip
+            if command -v show_contextual_tips >/dev/null 2>&1; then
+                show_contextual_tips "not-running"
+            fi
             return 0
         fi
         
         # Check if container is running
         if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
             echo "Container is running"
+            
+            # Show contextual tip
+            if command -v show_contextual_tips >/dev/null 2>&1; then
+                show_contextual_tips "running"
+            fi
             
             # Show container details
             local container_ip
@@ -564,6 +636,10 @@ docker_status() {
             fi
         else
             echo "Container is stopped"
+            # Show contextual tip
+            if command -v show_contextual_tips >/dev/null 2>&1; then
+                show_contextual_tips "not-running"
+            fi
         fi
     fi
     
@@ -677,7 +753,7 @@ docker_clean() {
 
     # Confirm cleanup
     echo ""
-    warning "This will remove containers, volumes (if --remove-volumes specified), and configuration files"
+    warning "This will remove all environment data and configuration files"
     local confirm=""
     if [ -t 0 ]; then
         read -r -p "Are you sure? (y/N): " confirm
@@ -766,6 +842,11 @@ docker_clean() {
     fi
     
     success "Devcontainer cleaned up"
+    
+    # Show what to do next
+    if command -v show_contextual_tips >/dev/null 2>&1; then
+        show_contextual_tips "not-running"
+    fi
 }
 
 # Check if Docker is available (always true for this implementation)
@@ -865,7 +946,7 @@ devcontainer_rebuild() {
     # Confirmation unless forced
     if [ "$force" != true ]; then
         echo ""
-        read -r -p "Continue with rebuild? (y/N): " confirm
+        read -r -p "Continue rebuilding your environment? (y/N): " confirm
         if [[ ! "$confirm" =~ ^[Yy] ]]; then
             info "Rebuild cancelled"
             return 0
@@ -1017,13 +1098,13 @@ ensure_container_running() {
         if [ "$container_exists" = true ]; then
             # Container exists but not running
             if [ -t 0 ]; then
-                warning "Container exists but is not running."
-                read -r -p "Start the container? (Y/n): " start_choice
+                warning "Your environment exists but isn't running yet."
+                read -r -p "Start your environment now? (Y/n): " start_choice
                 start_choice=${start_choice:-Y}
                 if [[ "$start_choice" =~ ^[Yy] ]]; then
-                    info "Starting container..."
+                    info "Starting your environment..."
                     docker start "$container_name" >/dev/null
-                    success "Container started"
+                    success "✅ Environment is now running"
                     return 0
                 else
                     error "Container not started. Command cancelled."
@@ -1036,16 +1117,16 @@ ensure_container_running() {
         else
             # Container doesn't exist
             if [ -t 0 ]; then
-                warning "No container found for this project."
-                read -r -p "Create and start the container? (Y/n): " create_choice
+                warning "No development environment found for this project yet."
+                read -r -p "Create and start your environment now? (Y/n): " create_choice
                 create_choice=${create_choice:-Y}
                 if [[ "$create_choice" =~ ^[Yy] ]]; then
-                    info "Creating and starting container..."
+                    info "Creating and starting your environment..."
                     docker_up "$PROJECT_DIR"
-                    success "Container created and started"
+                    success "✅ Environment created and running"
                     return 0
                 else
-                    error "Container not created. Command cancelled."
+                    error "Setup cancelled. Run 'dcutil up' when you're ready to start."
                     return 1
                 fi
             else

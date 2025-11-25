@@ -91,11 +91,11 @@ parse_features_config() {
     if command -v parse_devcontainer_config >/dev/null 2>&1; then
         parse_devcontainer_config
     else
-        error_exit "Failed to parse devcontainer configuration" "$EXIT_CONFIG_ERROR"
+        error_exit "⚠️  Unable to read configuration. This is unexpected - please report this issue." "$EXIT_CONFIG_ERROR"
     fi
     
     if [ -z "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
-        error_exit "No devcontainer configuration file found. Run from a project directory with .devcontainer/devcontainer.json" "$EXIT_CONFIG_ERROR"
+        error_exit "⚠️  No development environment found.\n    Run 'dcutil init' to set one up first." "$EXIT_CONFIG_ERROR"
     fi
     
     info "Parsing Features configuration..."
@@ -916,9 +916,9 @@ install_feature() {
                         local last_log
                         last_log=$(tail -n 40 "$FEATURES_INSTALL_LOG" 2>/dev/null || true)
                         if echo "$last_log" | grep -qiE "Script must be run as root|sudo|Permission denied|E: Could not get lock|cannot open|No such file or directory"; then
-                            error "Feature installation failed: $feature_spec (requires root or container environment)"
+                            error "Feature installation failed for: $feature_spec"
                             error "Last 40 lines of install log:\n$last_log"
-                            error "Suggestion: Run 'dcutil up' to start the devcontainer and re-run 'dcutil features install' inside the container, or set FEATURES_FORCE_HOST_INSTALL=true to force attempt on the host at your own risk."
+                            error "💡 Try: 'dcutil up' to start your environment first, then run 'dcutil features install' inside"
                         else
                             error "Feature installation failed: $feature_spec"
                         fi
@@ -927,7 +927,7 @@ install_feature() {
                         return 1
                     fi
                 else
-                    error "No running devcontainer found for this project; please run 'dcutil up' (or set FEATURES_FORCE_HOST_INSTALL=true to try host installation)"
+                    error "⚠️  Your environment isn't running. Start it with 'dcutil up' first."
                     echo "$(date): Feature install aborted due to lack of running container" >> "$FEATURES_INSTALL_LOG"
                     env_clear_inputs_for_feature "$feature_safe_name"
                     return 1
@@ -1154,6 +1154,11 @@ install_features() {
     fi
 
     info "Installing ${#FEATURES_IDS[@]} feature(s) with dependency resolution..."
+    
+    # Show initial progress message
+    if command -v show_progress >/dev/null 2>&1; then
+        echo "⏳ This may take a few minutes depending on the features being installed..."
+    fi
 
     # Initialize installation log
     {

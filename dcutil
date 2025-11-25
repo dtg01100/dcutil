@@ -3,7 +3,7 @@
 # Main dcutil script
 # Routes commands to appropriate modules
 
-VERSION="v1.4.1"
+VERSION="v1.5.0"
 
 set -euo pipefail
 
@@ -86,6 +86,14 @@ fi
 if [ -f "$LIB_DIR/podman.sh" ]; then
     source "$LIB_DIR/podman.sh"
 fi
+# monitoring module is optional
+if [ -f "$LIB_DIR/monitoring.sh" ]; then
+    source "$LIB_DIR/monitoring.sh"
+fi
+# UX enhancements module is optional
+if [ -f "$LIB_DIR/ux.sh" ]; then
+    source "$LIB_DIR/ux.sh"
+fi
 
 # Initialize backend system
 if command -v init_podman_backend >/dev/null 2>&1; then
@@ -147,8 +155,18 @@ test_dcutil_improvements() {
     echo "Testing complete!"
 }
 
+# Show first-time welcome if this is the first run
+if command -v show_first_time_welcome >/dev/null 2>&1; then
+    if show_first_time_welcome; then
+        : # Continue normally
+    else
+        # User chose interactive menu from welcome
+        COMMAND="menu"
+    fi
+fi
+
 # Parse and validate arguments  
-COMMAND="${1:-help}"
+COMMAND="${1:-menu}"  # Default to menu instead of help for better UX
 # Allow a special verify-dialog command for debugging dialog UI without running full wizard
 if [ "${1:-}" = "verify-dialog" ]; then
     export PROJECT_DIR
@@ -167,15 +185,16 @@ if [ "$COMMAND" = "completion" ]; then
 #!/bin/bash
 
 # Bash completion for dcutil
-_source_dcutil_completion() {
+_dcutil() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman lockfile version help completion test"
+    local commands="up down restart enter build clean status stats logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman lockfile version help completion test menu"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local ssh_commands="start add list mount test connect help --help -h"
     local compose_commands="up down restart status list exec logs build clean help --help -h"
+    local stats_commands="show watch detailed top help --help -h"
     local build_commands="info validate clean help --help -h"
     local rebuild_options="--force -f --preserve-volumes --preserve-ssh --preserve-agents --preserve-all --help -h"
     local up_options="--project-home --help -h"
@@ -195,6 +214,10 @@ _source_dcutil_completion() {
             ;;
         compose)
             COMPREPLY=($(compgen -W "${compose_commands}" -- "${cur}"))
+            return
+            ;;
+        stats)
+            COMPREPLY=($(compgen -W "${stats_commands}" -- "${cur}"))
             return
             ;;
         build)
@@ -253,7 +276,7 @@ _source_dcutil_completion() {
     fi
 }
 
-complete -F _source_dcutil_completion dcutil
+complete -F _dcutil dcutil
 BASH_EOF
         elif [ "$shell" = "zsh" ]; then
             cat << 'ZSH_EOF'
@@ -269,6 +292,7 @@ local -a commands
         'build:Build the devcontainer image'
         'clean:Remove containers, volumes, and configuration files'
         'status:Show container status'
+        'stats:Monitor resource usage'
         'logs:Show container logs'
         'list:List running devcontainers'
         'run:Run a command in the container'
@@ -427,7 +451,46 @@ ZSH_EOF
     exit $EXIT_SUCCESS
 fi
 
-validate_command "$COMMAND"
+# Handle interactive menu mode
+if [ "$COMMAND" = "menu" ]; then
+    if command -v show_interactive_menu >/dev/null 2>&1; then
+        while true; do
+            show_interactive_menu
+            choice=$?
+            
+            case $choice in
+                1) COMMAND="up"; break ;;
+                2) COMMAND="enter"; break ;;
+                3) COMMAND="down"; break ;;
+                4) COMMAND="status"; break ;;
+                5) COMMAND="stats"; break ;;
+                6) COMMAND="init"; break ;;
+                7) COMMAND="logs"; break ;;
+                8) COMMAND="volumes"; set -- "list"; break ;;
+                9) COMMAND="help"; break ;;
+                0) continue ;;  # Show menu again
+            esac
+        done
+    else
+        # Fallback to help if UX module not available
+        print_usage
+        exit $EXIT_SUCCESS
+    fi
+fi
+
+# Validate command and offer suggestions for invalid commands
+if ! validate_command "$COMMAND" 2>/dev/null; then
+    # Command is invalid - try to suggest an alternative
+    if command -v suggest_command >/dev/null 2>&1; then
+        if suggest_command "$COMMAND"; then
+            exit $EXIT_INVALID_ARGS
+        fi
+    fi
+    # If no suggestion found, show standard error
+    error "Unknown command: $COMMAND"
+    echo "Run 'dcutil help' to see available commands"
+    exit $EXIT_INVALID_ARGS
+fi
 
 # Allow verify-dialog command be invoked from top-level invocation
 if [ "$COMMAND" = "verify-dialog" ]; then
@@ -450,60 +513,59 @@ print_usage() {
     cat << 'EOF'
 Usage: dcutil <command> [options]
 
-Devcontainer management tool for enhanced development environments.
+Manage your development environment with ease - no Docker knowledge required!
 
 Quick Start:
-  dcutil up                    Start devcontainer
-  dcutil enter                 Enter running devcontainer
-  dcutil down                  Stop devcontainer
-  dcutil restart               Restart devcontainer
+  dcutil up                    Start your development environment
+  dcutil enter                 Open a shell in your environment
+  dcutil down                  Stop your environment
+  dcutil restart               Restart your environment
 
-Commands:
-  up          Start the devcontainer (build if needed)
-  down        Stop and clean up the devcontainer
-  restart     Restart the devcontainer
-  enter       Enter the running devcontainer
-  build       Build the devcontainer image
-   clean       Remove containers, volumes, and configuration files
-  status      Show devcontainer status
-  logs        Show devcontainer logs
-   list        List available devcontainers
-   run         Run a command in the devcontainer
-   init        Initialize devcontainer setup
-   install-agent Install authentication agent in container
-   check       Check devcontainer configuration for errors
-   ssh         SSH key management
-   volumes     Volume management commands
-   compose     Docker Compose environment commands
-   features    Devcontainer Features management
-   advanced    Advanced devcontainer features
-   integration Tool integration features
-   merging     Image metadata merging
-   userprobe   User environment probing
-   hostrequirements Host system requirements validation
-   shutdown    Container shutdown actions
-   rebuild     Rebuild devcontainer with options
-   schema      Devcontainer configuration schema validation
-    podman      Podman backend configuration and status
-    version     Show version information
-    completion  Setup shell completion
-    test        Test dcutil improvements
-    help        Show this help message
-  completion  Setup shell completion
-  test        Test dcutil improvements
+Core Commands:
+  up          Start your development environment (builds if needed)
+  down        Stop your environment
+  restart     Restart your environment
+  enter       Open a shell inside your environment
+  build       Build/rebuild your environment
+  clean       Remove all environment data
+  status      Check if your environment is running
+  stats       Monitor resource usage (CPU, memory, etc.)
+  logs        View environment logs
+  list        See all your development environments
+  run         Run a command in your environment
+
+Setup & Configuration:
+  init        Set up a new development environment
+  check       Verify your configuration is correct
+  volumes     Manage persistent storage
+  features    Add tools and languages to your environment
+
+Advanced:
+  install-agent    Install AI coding assistants
+  ssh              SSH key management
+  compose          Multi-container environments
+  advanced         Advanced configuration options
+  integration      Tool integrations
+  hostrequirements Check system requirements
+  rebuild          Rebuild with specific options
+  
+Utility:
+  version     Show version information
+  completion  Setup command auto-completion
+  help        Show this help message
 
 Examples:
-  dcutil up                    # Start devcontainer
-  dcutil enter                 # Enter container
-  dcutil volumes list          # List volumes
-  dcutil features install      # Install features
-  dcutil compose up            # Start compose environment
-  dcutil hostrequirements validate  # Validate system requirements
+  dcutil up                    # Start your environment
+  dcutil enter                 # Jump into a shell
+  dcutil stats                 # Check resource usage
+  dcutil volumes list          # See your storage
+  dcutil features install      # Add new tools
 
-For more information on specific commands, use:
-   dcutil <command> --help
+For command-specific help:
+  dcutil <command> --help
 
-Documentation: https://github.com/microsoft/devcontainer-spec
+New to this? Just run:
+  dcutil init                  # Guided setup wizard
 EOF
 }
 
@@ -596,6 +658,22 @@ elif [ "$COMMAND" = "build" ]; then
     
     # Standard build command
     docker_build "$@"
+    exit $EXIT_SUCCESS
+elif [ "$COMMAND" = "stats" ]; then
+    # Stats command for resource monitoring
+    determine_project_dir
+    shift 1
+    
+    # Set up environment
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+    
+    # Handle stats command
+    if command -v handle_stats_command >/dev/null 2>&1; then
+        handle_stats_command "$PROJECT_DIR" "$@"
+    else
+        error_exit "Stats functionality not available. Monitoring module not loaded." "$EXIT_CONFIG_ERROR"
+    fi
     exit $EXIT_SUCCESS
 elif [ "$COMMAND" = "hostrequirements" ]; then
     # Host requirements command doesn't need project directory
