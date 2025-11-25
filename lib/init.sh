@@ -75,14 +75,20 @@ choose_template() {
 
     # Parse template names
     local template_names
-    template_names=$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null || echo "")
-    info "Parsed template names: '$template_names'"
-
-    if [ -z "$template_names" ]; then
-        warning "Could not fetch templates, using basic template"
+    if ! template_names=$(echo "$templates_json" | jq -r '.[].name' 2>/dev/null); then
+        warning "Template parsing failed, using basic template"
         echo "basic"
         return
     fi
+    
+    # Check if we got any template names
+    if [ -z "$template_names" ]; then
+        warning "No templates found, using basic template"
+        echo "basic"
+        return
+    fi
+    
+    info "Parsed template names: '$template_names'"
 
     echo -e "${YELLOW}📋 Available Devcontainer Templates:${NC}" >&2
     echo "" >&2
@@ -380,14 +386,21 @@ wizard_with_dialog() {
 
     selected_template_num=$(safe_dialog --title "Devcontainer Template Selection" \
         --menu "Choose a devcontainer template:" "$m_h" "$m_w" "$m_list" \
-        "${template_args[@]}")
+        "${template_args[@]}" 2>/dev/null)
     local dialog_exit=$?
 
     if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
         # User cancelled or pressed ESC
         return 1
     elif [ $dialog_exit -ne 0 ]; then
-        # Error
+        # Error - could be dialog failure, terminal issues, etc.
+        error "Dialog failed with exit code: $dialog_exit"
+        return 2
+    fi
+    
+    # Validate that we got a selection
+    if [ -z "$selected_template_num" ]; then
+        error "No template selection received"
         return 2
     fi
 
@@ -425,7 +438,7 @@ wizard_with_dialog() {
 
         local selected_feature_nums
         selected_feature_nums=$(safe_dialog --title "Devcontainer Features" \
-            --checklist "Select additional features to install:" "$f_h" "$f_w" "$f_list" "$feature_list")
+            --checklist "Select additional features to install:" "$f_h" "$f_w" "$f_list" $feature_list)
         dialog_exit=$?
 
         if [ $dialog_exit -eq 1 ] || [ $dialog_exit -eq 255 ]; then
@@ -604,6 +617,11 @@ EOF
         warning "Non-interactive environment detected. Use 'dcutil init fast' for automated setup."
         exit "$EXIT_INVALID_ARGS"
     fi
+    
+    # Check if terminal and dialog are available
+    if ! command -v dialog >/dev/null 2>&1; then
+        warning "dialog command not found. Using text-based interface."
+    fi
 
     # Get available templates and features
     local templates_json
@@ -612,15 +630,52 @@ EOF
     local features_json
     features_json=$(fetch_available_features)
 
-            # Use dialog interface if available, otherwise fallback to text
-            if has_dialog; then
+# Use dialog interface if available, otherwise fallback to text
+             wizard_with_dialog_failed=false
+             if has_dialog; then
                 info "Devcontainer Initialization Wizard (Enhanced UI)"
                 echo ""
 
                 # Get all config via dialog
-                if ! wizard_with_dialog "$templates_json" "$features_json"; then
-                    info "Wizard cancelled by user"
-                    exit 0
+                local wizard_result
+                wizard_with_dialog "$templates_json" "$features_json"
+                wizard_result=$?
+                
+                case $wizard_result in
+                    0)
+                        # Success
+                        ;;
+                    1)
+                        # User cancelled
+                        info "Wizard cancelled by user"
+                        exit 0
+                        ;;
+                    2)
+                        # Error occurred
+                        error "Wizard encountered an error. Falling back to text interface."
+                        # Fall through to text interface
+                        ;;
+                    *)
+                        # Unknown error
+                        error "Wizard failed with unexpected error code: $wizard_result"
+                        exit $wizard_result
+                        ;;
+                esac
+                
+                # Only proceed with dialog results if wizard succeeded
+                if [ $wizard_result -eq 0 ]; then
+                    # Extract results from global variables
+                    selected_template="$SELECTED_TEMPLATE"
+                    selected_features="$SELECTED_FEATURES"
+                    container_name="$CONTAINER_NAME"
+                    workspace_folder="$WORKSPACE_FOLDER"
+                    container_user_input="$CONTAINER_USER"
+                    mount_choice=$MOUNT_CHOICE
+                    chown_choice=$CHOWN_CHOICE
+                else
+                    # Fall back to text interface
+                    info "Switching to text-based interface"
+                    wizard_with_dialog_failed=true
                 fi
 
                 # Extract results from global variables
@@ -827,7 +882,10 @@ EOF
                 for feature in $(echo "$selected_features_json" | jq -r '.[]'); do
                     if [ "$first" = true ]; then
                         first=false
-                    else
+elif [ "$wizard_with_dialog_failed" = true ]; then
+                info "Devcontainer Initialization Wizard (Text Interface - Dialog failed)"
+                echo ""
+            else
                         features_objects="$features_objects, "
                     fi
                     features_objects="$features_objects\"ghcr.io/devcontainers/features/$feature\": {}"
