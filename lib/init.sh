@@ -2,8 +2,9 @@
 
 # Initialization functionality for dcutil
 
-# Source core functionality
+# Source core functionality first, then template integration
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/template_integration.sh"
 
 # Fetch available devcontainer templates from GitHub
 fetch_available_templates() {
@@ -541,96 +542,82 @@ init_mode() {
 
     case "$INIT_MODE" in
         "--fast"|"fast")
-            info "Creating fast devcontainer configuration..."
-
-            # Create .devcontainer directory
-            if ! mkdir -p .devcontainer 2>/dev/null; then
-                error_exit "Failed to create .devcontainer directory" "$EXIT_PERMISSION_ERROR"
-            fi
-
-# Fast mode defaults (non-interactive)
-            repo_name="$(basename "$PROJECT_DIR")"
-            workspace_folder="/workspaces/$repo_name"
-            container_user="vscode"
-            remote_user="$container_user"
-            set_chown=true
-            mount_project_to_container=true
+            info "Creating devcontainer configuration using official devcontainer templates..."
             
-            base_image="mcr.microsoft.com/devcontainers/base:ubuntu"
-            mounts_snippet=""
+            # Auto-detect language and use appropriate template
+            local template_id
+            template_id=$(detect_project_template)
             
-            # Only add explicit mounts if needed to prevent conflicts
-            if [ "$mount_project_to_container" = true ]; then
-                if should_add_explicit_mounts "$base_image" "false"; then
-                    mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
-                fi
-            fi
-    
-    # For official devcontainer images, check if user specifically wants custom mount options
-    # Most users of official images want the default behavior (no explicit mounts)
-    # But we should allow opting in if needed
-    
-    # For now, skip explicit mounts for official images to prevent conflicts
-    # This can be made configurable in the future if needed
-    return 1  # false - skip explicit mounts
-}
-            mounts_snippet=""
+            # Set template arguments based on template
+            local template_args='{"imageVariant": "noble"}'
+            case "$template_id" in
+                *"go"*)
+                    template_args='{}'
+                    ;;
+                *"javascript-node"*)
+                    template_args='{}'
+                    ;;
+                *"python"*)
+                    template_args='{}'
+                    ;;
+                *"rust"*)
+                    template_args='{}'
+                    ;;
+                *"dotnet"*)
+                    template_args='{}'
+                    ;;
+                *"java"*)
+                    template_args='{}'
+                    ;;
+                *"ubuntu"*)
+                    template_args='{"imageVariant": "noble"}'
+                    ;;
+            esac
             
-            # Only add explicit mounts if not using base images with built-in workspace mounting
-            if [ "$mount_project_to_container" = true ] && [[ "$base_image" != *"base:"* ]]; then
-                mounts_snippet="\"mounts\": [\"source=$PROJECT_DIR,target=$workspace_folder,type=bind,consistency=cached\"],"
-            fi
-
-            if [ "$set_chown" = true ]; then
-                chown_snippet="; if id -u $container_user >/dev/null 2>&1; then if command -v sudo >/dev/null; then sudo chown -R $container_user:$container_user $workspace_folder || true; else chown -R $container_user:$container_user $workspace_folder || true; fi; else echo 'User $container_user not found in image, skipping chown'; fi"
-            else
-                chown_snippet=""
-            fi
-
-# Create basic devcontainer.json
-            if ! cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "Basic Dev Container",
-    "image": "$base_image",
-    
-    "workspaceFolder": "$workspace_folder",
-    "remoteUser": "$remote_user",
-    "containerUser": "$container_user",
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.vscode-json",
-                "ms-vscode.vscode-git"
-            ]
-        }
-    },
-    "postCreateCommand": "apt-get update && apt-get install -y --no-install-recommends curl git && mkdir -p $workspace_folder"
-}
-EOF
-            then
-                error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
-            fi
-
-            validate_json_if_available ".devcontainer/devcontainer.json"
-
-            success "Fast devcontainer configuration created"
-
-            # Offer to start the container immediately
-            if [ -t 0 ] && [ -t 1 ]; then
-                echo ""
-                read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
-                start_now=${start_now:-Y}
-                if [[ "$start_now" =~ ^[Yy] ]]; then
-                    info "Starting devcontainer..."
-                    # Call the up command
-                    if command -v devcontainer_up >/dev/null 2>&1; then
-                        devcontainer_up
-                        return 0
+            # Suggest features based on project type
+            local features_json
+            features_json=$(suggest_features_for_project "$template_id")
+            
+            # Apply the official template using the devcontainer CLI
+            if command -v devcontainer >/dev/null 2>&1; then
+                info "Using official template: $template_id"
+                
+                # Apply the template with suggested features
+                if apply_official_template "$template_id" "$features_json" "$template_args"; then
+                    
+                    # Verify the configuration was created
+                    if [ ! -f ".devcontainer/devcontainer.json" ]; then
+                        error_exit "Failed to generate devcontainer configuration" "$EXIT_CONFIG_ERROR"
                     fi
+                    
+                    # Enhance the generated configuration with dcutil-specific additions
+                    enhance_with_dcutil_additions
+                    
+                    # Skip JSON validation since official templates are already validated
+                    # validate_json_if_available ".devcontainer/devcontainer.json"
+                    success "Devcontainer configuration created using official template"
+                    
+                    # Offer to start the container immediately
+                    if [ -t 0 ] && [ -t 1 ]; then
+                        echo ""
+                        read -r -p "Would you like to start the devcontainer now? (Y/n): " start_now
+                        start_now=${start_now:-Y}
+                        if [[ "$start_now" =~ ^[Yy] ]]; then
+                            info "Starting devcontainer..."
+                            if command -v devcontainer_up >/dev/null 2>&1; then
+                                devcontainer_up
+                                return 0
+                            fi
+                        fi
+                    fi
+                    
+                    info "Run 'dcutil up' to start the container"
+                else
+                    error_exit "Failed to apply official template. Please check your devcontainer CLI installation." "$EXIT_DEVCONTAINER_ERROR"
                 fi
+            else
+                error_exit "devcontainer CLI not found. Please install it with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
             fi
-
-            info "Run 'dcutil up' to start the container"
             ;;
         "--wizard"|"wizard"|"")
     # Check if running interactively
@@ -644,17 +631,17 @@ EOF
         warning "dialog command not found. Using text-based interface."
     fi
 
-    # Get available templates and features
+    # Get available templates and features from official sources
     local templates_json
-    templates_json=$(fetch_available_templates)
+    templates_json=$(fetch_available_templates_official)
 
     local features_json
-    features_json=$(fetch_available_features)
+    features_json=$(fetch_available_features_official)
 
 # Use dialog interface if available, otherwise fallback to text
              wizard_with_dialog_failed=false
              if has_dialog; then
-                info "Devcontainer Initialization Wizard (Enhanced UI)"
+                info "Devcontainer Initialization Wizard (Powered by Official Templates)"
                 echo ""
 
                 # Get all config via dialog
