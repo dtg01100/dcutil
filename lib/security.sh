@@ -606,7 +606,7 @@ install_agent() {
     # Check if container is running
     if ! run_in_container "echo running" 2>/dev/null >/dev/null; then
         warning "Container is not running. Starting it first..."
-        if ! execute_command_in_devcontainer "$PROJECT_DIR" up --workspace-folder . 2>/dev/null; then
+        if ! devcontainer_cli_up "$PROJECT_DIR" 2>/dev/null; then
             error_exit "Failed to start devcontainer for $AGENT installation" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi
