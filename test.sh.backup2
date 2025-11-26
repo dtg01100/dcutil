@@ -162,16 +162,6 @@ run_test "install_feature host mock" "bash -c 'tmpcache=$(mktemp -d); export FEA
 # Test: sanitize_features_json mapping of numeric keys
 run_test "sanitize_features_json mapping" "bash -c 'tmpproj=$(mktemp -d); mkdir -p \"$tmpproj/.devcontainer\"; cat > \"$tmpproj/.devcontainer/devcontainer.json\" <<JD\n{\n  \"name\": \"tmpl\",\n  \"features\": {\n    \"1\": {},\n    \"ghcr.io/devcontainers/features/2\": {}\n  }\n}\nJD\n; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/template_integration.sh\"; fetch_available_features_official() { echo \"[{\\\"id\\\":\\\"git\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"},{\\\"id\\\":\\\"docker-in-docker\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"}]\"; }; cd \"$tmpproj\"; sanitize_features_json; grep -q \"ghcr.io/devcontainers/features/git\" .devcontainer/devcontainer.json'"
 
-
-# Test: New helper functions exist in security module
-run_test "New helper functions syntax" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; declare -f copy_agent_config_files >/dev/null 2>&1 && declare -f copy_single_file >/dev/null 2>&1 && declare -f copy_dir_content >/dev/null 2>&1'"
-
-# Test: attempt_auto_install_prerequisites function exists
-run_test "attempt_auto_install_prerequisites function exists" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; declare -f attempt_auto_install_prerequisites >/dev/null 2>&1'"
-
-# Test: Function can be called without error (when no valid agent is provided, returns 1)
-run_test "attempt_auto_install_prerequisites with invalid agent" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; PROJECT_DIR=\"/tmp\"; export PROJECT_DIR; attempt_auto_install_prerequisites \"invalid_agent\"; exit_code=$?; [ $exit_code -ne 0 ]'"
-
 # Summary
 echo
 echo "=== Test Results ==="

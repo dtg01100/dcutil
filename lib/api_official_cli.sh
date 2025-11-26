@@ -242,7 +242,35 @@ execute_command_in_devcontainer() {
     fi
 
     info "Executing command in devcontainer using official CLI..."
-    devcontainer "exec" "${args[@]}"
+
+    # Try the command execution with error handling and retry logic
+    local max_attempts=3
+    local attempt=1
+    local exit_code=0
+
+    while [ $attempt -le $max_attempts ]; do
+        if [ $attempt -gt 1 ]; then
+            info "Retrying command execution (attempt $attempt/$max_attempts)..."
+            sleep 2  # Brief pause before retry
+        fi
+
+        if devcontainer "exec" "${args[@]}" 2>&1; then
+            info "Command executed successfully in devcontainer"
+            return 0
+        else
+            exit_code=$?
+            if [ $attempt -lt $max_attempts ]; then
+                warning "Command execution failed (exit $exit_code), retrying..."
+            else
+                warning "Command execution failed after $max_attempts attempts (exit $exit_code)"
+                return $exit_code
+            fi
+        fi
+
+        ((attempt++))
+    done
+
+    return $exit_code
 }
 
 # Execute command in container using devcontainer CLI

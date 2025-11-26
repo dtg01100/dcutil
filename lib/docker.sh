@@ -697,17 +697,32 @@ docker_logs() {
 # List running devcontainers
 docker_list() {
     local project_dir="${1:-}"
-    
+
     # If project_dir is not provided, use current working directory
     if [ -z "$project_dir" ]; then
         project_dir="$(pwd)"
     fi
-    
+
     info "Listing running devcontainers..."
     check_docker_daemon
-    
-    if ! docker ps --filter "label=devcontainer=true" --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}" 2>/dev/null | grep -v "CONTAINER ID"; then
-        echo "No running devcontainers found"
+
+    # Get container name for the specific project
+    local container_name
+    container_name=$(get_container_name_for_project "$project_dir")
+
+    # First try with docker container labels
+    if [ -n "$container_name" ]; then
+        # If we have a specific container name for this project, check if it's running
+        if docker ps --filter "name=$container_name" --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}" 2>/dev/null | grep -v "CONTAINER ID" | grep -q .; then
+            docker ps --filter "name=$container_name" --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}" 2>/dev/null
+        else
+            echo "No running devcontainers found for this project"
+        fi
+    else
+        # Fallback to looking for all devcontainers if no project container found
+        if ! docker ps --filter "label=devcontainer=true" --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}" 2>/dev/null | grep -v "CONTAINER ID" | grep -q .; then
+            echo "No running devcontainers found"
+        fi
     fi
 }
 
@@ -1306,238 +1321,6 @@ devcontainer_restart() {
     info "Restarting devcontainer..."
     docker_restart "$PROJECT_DIR"
     success "Devcontainer restarted successfully"
-}
-
-devcontainer_enter() {
-    info "Entering container..."
-    docker_enter "$PROJECT_DIR"
-}
-
-devcontainer_status() {
-    info "Checking container status..."
-    docker_status "$PROJECT_DIR"
-}
-
-devcontainer_logs() {
-    info "Showing container logs..."
-    docker_logs "$PROJECT_DIR"
-}
-
-devcontainer_list() {
-    info "Listing running devcontainers..."
-    docker_list "$PROJECT_DIR"
-}
-
-devcontainer_run() {
-    validate_run_command "$@"
-    info "Running command in container: $*"
-    docker_run "$PROJECT_DIR" "$@"
-}
-
-devcontainer_build() {
-    info "Using official devcontainer CLI for build with dcutil enhancements..."
-    devcontainer_cli_build "$PROJECT_DIR"
-    success "Build completed"
-}
-
-devcontainer_clean() {
-    info "Cleaning up devcontainer..."
-    docker_clean "$PROJECT_DIR"
-    success "Cleanup completed"
-}
-
-# Devcontainer Features wrapper functions
-devcontainer_features_install() {
-    info "Installing Devcontainer Features..."
-    if command -v install_features >/dev/null 2>&1; then
-        install_features
-        success "Features installation completed"
-    else
-        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_features_info() {
-    info "Showing Devcontainer Features information..."
-    if command -v show_features_info >/dev/null 2>&1; then
-        show_features_info
-    else
-        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_features_validate() {
-    info "Validating Devcontainer Features configuration..."
-    if command -v validate_features_config >/dev/null 2>&1; then
-        validate_features_config
-    else
-        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_features_clean() {
-    info "Cleaning Devcontainer Features cache..."
-    if command -v clean_features_cache >/dev/null 2>&1; then
-        clean_features_cache
-        success "Features cache cleaned"
-    else
-        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_features_update() {
-    info "Updating Devcontainer Features..."
-    if command -v update_features >/dev/null 2>&1; then
-        update_features
-        success "Features update completed"
-    else
-        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_features_check_updates() {
-    info "Checking for Devcontainer Features updates..."
-    if command -v check_features_updates >/dev/null 2>&1; then
-        check_features_updates
-    else
-        error_exit "Features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-# Advanced Features wrapper functions
-devcontainer_advanced_info() {
-    info "Showing advanced features information..."
-    if command -v show_advanced_features_info >/dev/null 2>&1; then
-        show_advanced_features_info
-    else
-        error_exit "Advanced features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_advanced_validate() {
-    info "Validating advanced features configuration..."
-    if command -v validate_advanced_features_config >/dev/null 2>&1; then
-        validate_advanced_features_config
-    else
-        error_exit "Advanced features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_advanced_apply() {
-    info "Applying advanced features to running container..."
-    if command -v apply_advanced_features >/dev/null 2>&1; then
-        apply_advanced_features
-        success "Advanced features applied successfully"
-    else
-        error_exit "Advanced features module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-# Integration wrapper functions
-devcontainer_integration_info() {
-    info "Showing integration information..."
-    if command -v show_tool_integration_info >/dev/null 2>&1; then
-        show_tool_integration_info
-    else
-        error_exit "Integration module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_integration_validate() {
-    info "Validating integration configuration..."
-    if command -v validate_tool_integration_config >/dev/null 2>&1; then
-        validate_tool_integration_config
-    else
-        error_exit "Integration module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_integration_apply() {
-    info "Applying integration features to running container..."
-    if command -v apply_tool_integration >/dev/null 2>&1; then
-        apply_tool_integration
-        success "Integration features applied successfully"
-    else
-        error_exit "Integration module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-# Merging wrapper functions
-devcontainer_merging_show() {
-    info "Showing merged configuration..."
-    if command -v show_merged_config >/dev/null 2>&1; then
-        show_merged_config
-    else
-        error_exit "Merging module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_merging_validate() {
-    info "Validating merged configuration..."
-    if command -v validate_merged_config >/dev/null 2>&1; then
-        validate_merged_config
-    else
-        error_exit "Merging module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_merging_cleanup() {
-    info "Cleaning up merged configuration..."
-    if command -v cleanup_merged_config >/dev/null 2>&1; then
-        cleanup_merged_config
-        success "Merged configuration cleaned up"
-    else
-        error_exit "Merging module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-# Userprobe wrapper functions
-devcontainer_userprobe_probe() {
-    info "Probing user environment..."
-    if command -v probe_user_environment >/dev/null 2>&1; then
-        probe_user_environment
-        success "Environment probing completed"
-    else
-        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_userprobe_show() {
-    info "Showing probed environment..."
-    if command -v show_probed_environment >/dev/null 2>&1; then
-        show_probed_environment
-    else
-        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_userprobe_apply() {
-    info "Applying probed environment to container..."
-    if command -v apply_probed_environment >/dev/null 2>&1; then
-        apply_probed_environment
-        success "Probed environment applied to container"
-    else
-        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_userprobe_validate() {
-    info "Validating userEnvProbe configuration..."
-    if command -v validate_user_env_probe_config >/dev/null 2>&1; then
-        validate_user_env_probe_config
-    else
-        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
-    fi
-}
-
-devcontainer_userprobe_cleanup() {
-    info "Cleaning up probed environment..."
-    if command -v cleanup_probed_environment >/dev/null 2>&1; then
-        cleanup_probed_environment
-        success "Probed environment cleaned up"
-    else
-        error_exit "Userprobe module not available" "$EXIT_CONFIG_ERROR"
-    fi
 }
 
 # Initialize Podman backend on startup
