@@ -603,6 +603,12 @@ install_agent() {
     check_devcontainer_cli
     check_docker_daemon
 
+    # Offer to auto-install prerequisites using devcontainer features if needed
+    if ! attempt_auto_install_prerequisites "$AGENT"; then
+        # If auto-install failed or was declined, proceed with manual installation
+        info "Proceeding with manual installation..."
+    fi
+
     # Check if container is running
     if ! run_in_container "echo running" 2>/dev/null >/dev/null; then
         warning "Container is not running. Starting it first..."
@@ -679,7 +685,18 @@ install_agent() {
         # If we can update devcontainer.json, do so and note that container recreation is required
         if [ -n "$cfg_src" ] && [ -n "$cfg_tgt" ]; then
             if add_mount_to_devcontainer "$cfg_src" "$cfg_tgt" "$cfg_type" prompt; then
-                warning "Mount added to devcontainer.json; you need to recreate the container for live mount to take effect"
+                warning "Mount added to devcontainer.json; the container needs to be recreated for live mount to take effect"
+                info "Would you like me to restart the container for you now?"
+                if confirm_prompt "Restart container now? [Y/n]"; then
+                    info "Restarting container to apply mount configuration..."
+                    if devcontainer_cli_up "$PROJECT_DIR" 2>/dev/null; then
+                        success "Container restarted with new mount configuration"
+                    else
+                        warning "Could not restart container automatically. Please run 'dcutil up' to restart."
+                    fi
+                else
+                    echo -e "${YELLOW}⚠️  Remember to run 'dcutil up' to restart your container to apply the new mount.${NC}"
+                fi
             else
                 info "Could not update devcontainer.json; copying files as a fallback"
             fi
@@ -781,4 +798,171 @@ install_agent() {
     success "$AGENT installed successfully in devcontainer"
     info "Agent installed via npm: $AGENT"
     info "To run $AGENT from host: dcutil run '$AGENT' or dcutil run 'npx $AGENT'"
+}
+
+# Function to automatically install prerequisites for agents using devcontainer features
+# This attempts to add the necessary features to the devcontainer.json file
+attempt_auto_install_prerequisites() {
+    local agent="$1"
+    local feature_id=""
+    local feature_opts="{}"
+    local need_restart=false
+    
+    info "Checking for optimal installation method for $agent..."
+    
+    case "$agent" in
+        "opencode")
+            # opencode requires Node.js for npm installation
+            feature_id="ghcr.io/devcontainers/features/node:1"
+            info "Detected $agent requires Node.js - attempting to add feature..."
+            ;;
+        "copilot-cli"|"cody"|"qwen-cli"|"gemini"|"claude-cli"|"openai-cli")
+            # These agents are npm-based and require Node.js
+            feature_id="ghcr.io/devcontainers/features/node:1"
+            info "Detected $agent requires Node.js - attempting to add feature..."
+            ;;
+        "aider")
+            # aider is pip-based and requires Python
+            feature_id="ghcr.io/devcontainers/features/python"
+            info "Detected $agent requires Python - attempting to add feature..."
+            ;;
+        *)
+            # For other agents, skip automatic feature installation
+            return 1  # Not a recognized agent that benefits from auto-feature install
+            ;;
+    esac
+    
+    # Check if we have a devcontainer configuration - try both PROJECT_DIR and current directory
+    local config_path=""
+    local current_dir_config=""
+
+    # First check the PROJECT_DIR (as passed to the function)
+    if [ -f "$PROJECT_DIR/.devcontainer/devcontainer.json" ]; then
+        config_path="$PROJECT_DIR/.devcontainer/devcontainer.json"
+    elif [ -f "$PROJECT_DIR/.devcontainer.json" ]; then
+        config_path="$PROJECT_DIR/.devcontainer.json"
+    elif [ -f "./.devcontainer/devcontainer.json" ]; then
+        # If no config in PROJECT_DIR, try current working directory
+        config_path="./.devcontainer/devcontainer.json"
+    elif [ -f "./.devcontainer.json" ]; then
+        # Also try current working directory with alternate format
+        config_path="./.devcontainer.json"
+    else
+        info "No devcontainer.json found in project or current directory. Automatic feature installation requires a devcontainer configuration."
+        return 1
+    fi
+    
+    # Check if the feature is already configured
+    local feature_already_exists=false
+    if command -v jq >/dev/null 2>&1; then
+        if jq -e ".features[\"$feature_id\"]" "$config_path" >/dev/null 2>&1; then
+            info "Feature $feature_id is already configured in devcontainer.json"
+            feature_already_exists=true
+        fi
+    fi
+
+    # If the feature doesn't exist, prompt user to add it
+    if [ "$feature_already_exists" = false ]; then
+        # Prompt user to add the feature
+        echo ""
+        echo -e "${YELLOW}🚀 Quick Setup Option:${NC}"
+        echo -e "${YELLOW}Add the recommended feature ($feature_id) to your devcontainer for better $agent integration?${NC}"
+        echo -e "${YELLOW}This will automatically install $feature_id dependencies in your container${NC}"
+        echo ""
+
+        if confirm_prompt "Add feature to devcontainer? (Recommended) [Y/n]"; then
+            # Attempt to add the feature automatically
+            if add_feature_to_devcontainer "$config_path" "$feature_id" "$feature_opts"; then
+                echo ""
+                echo -e "${YELLOW}✅ Feature $feature_id added to your devcontainer configuration.${NC}"
+                echo -e "${YELLOW}The container needs to be recreated for the new feature to take effect.${NC}"
+                echo -e "${YELLOW}Would you like to restart your container now?${NC}"
+                echo ""
+
+                if confirm_prompt "Restart container now? [Y/n]"; then
+                    info "Restarting container to apply new feature..."
+                    # Use devcontainer CLI to restart with new configuration
+                    if devcontainer_cli_up "$PROJECT_DIR" 2>/dev/null; then
+                        success "Container restarted with new feature $feature_id"
+                        need_restart="true"
+                    else
+                        # If automatic restart fails, offer to try alternative methods
+                        warning "Could not restart container automatically."
+                        if confirm_prompt "Try stopping and starting the container manually? [Y/n]"; then
+                            info "Attempting to stop and restart container..."
+                            if devcontainer_cli_down "$PROJECT_DIR" 2>/dev/null && devcontainer_cli_up "$PROJECT_DIR" 2>/dev/null; then
+                                success "Container restarted with new feature $feature_id"
+                                need_restart="true"
+                            else
+                                warning "Could not restart container. Please run 'dcutil up' to restart."
+                            fi
+                        else
+                            warning "Could not restart container. Please run 'dcutil up' to restart."
+                        fi
+                    fi
+                else
+                    warning "⚠️  Container needs to be restarted to apply the new feature. Would you like to do it now?"
+                    if confirm_prompt "Run 'dcutil up' now to restart your container? [Y/n]"; then
+                        info "Restarting container to apply new feature..."
+                        if devcontainer_cli_up "$PROJECT_DIR" 2>/dev/null; then
+                            success "Container restarted with new feature $feature_id"
+                            need_restart="true"
+                        else
+                            warning "Failed to restart container. Please try running 'dcutil up' manually later."
+                        fi
+                    else
+                        echo -e "${YELLOW}⚠️  Remember to run 'dcutil up' to restart your container to apply the new feature.${NC}"
+                    fi
+                fi
+                return 0  # Success
+            else
+                warning "Could not add feature to devcontainer.json automatically"
+                return 1  # Failed
+            fi
+        else
+            info "Skipping automatic feature installation - proceeding with manual approach"
+            return 1  # User declined
+        fi
+    else
+        # Feature already exists, proceed with manual installation
+        info "Feature $feature_id already exists in devcontainer configuration, proceeding with manual installation"
+    fi
+}
+
+# Function to add a feature to the devcontainer.json
+add_feature_to_devcontainer() {
+    local config_path="$1"
+    local feature_id="$2"
+    local feature_opts="$3"
+
+    # Check if jq is available
+    if ! command -v jq >/dev/null 2>&1; then
+        warning "jq command not available. Cannot modify devcontainer.json automatically."
+        return 1
+    fi
+
+    # Create a temporary file for the updated configuration
+    local temp_config
+    temp_config=$(mktemp)
+
+    # Add or update the features section in the devcontainer.json
+    # Using eval to properly handle JSON values (simpler approach)
+    if jq -e ".features" "$config_path" >/dev/null 2>&1; then
+        # Features section exists, update it
+        # Properly format the jq command with escaped quotes for feature_id and feature_opts
+        jq --argjson fopts "$feature_opts" ".features[\"$feature_id\"] = \$fopts" "$config_path" > "$temp_config" || {
+            rm -f "$temp_config"
+            return 1
+        }
+    else
+        # Features section doesn"t exist, create it
+        jq --argjson fopts "$feature_opts" ".features = {\"$feature_id\": \$fopts}" "$config_path" > "$temp_config" || {
+            rm -f "$temp_config"
+            return 1
+        }
+    fi
+
+    # Move the updated config into place
+    mv "$temp_config" "$config_path"
+    return 0
 }
