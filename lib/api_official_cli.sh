@@ -232,8 +232,14 @@ execute_command_in_devcontainer() {
         args+=("--config" "$config_path")
     fi
 
-    # Add the command to execute
-    args+=("$@")
+    # For single commands, wrap with shell to properly execute
+    if [ $# -eq 1 ]; then
+        # If single argument is a command with spaces, wrap it in shell
+        args+=("/bin/sh" "-c" "$1")
+    else
+        # If multiple arguments, treat as command + args
+        args+=("$@")
+    fi
 
     info "Executing command in devcontainer using official CLI..."
     devcontainer "exec" "${args[@]}"
