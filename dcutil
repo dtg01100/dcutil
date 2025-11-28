@@ -155,13 +155,15 @@ test_dcutil_improvements() {
     echo "Testing complete!"
 }
 
-# Show first-time welcome if this is the first run
-if command -v show_first_time_welcome >/dev/null 2>&1; then
-    if show_first_time_welcome; then
-        : # Continue normally
-    else
-        # User chose interactive menu from welcome
-        COMMAND="menu"
+# Show first-time welcome if this is the first run (skip in non-interactive/CI)
+if [ -t 0 ] && [ -z "${CI:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
+    if command -v show_first_time_welcome >/dev/null 2>&1; then
+        if show_first_time_welcome; then
+            : # Continue normally
+        else
+            # User chose interactive menu from welcome
+            COMMAND="menu"
+        fi
     fi
 fi
 

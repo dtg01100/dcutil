@@ -10,14 +10,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # detect_cli_backend() moved to core.sh to avoid duplication
 
-    # Fallback to dcutil's backend setting
-    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
-        DETECTED_BACKEND="podman"
-    else
-        DETECTED_BACKEND="docker"
-    fi
-}
-
 # Verify devcontainer CLI version compatibility
 verify_devcontainer_cli() {
     if ! command -v devcontainer >/dev/null 2>&1; then

@@ -33,13 +33,19 @@ DETECTED_BACKEND=""
 check_root_user() {
     if [ "$(id -u)" -eq 0 ]; then
         warning "Running as root user - this may cause permission issues with devcontainers"
-        if [ -t 0 ] && [ "${DCUTIL_ALLOW_ROOT:-}" != "1" ]; then
+        if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ] || [ "${DCUTIL_ALLOW_ROOT:-}" = "1" ]; then
+            return 0
+        fi
+        if [ -t 0 ]; then
             echo ""
             read -r -p "Continue anyway? (y/N): " confirm
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Operation cancelled"
                 exit $EXIT_PERMISSION_ERROR
             fi
+        else
+            info "Non-interactive mode - cancelling root operation"
+            exit $EXIT_PERMISSION_ERROR
         fi
     fi
 }
