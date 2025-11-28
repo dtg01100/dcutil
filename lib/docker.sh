@@ -1318,6 +1318,10 @@ devcontainer_restart() {
     success "Devcontainer restarted successfully"
 }
 
+devcontainer_enter() {
+    docker_enter "$PROJECT_DIR"
+}
+
 # Initialize Podman backend on startup
 if command -v init_podman_backend >/dev/null 2>&1; then
     init_podman_backend
