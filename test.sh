@@ -172,6 +172,20 @@ run_test "attempt_auto_install_prerequisites function exists" "bash -c 'source \
 # Test: Function can be called without error (when no valid agent is provided, returns 1)
 run_test "attempt_auto_install_prerequisites with invalid agent" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; PROJECT_DIR=\"/tmp\"; export PROJECT_DIR; attempt_auto_install_prerequisites \"invalid_agent\"; exit_code=$?; [ $exit_code -ne 0 ]'"
 
+# Interactive UI Tests using expect
+# Test: Interactive menu functionality
+if command -v expect >/dev/null 2>&1; then
+    run_test "Interactive menu test" "cd \"$SCRIPT_DIR/../test-menu\" && expect \"$SCRIPT_DIR/../test_menu.expect\" >/dev/null 2>&1"
+
+    run_test "Fast init interactive test" "cd \"$SCRIPT_DIR/../test-fast-init\" && rm -rf .devcontainer && expect \"$SCRIPT_DIR/../test_fast_init.expect\" >/dev/null 2>&1"
+
+    run_test "Wizard basic interactive test" "cd \"$SCRIPT_DIR/../test-wizard-comprehensive\" && rm -rf .devcontainer && timeout 180 expect \"$SCRIPT_DIR/../test_wizard_comprehensive.expect\" >/dev/null 2>&1"
+
+    run_test "Error condition test" "cd \"$SCRIPT_DIR/../test-error-conditions\" && mkdir -p .devcontainer && echo '{\"name\": \"existing\"}' > .devcontainer/devcontainer.json && expect \"$SCRIPT_DIR/../test_error_existing_config.expect\" >/dev/null 2>&1"
+else
+    test_skip "Interactive tests (expect not available)"
+fi
+
 # Summary
 echo
 echo "=== Test Results ==="

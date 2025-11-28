@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y docker.io jq curl expect
+
+    - name: Install devcontainer CLI
+      run: |
+        npm install -g @devcontainers/cli
+
+    - name: Install Podman (for backend testing)
+      run: |
+        sudo apt-get install -y podman
+
+    - name: Make scripts executable
+      run: |
+        chmod +x dcutil
+        chmod +x test.sh
+        find . -name "*.sh" -exec chmod +x {} \;
+
+    - name: Run basic functionality tests
+      run: |
+        ./dcutil version
+        ./dcutil help | grep -q "Usage"
+        ./dcutil status | grep -q "status\|Status"
+
+    - name: Run comprehensive test suite
+      run: |
+        ./test.sh
+
+    - name: Run security and functionality tests
+      run: |
+        # Test that our security fixes work
+        ./minimal_test.sh
+        ./targeted_functionality_test.sh
+
+    - name: Test interactive features
+      run: |
+        ./run_expect_tests.sh
+
+    - name: Test project initialization
+      run: |
+        mkdir -p /tmp/test-ci-project
+        cd /tmp/test-ci-project
+        /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil init fast
+        /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil schema validate
+
+    - name: Test volume management
+      run: |
+        cd /tmp/test-ci-project
+        /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil volumes list
+        /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil volumes add test-vol /tmp /tmp bind
+
+    - name: Test library syntax
+      run: |
+        for lib in lib/*.sh; do
+          bash -n "$lib" || exit 1
+        done
+
+    - name: Test completion generation
+      run: |
+        ./dcutil completion bash | grep -q "function"
+        ./dcutil completion zsh | grep -q "compdef"
+
+    - name: Test error handling
+      run: |
+        # Should fail with exit code 1
+        ./dcutil nonexistent-command 2>/dev/null; [ $? -eq 1 ] || exit 1
+        ./dcutil run 2>/dev/null; [ $? -eq 1 ] || exit 1
+        ./dcutil status /nonexistent/path 2>/dev/null; [ $? -eq 1 ] || exit 1
+
+    - name: Test configuration validation
+      run: |
+        # Test malformed JSON
+        mkdir -p /tmp/test-config
+        cd /tmp/test-config
+        echo '{"name": "test", "image": }' > .devcontainer/devcontainer.json
+        /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil schema validate 2>&1 | grep -q "error\|Error"
+
+    - name: Test backend switching
+      run: |
+        # Test Docker backend
+        ./dcutil status | grep -q "Docker"
+        # Test Podman backend
+        DCUTIL_BACKEND=podman ./dcutil status | grep -q "Podman\|backend"
+
+    - name: Clean up
+      run: |
+        docker system prune -f || true
+        podman system prune -f || true

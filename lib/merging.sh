@@ -6,6 +6,19 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Wrapper functions for main script compatibility
+devcontainer_merging_show() {
+    show_merged_config
+}
+
+devcontainer_merging_validate() {
+    validate_merged_config
+}
+
+devcontainer_merging_cleanup() {
+    cleanup_merged_config
+}
+
 # Global variables for metadata merging
 IMAGE_METADATA_MERGED=()
 MERGED_CONFIG_FILE=""

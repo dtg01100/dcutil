@@ -6,6 +6,19 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Wrapper functions for main script compatibility
+devcontainer_integration_info() {
+    show_tool_integration_info
+}
+
+devcontainer_integration_validate() {
+    validate_tool_integration_config
+}
+
+devcontainer_integration_apply() {
+    apply_tool_integration
+}
+
 # Global variables for tool integration
 CUSTOMIZATIONS_CONFIG=""
 IMAGE_METADATA=()

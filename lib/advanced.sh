@@ -6,6 +6,19 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Wrapper functions for main script compatibility
+devcontainer_advanced_info() {
+    show_advanced_features_info
+}
+
+devcontainer_advanced_validate() {
+    validate_advanced_features_config
+}
+
+devcontainer_advanced_apply() {
+    apply_advanced_features
+}
+
 # Global variables for advanced features
 UPDATE_REMOTE_USER_UID=false
 ENTRYPOINT_OVERRIDE=""

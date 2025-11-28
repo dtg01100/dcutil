@@ -69,9 +69,9 @@ get_volume_config_file() {
 
     if [ -n "$cfg" ]; then
         if [ -f "$cfg" ]; then
-        echo "$cfg"
-        return 0
-    else
+            echo "$cfg"
+            return 0
+        else
             cfg=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
         fi
 
@@ -127,7 +127,6 @@ add_volume() {
     fi
 
     if [ "$volume_exists" = true ]; then
-        close_lock "$fd"
         error_exit "Volume '$volume_name' already exists" "$EXIT_CONFIG_ERROR"
     fi
 
@@ -136,6 +135,9 @@ add_volume() {
         # Expand tilde
         host_path="${host_path/#\~/$HOME}"
 
+        # Validate path for security
+        validate_safe_path "$host_path"
+
         if [ ! -e "$host_path" ]; then
             if ! [ -t 0 ]; then
                 # Non-interactive: create directory if it doesn't exist
@@ -143,7 +145,6 @@ add_volume() {
             else
                 if confirm_prompt "Host path '$host_path' does not exist. Create it? (y/N):"; then
                     mkdir -p "$host_path" || {
-                    close_lock "$fd"
                         error_exit "Failed to create host path '$host_path'" "$EXIT_CONFIG_ERROR"
                     }
                 else

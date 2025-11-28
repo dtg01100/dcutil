@@ -6,6 +6,23 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Wrapper functions for main script compatibility
+devcontainer_shutdown_execute() {
+    execute_shutdown_action
+}
+
+devcontainer_shutdown_show() {
+    show_shutdown_action_config
+}
+
+devcontainer_shutdown_validate() {
+    validate_shutdown_action_config
+}
+
+devcontainer_shutdown_cleanup() {
+    cleanup_shutdown_action
+}
+
 # Global variables for shutdown actions
 SHUTDOWN_ACTION=""
 SHUTDOWN_COMMANDS=()

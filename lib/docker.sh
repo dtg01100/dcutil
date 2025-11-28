@@ -753,10 +753,15 @@ docker_run() {
     fi
 
     if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$*"
+        # Use devcontainer CLI which handles argument passing securely
+        execute_command_in_devcontainer "$PROJECT_DIR" "$@"
         return $?
     else
-        if ! docker exec "$container_id" /bin/sh -c "$*"; then
+        # Use docker exec with proper argument passing to avoid shell injection
+        # First argument is the command, rest are arguments
+        local cmd="$1"
+        shift
+        if ! docker exec "$container_id" "$cmd" "$@"; then
             error_exit "Failed to run command in container" "$EXIT_DEVCONTAINER_ERROR"
         fi
     fi

@@ -6,6 +6,27 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Wrapper functions for main script compatibility
+devcontainer_userprobe_probe() {
+    probe_user_environment
+}
+
+devcontainer_userprobe_show() {
+    show_probed_environment
+}
+
+devcontainer_userprobe_validate() {
+    validate_user_env_probe_config
+}
+
+devcontainer_userprobe_apply() {
+    apply_user_env_probe
+}
+
+devcontainer_userprobe_cleanup() {
+    cleanup_probed_environment
+}
+
 # Global variables for userEnvProbe
 USER_ENV_PROBE=""
 PROBED_ENV_VARS=()

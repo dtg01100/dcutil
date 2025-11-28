@@ -215,10 +215,15 @@ validate_run_command() {
         error_exit "run command requires a command to execute. Usage: dcutil run [project_path] <command>" "$EXIT_INVALID_ARGS"
     fi
 
-    # Basic input validation - check for obviously dangerous patterns
+    # Basic input validation - block dangerous patterns
     local cmd_string="$*"
     if [[ "$cmd_string" =~ (\$\(|\`|\$\{.*\$\{.*\}) ]]; then
-        warning "Command contains potentially dangerous shell constructs. Use with caution."
+        error_exit "Command contains dangerous shell constructs that are not allowed: $cmd_string" "$EXIT_INVALID_ARGS"
+    fi
+
+    # Additional security checks for common injection patterns
+    if [[ "$cmd_string" =~ (\;|\||\&|>|<\||<<|>>|\$\(.*\)) ]]; then
+        error_exit "Command contains shell metacharacters that are not allowed: $cmd_string" "$EXIT_INVALID_ARGS"
     fi
 }
 
@@ -268,8 +273,27 @@ validate_init_mode() {
 # Enhanced path validation
 validate_safe_path() {
     local path="$1"
+
+    # Check for dangerous characters
     if [[ "$path" == *"'"'"'* ]] || [[ "$path" == *'$'* ]] || [[ "$path" == *"\""* ]]; then
         error_exit "Path contains unsafe characters: $path" "$EXIT_INVALID_ARGS"
+    fi
+
+    # Prevent path traversal attacks
+    if [[ "$path" == *".."* ]]; then
+        # Allow .. only if it's part of a legitimate relative path structure
+        # But block obvious traversal attempts
+        if [[ "$path" =~ ^\.\./ || "$path" =~ /\.\./ || "$path" =~ ^\.\.$ ]]; then
+            error_exit "Path traversal not allowed: $path" "$EXIT_INVALID_ARGS"
+        fi
+    fi
+
+    # Additional security checks
+    if [[ "$path" == "/"* ]] && [[ "$path" != "/tmp"* ]] && [[ "$path" != "/home"* ]] && [[ "$path" != "/usr/local"* ]]; then
+        # Allow some system paths but warn about sensitive ones
+        if [[ "$path" == "/etc"* ]] || [[ "$path" == "/var"* ]] || [[ "$path" == "/root"* ]]; then
+            warning "Accessing system path: $path"
+        fi
     fi
 }
 
