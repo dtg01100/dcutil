@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-
+#
+# dcutil - Development Container Utility
+# https://github.com/dtg01100/dcutil
+#
 # Core functionality for dcutil
 # Handles basic operations and command routing
 
@@ -18,6 +21,9 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
+
+# Constants
+readonly DEFAULT_DISK_SPACE_MB=100  # Minimum disk space requirement in MB
 
 # Global variables
 PROJECT_DIR=""
@@ -39,8 +45,8 @@ check_root_user() {
 }
 
 check_disk_space() {
-    local required_mb="${1:-100}"
-    local available_mb
+    local required_mb="${1:-$DEFAULT_DISK_SPACE_MB}"
+    local available_mb=""
 
     # Check available disk space in MB
     if command -v df >/dev/null 2>&1; then
@@ -170,7 +176,7 @@ confirm_prompt() {
         return 1
     fi
 
-    local ans
+    local ans=""
     read -r -p "$prompt_text " ans
     ans="${ans:-$default}"
     if [[ "$ans" =~ ^[Yy] ]]; then

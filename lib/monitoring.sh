@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-
+#
+# dcutil - Development Container Utility
+# https://github.com/dtg01100/dcutil
+#
 # Container resource monitoring for dcutil
 # Provides CPU, memory, network, and disk I/O statistics
 

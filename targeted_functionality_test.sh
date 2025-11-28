@@ -4,7 +4,7 @@
 # Focus on specific failing areas and edge cases
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DCUTIL="$SCRIPT_DIR/dcutil-files/dcutil"
+DCUTIL="$SCRIPT_DIR/dcutil"
 
 echo "🎯 TARGETED DCUTIL FUNCTIONALITY TESTS"
 echo "====================================="
@@ -92,11 +92,15 @@ echo "=================================="
 # Test different project types
 PROJECTS=("test-go" "test-node" "test-python" "test-rust" "test-ubuntu")
 
+echo ""
+echo "Testing project directories..."
 for project in "${PROJECTS[@]}"; do
     if [ -d "$SCRIPT_DIR/$project" ]; then
         echo "Testing $project..."
         run_test "$project status" "cd $SCRIPT_DIR/$project && \"$DCUTIL\" status 2>&1 | grep -q 'status\|Status'" 0
         run_test "$project schema" "cd $SCRIPT_DIR/$project && \"$DCUTIL\" schema validate 2>&1 | grep -q 'valid\|Valid'" 0
+    else
+        echo "⏭️  Skipping $project (directory not found - likely CI environment)"
     fi
 done
 

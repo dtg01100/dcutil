@@ -4,15 +4,28 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Constants
+readonly TEMPLATE_CACHE_TTL=3600  # 1 hour in seconds
+readonly FEATURE_CACHE_TTL=3600   # 1 hour in seconds
+
 # Get available templates from official registry
 fetch_available_templates_official() {
     local cache_file="$HOME/.cache/dcutil/official_templates.json"
-    local cache_age=3600  # 1 hour
+    local cache_age=$TEMPLATE_CACHE_TTL
 
     # Check if cache exists and is recent
-    if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0))) -lt $cache_age ]; then
-        cat "$cache_file" 2>/dev/null || get_fallback_templates
-        return
+    if [ -f "$cache_file" ]; then
+        local current_time
+        local file_time
+        local cache_delta
+        current_time=$(date +%s)
+        file_time=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+        cache_delta=$((current_time - file_time))
+        
+        if [ "$cache_delta" -lt "$cache_age" ]; then
+            cat "$cache_file" 2>/dev/null || get_fallback_templates
+            return
+        fi
     fi
 
     # Create cache directory
@@ -23,7 +36,7 @@ fetch_available_templates_official() {
         info "Fetching official devcontainer templates from GitHub..."
         local templates_json="[]"
         local api_url="https://api.github.com/repos/devcontainers/templates/contents/src"
-        local template_dirs
+        local template_dirs=""
         template_dirs=$(curl -s "$api_url" | jq -r '.[] | select(.type == "dir") | .name' 2>/dev/null || echo "")
 
         if [ -n "$template_dirs" ]; then
@@ -31,7 +44,7 @@ fetch_available_templates_official() {
             local first=true
             for template in $template_dirs; do
                 local template_url="https://raw.githubusercontent.com/devcontainers/templates/main/src/${template}/devcontainer-template.json"
-                local template_info
+                local template_info=""
                 template_info=$(curl -s "$template_url" 2>/dev/null)
                 if [ $? -eq 0 ] && [ -n "$template_info" ]; then
                     if [ "$template" = "python" ]; then echo "template_info: $template_info" >&2; fi
@@ -82,12 +95,21 @@ EOF
 # Get available features from official registry
 fetch_available_features_official() {
     local cache_file="$HOME/.cache/dcutil/official_features.json"
-    local cache_age=3600  # 1 hour
+    local cache_age=$FEATURE_CACHE_TTL
 
     # Check if cache exists and is recent
-    if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0))) -lt $cache_age ]; then
-        cat "$cache_file" 2>/dev/null || get_fallback_features
-        return
+    if [ -f "$cache_file" ]; then
+        local current_time
+        local file_time
+        local cache_delta
+        current_time=$(date +%s)
+        file_time=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+        cache_delta=$((current_time - file_time))
+        
+        if [ "$cache_delta" -lt "$cache_age" ]; then
+            cat "$cache_file" 2>/dev/null || get_fallback_features
+            return
+        fi
     fi
 
     # Create cache directory
@@ -98,7 +120,7 @@ fetch_available_features_official() {
         info "Fetching official devcontainer features from GitHub..."
         local features_json="[]"
         local api_url="https://api.github.com/repos/devcontainers/features/contents/src"
-        local feature_dirs
+        local feature_dirs=""
         feature_dirs=$(curl -s "$api_url" | jq -r '.[] | select(.type == "dir") | .name' 2>/dev/null || echo "")
 
         if [ -n "$feature_dirs" ]; then
@@ -106,7 +128,7 @@ fetch_available_features_official() {
             local first=true
             for feature in $feature_dirs; do
                 local feature_url="https://raw.githubusercontent.com/devcontainers/features/main/src/${feature}/devcontainer-feature.json"
-                local feature_info
+                local feature_info=""
                 feature_info=$(curl -s "$feature_url" 2>/dev/null)
                 if [ $? -eq 0 ] && [ -n "$feature_info" ]; then
                     local id name description
@@ -267,6 +289,9 @@ enhance_with_dcutil_additions() {
     # The official template already includes features and proper structure
     local temp_file="${devcontainer_file}.tmp"
     
+    # Set up cleanup trap
+    trap 'rm -f "$temp_file"' RETURN EXIT INT TERM
+    
     # Add our enhancement comment while preserving everything else
     # Just copy the file without adding comments to JSON
     cp "$devcontainer_file" "$temp_file"
@@ -296,6 +321,10 @@ sanitize_features_json() {
         return 0
     fi
 
+    # Set up cleanup trap for temp file
+    local temp_file="$dev_file.tmp"
+    trap 'rm -f "$temp_file"' RETURN EXIT INT TERM
+
     # Run jq transformation: detect numeric suffix in feature key and map to pref array
     jq --argjson pref "$features_json" '
         def mapkey(k):
@@ -307,7 +336,7 @@ sanitize_features_json() {
                 | if $fid == "" then k else ($fr + "/" + $fid + ($m.rest // "")) end
             else k end;
         .features = (.features // {} | to_entries | map(.key = mapkey(.key)) | from_entries)
-    ' "$dev_file" > "$dev_file.tmp" && mv "$dev_file.tmp" "$dev_file"
+    ' "$dev_file" > "$temp_file" && mv "$temp_file" "$dev_file"
 }
 
 # Get template metadata

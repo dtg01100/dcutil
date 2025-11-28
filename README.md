@@ -120,12 +120,14 @@ npm install -g @devcontainers/cli
 ### Dependencies
 
 **Required:**
+
 - `jq` - JSON processing
 - `devcontainer` - Official Microsoft devcontainer CLI
 - `curl` - HTTP client for templates/features
 - Docker or Podman - Container runtime
 
 **Optional:**
+
 - `git` - Git operations
 - `docker-compose` / `podman-compose` - Compose support
 - `node` / `npm` - For various agents and tools
@@ -148,6 +150,7 @@ dcutil help
 ## Commands
 
 ### Core Container Management
+
 - `up [options]` - Start the devcontainer (with optional --project-home)
 - `down` - Stop the devcontainer
 - `restart` - Restart the devcontainer
@@ -161,22 +164,26 @@ dcutil help
 - `run <cmd>` - Run a command in the container
 
 ### Advanced Features
+
 - `features <cmd>` - Devcontainer Features management (install, info, validate, clean, update)
 - `advanced <cmd>` - Advanced configuration (info, validate, apply)
 - `integration <cmd>` - Tool integration (info, validate, apply)
 - `merging <cmd>` - Image metadata merging (show, validate, cleanup)
 
 ### Extended Specification Features
+
 - `userprobe <cmd>` - User environment probing (probe, show, apply, validate, cleanup)
 - `hostrequirements <cmd>` - Host system validation (validate, show, cleanup)
 - `shutdown <cmd>` - Container shutdown actions (execute, show, validate)
 - `schema <cmd>` - Configuration schema validation (validate, show, cleanup)
 
 ### Container Backend Management
+
 - `status` - Show container status and backend information
 - Environment variable `DCUTIL_BACKEND` - Control container backend (docker, podman, auto)
 
 ### Orchestration & Utilities
+
 - `compose <cmd>` - Docker Compose environments (up, down, restart, logs, exec, status, scale, config)
 - `volumes <cmd>` - Volume management (list, add, remove, mount, unmount, status, backup, restore)
 - `environment <cmd>` - Environment configuration (export-env, info, validate)
@@ -192,6 +199,7 @@ dcutil help
 ```
 
 The script automatically detects the project directory:
+
 1. Uses the provided path if specified
 2. Uses current directory if it contains `.devcontainer/`
 3. Falls back to the script's directory
@@ -225,8 +233,6 @@ DCUTIL_BACKEND=podman ./dcutil up
 ./dcutil status
 ```
 
-
-
 ### Initialization
 
 Use the `init` command to create a devcontainer configuration with an interactive wizard or fast setup:
@@ -247,16 +253,19 @@ Use the `init` command to create a devcontainer configuration with an interactiv
 The wizard provides a comprehensive setup experience with:
 
 **Dynamic Content Fetching:**
+
 - **40+ Official Templates**: Automatically fetches and displays all available devcontainer templates from Microsoft's GitHub repository
 - **27+ Devcontainer Features**: Live feature catalog with tools and runtimes (Node.js, Python, Go, Docker, AWS CLI, etc.)
 - **24-hour Caching**: Templates and features are cached locally for improved performance
 
 **User Interface Options:**
+
 - **Dialog Interface**: Professional ncurses-based UI using `dialog` command (when available)
 - **Text Interface**: Reliable fallback for environments without dialog support
 - **Auto-Detection**: Automatically chooses the best interface based on terminal capabilities
 
 **Configuration Options:**
+
 - **Template Selection**: Choose from official templates (Ubuntu, Alpine, Node.js, Python, Go, etc.) or specify custom images
 - **Feature Installation**: Select multiple features to install (Git, Docker, AWS CLI, etc.)
 - **Container Configuration**: Auto-generated container names, customizable workspace folders, user settings
@@ -264,12 +273,14 @@ The wizard provides a comprehensive setup experience with:
 - **Permission Management**: Configurable ownership settings for workspace directories
 
 **Advanced Features:**
+
 - **Numeric UID/GID Support**: Enter container user as name or UID[:GID] (e.g., "vscode" or "1000:1000")
 - **Workspace Validation**: Ensures absolute paths, prevents root mounting, validates input
 - **Smart Defaults**: Auto-generates meaningful container names from project directory
 - **Immediate Startup**: Option to start the container immediately after configuration
 
 **Example Wizard Flow:**
+
 ```
 📋 Available Devcontainer Templates:
 1) ubuntu          2) alpine          3) python
@@ -319,11 +330,13 @@ dcutil provides comprehensive volume management with atomic operations and race 
 ```
 
 #### Volume Types
+
 - **bind**: Direct host directory mounting with consistency options
 - **volume**: Named Docker volumes for persistent data
 - **tmpfs**: Temporary filesystem mounts
 
-#### Advanced Features
+#### Volume Management Advanced Features
+
 - **Atomic Operations**: File locking prevents concurrent access corruption
 - **Race Condition Prevention**: Retry logic for multi-process scenarios
 - **Data Consistency**: fsync operations ensure data durability
@@ -355,6 +368,7 @@ Would you like to start the devcontainer first? (y/N): y
 ```
 
 #### Interactive Entry Features
+
 - **Smart Detection**: Automatically detects container state
 - **User-Friendly Prompts**: Clear options for different scenarios
 - **Non-Intrusive**: Non-interactive mode maintains script compatibility
@@ -379,6 +393,7 @@ dcutil stats top
 ```
 
 #### What You Can Check
+
 - **CPU Usage** - Is your code doing heavy processing?
 - **Memory Usage** - Are you running out of RAM?
 - **Network I/O** - How much data is being transferred (for web apps)
@@ -386,6 +401,7 @@ dcutil stats top
 - **Running Programs** - What's actually executing inside
 
 #### Beginner-Friendly Output
+
 The stats command explains what everything means in plain language:
 
 ```
@@ -434,7 +450,9 @@ source env_vars.sh
 ```
 
 #### Export Environment Variables
+
 The `export-env` command generates shell export statements that replicate the environment settings used by the devcontainer CLI, including:
+
 - `DEVCONTAINER_CONFIG` - Path to the devcontainer.json configuration file
 - `DEVCONTAINER_WORKSPACE_FOLDER` - Current workspace directory path
 - `DEVCONTAINER_CONTAINER_ENGINE` - Container engine being used (docker/podman)
@@ -461,6 +479,7 @@ Use the `install-agent` command to install AI coding assistants inside your devc
 ```
 
 Currently supported agents:
+
 - `opencode` - Installs opencode AI assistant
 - `aider` - Installs aider-chat AI coding assistant
 - `copilot-cli` - Installs GitHub Copilot CLI
@@ -487,12 +506,14 @@ dcutil has built-in completion that works without any installation or external f
 ### Manual Setup
 
 **Bash:**
+
 ```bash
 # Add to ~/.bashrc
 eval "$(dcutil completion bash)"
 ```
 
 **Zsh:**
+
 ```bash
 # Add to ~/.zshrc  
 eval "$(dcutil completion zsh)"
@@ -533,6 +554,7 @@ All errors provide clear, actionable messages to help resolve issues quickly.
 dcutil supports the full Devcontainer Specification, including:
 
 ### ✅ Complete Feature Set
+
 - **Orchestration**: Image, Dockerfile, and Docker Compose containers
 - **Lifecycle**: onCreateCommand, updateContentCommand, postAttachCommand, waitFor, initializeCommand
 - **Configuration**: forwardPorts, portsAttributes, workspaceMount, workspaceFolder
@@ -545,6 +567,7 @@ dcutil supports the full Devcontainer Specification, including:
 - **Compose Enhancements**: Profiles, scaling, dependencies, restart policies
 
 ### Example devcontainer.json
+
 ```json
 {
     "name": "Full Featured Dev Environment",
@@ -620,6 +643,7 @@ dcutil features validate
 ## Error Handling
 
 dcutil provides clear error messages and uses specific exit codes:
+
 - `0`: Success
 - `1`: Invalid arguments
 - `2`: Missing dependencies
@@ -635,6 +659,7 @@ For technical details about dcutil's architecture, implementation approach, and 
 ## Testing & CI Integration
 
 ### Automated Testing
+
 The project includes comprehensive test suites:
 
 ```bash

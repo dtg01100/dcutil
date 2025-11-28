@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-
+#
+# dcutil - Development Container Utility
+# https://github.com/dtg01100/dcutil
+#
 # UX enhancements for beginner-friendly command-line experience
 
 # Calculate Levenshtein distance between two strings (for command suggestions)

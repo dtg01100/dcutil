@@ -5,6 +5,11 @@
 # Source core functionality
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
+# Constants for lock retry and delays
+readonly LOCK_RETRY_DELAY=0.01      # 10ms between lock acquisition attempts
+readonly LOCK_OPERATION_DELAY=0.02  # 20ms delay for file operations
+readonly LOCK_WAIT_DELAY=0.05       # 50ms delay for waiting operations
+
 # Lock management functions
 open_lock() {
     local lockfile="$1"
@@ -216,7 +221,7 @@ list_volumes() {
             # Ensure file is valid JSON
             local json_attempts=0
             while ! jq -e . "$volume_file" >/dev/null 2>&1 && [ $json_attempts -lt 5 ]; do
-                sleep 0.01
+                sleep $LOCK_RETRY_DELAY
                 json_attempts=$((json_attempts + 1))
             done
 
@@ -241,7 +246,7 @@ list_volumes() {
         fi
 
         attempts=$((attempts + 1))
-        sleep 0.02
+        sleep $LOCK_OPERATION_DELAY
     done
 
     if [ "$found" = false ]; then
@@ -376,7 +381,7 @@ mount_volume() {
         # Retry briefly if the file is being updated concurrently
         local attempts=0
         while ! jq -e . "$volume_file" >/dev/null 2>&1 && [ $attempts -lt 5 ]; do
-            sleep 0.05
+            sleep $LOCK_WAIT_DELAY
             attempts=$((attempts + 1))
         done
 

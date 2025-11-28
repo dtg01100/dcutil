@@ -29,7 +29,7 @@ run_expect_test() {
     fi
 
     # Run expect in the test directory
-    local output
+    local output=""
     if [ -n "$test_dir" ]; then
         output=$(cd "$test_dir" && timeout "$timeout" expect "../$test_script" 2>&1)
     else
