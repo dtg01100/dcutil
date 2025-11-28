@@ -69,7 +69,7 @@ echo ""
 echo "📤 Step 4: Pushing to remote..."
 read -p "Push commits and tags? (y/N): " push_choice
 if [[ "$push_choice" =~ ^[Yy]$ ]]; then
-    git push origin main
+    git push origin master
     git push origin "$VERSION"
     echo "✅ Pushed to remote"
 else
