@@ -1580,27 +1580,33 @@ case "$COMMAND" in
         exit $EXIT_SUCCESS
         ;;
     "restart")
+        determine_project_dir
         devcontainer_restart
         ;;
     "enter")
+        determine_project_dir
         devcontainer_enter
         ;;
     "build")
         enhanced_dcutil_command "build" "$@"
         ;;
     "status")
+        determine_project_dir
         devcontainer_status
         ;;
     "logs")
+        determine_project_dir
         devcontainer_logs
         ;;
      "list")
+         determine_project_dir
          devcontainer_list
          ;;
      "run")
          enhanced_dcutil_command "run" "$@"
          ;;
      "check")
+         determine_project_dir
          devcontainer_check
          ;;
      "install-agent")
