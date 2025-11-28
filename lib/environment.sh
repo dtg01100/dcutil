@@ -386,7 +386,7 @@ export_devcontainer_env() {
 
 # CLI interface for environment management
 environment_cli() {
-    local cmd="$1"
+    local cmd="${1:-}"
     shift || true
 
     case "$cmd" in
