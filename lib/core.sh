@@ -23,7 +23,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Constants
-readonly DEFAULT_DISK_SPACE_MB=100  # Minimum disk space requirement in MB
+DEFAULT_DISK_SPACE_MB=100  # Minimum disk space requirement in MB
 
 # Global variables
 PROJECT_DIR=""

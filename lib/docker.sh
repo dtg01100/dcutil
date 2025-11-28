@@ -869,20 +869,10 @@ docker_clean() {
     fi
 }
 
-# Check if Docker is available (always true for this implementation)
-check_devcontainer_cli() {
-    check_docker_daemon
-}
-
-# Check what devcontainer solution is available (Docker-native only)
+# check_devcontainer_cli() defined above - remove duplicate
 check_devcontainer_availability() {
     info "Using Docker-native operations (devcontainer CLI dependency removed)"
     return 0
-}
-
-# Dependency checking functions - simplified since we only support Docker
-check_devcontainer_cli() {
-    check_docker_daemon
 }
 
 # Rebuild devcontainer with preservation options

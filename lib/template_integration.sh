@@ -5,8 +5,8 @@
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Constants
-readonly TEMPLATE_CACHE_TTL=3600  # 1 hour in seconds
-readonly FEATURE_CACHE_TTL=3600   # 1 hour in seconds
+TEMPLATE_CACHE_TTL=3600  # 1 hour in seconds
+FEATURE_CACHE_TTL=3600   # 1 hour in seconds
 
 # Get available templates from official registry
 fetch_available_templates_official() {

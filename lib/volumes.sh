@@ -6,9 +6,9 @@
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Constants for lock retry and delays
-readonly LOCK_RETRY_DELAY=0.01      # 10ms between lock acquisition attempts
-readonly LOCK_OPERATION_DELAY=0.02  # 20ms delay for file operations
-readonly LOCK_WAIT_DELAY=0.05       # 50ms delay for waiting operations
+LOCK_RETRY_DELAY=0.01      # 10ms between lock acquisition attempts
+LOCK_OPERATION_DELAY=0.02  # 20ms delay for file operations
+LOCK_WAIT_DELAY=0.05       # 50ms delay for waiting operations
 
 # Lock management functions
 open_lock() {
