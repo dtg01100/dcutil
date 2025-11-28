@@ -44,12 +44,12 @@ jobs:
     - name: Run security and functionality tests
       run: |
         # Test that our security fixes work
-        ../minimal_test.sh
-        ../targeted_functionality_test.sh
+        ./minimal_test.sh
+        ./targeted_functionality_test.sh
 
     - name: Test interactive features
       run: |
-        ../run_expect_tests.sh
+        ./run_expect_tests.sh
 
     - name: Test project initialization
       run: |
