@@ -535,7 +535,7 @@ eval "$(dcutil completion bash)"  # or zsh
 - **Smart context**: Different completions based on command context
 - **No installation required**: Works immediately without external files
 
-## Error Handling
+## Exit Codes
 
 dcutil includes comprehensive error handling with specific exit codes:
 
@@ -640,7 +640,7 @@ dcutil schema validate
 dcutil features validate
 ```
 
-## Error Handling
+## Error Messages & Codes
 
 dcutil provides clear error messages and uses specific exit codes:
 
