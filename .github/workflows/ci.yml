@@ -74,7 +74,7 @@ jobs:
 
     - name: Test completion generation
       run: |
-        ./dcutil completion bash | grep -q "function"
+        ./dcutil completion bash | grep -q "_dcutil"
         ./dcutil completion zsh | grep -q "compdef"
 
     - name: Test error handling
