@@ -94,6 +94,10 @@ fi
 if [ -f "$LIB_DIR/ux.sh" ]; then
     source "$LIB_DIR/ux.sh"
 fi
+# merging module is optional
+if [ -f "$LIB_DIR/merging.sh" ]; then
+    source "$LIB_DIR/merging.sh"
+fi
 
 # Initialize backend system
 if command -v init_podman_backend >/dev/null 2>&1; then

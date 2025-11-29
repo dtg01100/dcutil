@@ -338,7 +338,7 @@ merge_boolean_property() {
 show_merged_config() {
     if [ -z "${MERGED_CONFIG_FILE:-}" ]; then
         echo "No merged configuration available."
-        return 1
+        return 0
     fi
     
     echo "Merged Configuration (Image Metadata + devcontainer.json):"

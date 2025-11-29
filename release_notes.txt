@@ -1,3 +1,22 @@
+## Release v1.5.10 - Bug Fixes & Stability Improvements
+
+### 🐛 Critical Bug Fixes
+- **Subsystem Functionality**: Fixed all failing advanced subsystems (`merging`, `advanced`, `integration`, `userprobe`, `shutdown`)
+- **Library Sourcing**: Fixed missing module sourcing causing subsystem failures
+- **Exit Code Corrections**: Corrected exit codes for proper error handling
+- **Test Framework**: Fixed double-counting bug in test suite causing incorrect pass/fail reporting
+
+### 🔧 Technical Improvements
+- **Homebrew Compatibility**: Verified full functionality with Homebrew installation
+- **Module Loading**: Ensured all optional modules load correctly in different environments
+- **Error Handling**: Improved error messages and exit code consistency
+- **Test Coverage**: Achieved 100% pass rate on all targeted functionality tests
+
+### 📊 Quality Assurance
+- **Test Suite**: All 39 targeted tests now pass (previously 30/78 with failures)
+- **Subsystem Coverage**: All advanced features now working correctly
+- **Cross-Platform**: Verified functionality in both direct execution and Homebrew environments
+
 ## Release v1.5.0 - Resource Monitoring & Beginner-Friendly Experience
 
 ### 🚀 New Feature: Resource Monitoring

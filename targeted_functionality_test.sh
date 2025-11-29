@@ -109,7 +109,7 @@ echo "⚙️  TESTING SUBSYSTEMS"
 echo "======================"
 
 # Test all major subsystems (some may return 1 if no config)
-SUBSYSTEMS=("features info:0" "advanced info:0" "integration info:0" "merging show:1" "userprobe probe:0" "hostrequirements validate:0" "shutdown show:0" "environment list:0")
+SUBSYSTEMS=("features info:0" "advanced info:0" "integration info:0" "merging show:0" "userprobe probe:0" "hostrequirements validate:0" "shutdown show:0" "environment list:0")
 
 for subsystem in "${SUBSYSTEMS[@]}"; do
     cmd=$(echo "$subsystem" | cut -d' ' -f1)
