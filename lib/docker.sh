@@ -521,15 +521,10 @@ docker_enter() {
 
     # Now enter the running container
     if [ "$container_running" = true ]; then
-        # Execute postAttachCommand if configured (runs when client connects to container)
-        if command -v execute_post_attach_command >/dev/null 2>&1; then
-            info "Running postAttachCommand for container attachment..."
-            execute_post_attach_command
-        fi
-
-        # Apply VS Code customizations if configured and first connection
-        apply_vscode_customizations_if_available
-
+        # Skip postAttachCommand and VS Code customizations during enter
+        # These will be handled by VS Code when it connects
+        # Running them here blocks the interactive shell from starting properly
+        
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
             if [ -t 0 ]; then
                 execute_command_in_devcontainer "$PROJECT_DIR" /bin/bash

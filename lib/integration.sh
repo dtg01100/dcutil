@@ -205,51 +205,10 @@ apply_vscode_customizations() {
     local vscode_settings_dir="/home/${CONTAINER_USER:-vscode}/.vscode-server/data/User"
     execute_in_container sh -c "mkdir -p '$vscode_settings_dir'" 2>/dev/null || true
 
-    # Apply VS Code extensions
-    if [ "$has_extensions" = true ] && command -v jq &> /dev/null; then
-        local extensions
-        extensions=$(echo "$CUSTOMIZATIONS_CONFIG" | jq -r '.vscode.extensions[]' 2>/dev/null || echo "")
-
-        if [ -n "$extensions" ]; then
-            info "Installing VS Code extensions..."
-
-            # Loop through each extension and install
-            local extension_list=()
-            local i=0
-            while IFS= read -r extension; do
-                if [ -n "$extension" ] && [ "$extension" != "null" ]; then
-                    extension_list[i]="$extension"
-                    ((i++))
-                fi
-            done <<< "$extensions"
-
-            for extension in "${extension_list[@]}"; do
-                info "Installing VS Code extension: $extension"
-
-                # Check if VS Code server exists in container
-                local vs_code_cmd="code-server"
-                local has_vscode_server=false
-
-                if command_exists_in_container "code-server"; then
-                    has_vscode_server=true
-                elif command_exists_in_container "code"; then
-                    vs_code_cmd="code"
-                    has_vscode_server=true
-                fi
-
-                if [ "$has_vscode_server" = true ]; then
-                    # Install extension using code command
-                    if execute_in_container sh -c "$vs_code_cmd --install-extension '$extension' --force" 2>/dev/null; then
-                        success "Extension $extension installed successfully"
-                    else
-                        warning "Failed to install VS Code extension: $extension"
-                    fi
-                else
-                    # If VS Code server is not available, just log the extension
-                    info "VS Code server not found in container, extension $extension will be installed when VS Code connects to container"
-                fi
-            done
-        fi
+    # Skip extension installation - extensions will be installed when VS Code connects to the container
+    # This avoids blocking the enter command waiting for extension installation
+    if [ "$has_extensions" = true ]; then
+        info "VS Code extensions will be installed when VS Code connects to the container"
     fi
 
     # Apply VS Code settings
