@@ -45,7 +45,8 @@ create_portable_venv() {
 get_container_platform() {
     # Determine container platform (linux/macos & arch)
     local arch
-    arch=$(run_in_container 'ARCH=$(uname -m); OS=$(uname -s); if [ "$OS" = "Linux" ]; then OS_PREFIX="linux"; elif [ "$OS" = "Darwin" ]; then OS_PREFIX="macos"; else OS_PREFIX="linux"; fi; if [ "$ARCH" = "x86_64" ]; then echo "$OS_PREFIX-x86_64"; elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then echo "$OS_PREFIX-aarch64"; else echo "linux-x86_64"; fi' 2>/dev/null || echo "linux-x86_64")
+    arch=$(run_in_container 'python3 -c "import platform; m=platform.machine(); s=platform.system(); os_map={\"Linux\":\"linux\",\"Darwin\":\"macos\"}; arch_map={\"x86_64\":\"x86_64\",\"aarch64\":\"aarch64\",\"arm64\":\"aarch64\"}; print(f\"{os_map.get(s,\"linux\")}-{arch_map.get(m,\"x86_64\")}\")"
+' 2>/dev/null || echo "linux-x86_64")
     echo "$arch"
 }
 
@@ -422,16 +423,16 @@ setup_portable_python_impl() {
             SHA_URL=\$(echo \"\$JSON\" | jq -r '.assets[] | select(.name | test(\"sha|sha256\"; \"i\")) | .browser_download_url' 2>/dev/null | head -n 1 || true)
             if [ -n \"\$ASSET\" ]; then
                 ASSET_NAME=\$(basename \"\$ASSET\")
-                SHA_URL=\$(echo \"\$JSON\" | sed -n 's/.*"browser_download_url": "\\\([^\\\"]*\\\)".*/\\1/p' | grep -i sha | head -n 1 || true)
+                # SHA_URL already extracted above using jq
                 tmpdir=\$(mktemp -d)
                 assetfile=\"\$tmpdir/\$ASSET_NAME\"
                 if [ -n \"\$SHA_URL\" ]; then
                     if ! \$GET_FILE_CMD \"\$assetfile\" \"\$ASSET\"; then rm -rf \"\$tmpdir\"; exit 1; fi
                     sha_file=\"\$tmpdir/sha.txt\"
                     if ! \$GET_FILE_CMD \"\$sha_file\" \"\$SHA_URL\"; then rm -rf \"\$tmpdir\"; rm -f \"\$assetfile\"; exit 1; fi
-                    expected=\$(grep -i \"\$ASSET_NAME\" \"\$sha_file\" | awk '{print \$1}' | head -n 1 || true)
-                    if [ -z \"\$expected\" ]; then expected=\$(head -n 1 \"\$sha_file\" | awk '{print \$1}'); fi
-                    if command -v sha256sum >/dev/null 2>&1; then actual=\$(sha256sum \"\$assetfile\" | awk '{print \$1}'); elif command -v openssl >/dev/null 2>&1; then actual=\$(openssl dgst -sha256 \"\$assetfile\" | awk '{print \$2}'); else echo 'No hash tool available' >&2; rm -rf \"\$tmpdir\"; exit 1; fi
+                    expected=\$(grep -i \"\$ASSET_NAME\" \"\$sha_file\" | head -n 1 | cut -d' ' -f1 || true)
+                    if [ -z \"\$expected\" ]; then expected=\$(head -n 1 \"\$sha_file\" | cut -d' ' -f1); fi
+                    actual=\$(python3 -c 'import hashlib; print(hashlib.sha256(open(\"'\"\$assetfile\"'\",\"rb\").read()).hexdigest())')
                     if [ \"\$expected\" != \"\$actual\" ]; then echo \"Checksum mismatch for \$ASSET_NAME\" >&2; rm -rf \"\$tmpdir\"; exit 1; fi
                     tar -xz -f \"\$assetfile\" -C \"$python_bin_dir\" || (rm -rf \"\$tmpdir\"; exit 1)
                     rm -rf \"\$tmpdir\"
@@ -812,7 +813,7 @@ attempt_auto_install_prerequisites() {
     if command -v python3 >/dev/null 2>&1; then
         # Check for Python script to manage features
         local feature_mgr_script
-        feature_mgr_script="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/feature_manager.py"
+        feature_mgr_script=$(python3 -c "import os; script_path = os.path.realpath('${BASH_SOURCE[0]}'); print(os.path.join(os.path.dirname(script_path), 'feature_manager.py'))")
         
         if [ -f "$feature_mgr_script" ]; then
             info "Using Python-based feature manager for $agent..."

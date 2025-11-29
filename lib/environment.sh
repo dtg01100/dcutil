@@ -33,7 +33,7 @@ parse_environment_config() {
                 if [ -n "$key" ] && [ -n "$val" ]; then
                     # Sanitize key: allow only alphanumeric and underscores, prefix with '_' if it starts with a digit
                     local sanitized_key
-                    sanitized_key=$(echo "$key" | sed 's/[^a-zA-Z0-9_]/_/g')
+                    sanitized_key="${key//[^a-zA-Z0-9_]/_}"
                     if [[ "$sanitized_key" =~ ^[0-9] ]]; then
                         sanitized_key="_$sanitized_key"
                     fi
@@ -336,7 +336,7 @@ export_devcontainer_env() {
                 if [ -n "$key" ] && [ -n "$val" ]; then
                     # Sanitize key: allow only alphanumeric and underscores
                     local sanitized_key
-                    sanitized_key=$(echo "$key" | sed 's/[^a-zA-Z0-9_]/_/g')
+                    sanitized_key="${key//[^a-zA-Z0-9_]/_}"
                     if [[ "$sanitized_key" =~ ^[0-9] ]]; then
                         sanitized_key="_$sanitized_key"
                     fi

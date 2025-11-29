@@ -64,10 +64,11 @@ check_cpu_requirements() {
     
     # Parse CPU requirement (support formats like "2", ">=2", "2 cores")
     local required_cores
-    if echo "$cpu_req" | grep -qE '^[0-9]+'; then
-        required_cores=$(echo "$cpu_req" | sed -n 's/^\([0-9]*\).*/\1/p')
-    elif echo "$cpu_req" | grep -qE '^>=.*'; then
-        required_cores=$(echo "$cpu_req" | sed -n 's/^>=\([0-9]*\).*/\1/p')
+    if [[ "$cpu_req" =~ ^[0-9]+ ]]; then
+        required_cores="${cpu_req%%[^0-9]*}"
+    elif [[ "$cpu_req" =~ ^\>= ]]; then
+        required_cores="${cpu_req#>=}"
+        required_cores="${required_cores%%[^0-9]*}"
     else
         warning "Unable to parse CPU requirement: $cpu_req"
         return 0
@@ -95,7 +96,7 @@ check_memory_requirements() {
     # Get available memory in MB
     local memory_mb=1024
     if [ -f /proc/meminfo ]; then
-        memory_mb=$(grep MemTotal /proc/meminfo | awk '{print int($2/1024)}' 2>/dev/null || echo "1024")
+        memory_mb=$(grep MemTotal /proc/meminfo | { read _ kb _; echo "$((kb / 1024))"; } 2>/dev/null || echo "1024")
     elif command -v sysctl >/dev/null 2>&1; then
         memory_mb=$(sysctl -n hw.memsize_max 2>/dev/null || sysctl -n hw.physmem 2>/dev/null || echo "1073741824")
         memory_mb=$((memory_mb / 1024 / 1024))
@@ -103,16 +104,18 @@ check_memory_requirements() {
     
     # Parse memory requirement (support formats like "2GB", "4 GB", ">=2GB")
     local required_mb
-    if echo "$memory_req" | grep -qE '^[0-9]+.*GB?'; then
-        required_mb=$(echo "$memory_req" | sed -n 's/^\([0-9]*\).*/\1/p')
+    if [[ "$memory_req" =~ ^[0-9]+.*GB? ]]; then
+        required_mb="${memory_req%%[^0-9]*}"
         required_mb=$((required_mb * 1024))
-    elif echo "$memory_req" | grep -qE '^[0-9]+.*MB?'; then
-        required_mb=$(echo "$memory_req" | sed -n 's/^\([0-9]*\).*/\1/p')
-    elif echo "$memory_req" | grep -qE '^>=.*GB?'; then
-        required_mb=$(echo "$memory_req" | sed -n 's/^>=\([0-9]*\).*/\1/p')
+    elif [[ "$memory_req" =~ ^[0-9]+.*MB? ]]; then
+        required_mb="${memory_req%%[^0-9]*}"
+    elif [[ "$memory_req" =~ ^\>=.*GB? ]]; then
+        required_mb="${memory_req#>=}"
+        required_mb="${required_mb%%[^0-9]*}"
         required_mb=$((required_mb * 1024))
-    elif echo "$memory_req" | grep -qE '^>=.*MB?'; then
-        required_mb=$(echo "$memory_req" | sed -n 's/^>=\([0-9]*\).*/\1/p')
+    elif [[ "$memory_req" =~ ^\>=.*MB? ]]; then
+        required_mb="${memory_req#>=}"
+        required_mb="${required_mb%%[^0-9]*}"
     else
         warning "Unable to parse memory requirement: $memory_req"
         return 0
@@ -140,15 +143,18 @@ check_storage_requirements() {
     # Get available storage in GB (check current directory filesystem)
     local storage_gb=10
     if command -v df >/dev/null 2>&1; then
-        storage_gb=$(df -BG . | tail -1 | awk '{print int(substr($4, 1, length($4)-1))}' 2>/dev/null || echo "10")
+        local avail_str
+        avail_str=$(df -BG . 2>/dev/null | tail -1 | { read _ _ _ avail _; echo "$avail"; } || echo "10G")
+        storage_gb="${avail_str%G}"
     fi
     
     # Parse storage requirement (support formats like "10GB", ">=10GB")
     local required_gb
-    if echo "$storage_req" | grep -qE '^[0-9]+.*GB?'; then
-        required_gb=$(echo "$storage_req" | sed -n 's/^\([0-9]*\).*/\1/p')
-    elif echo "$storage_req" | grep -qE '^>=.*GB?'; then
-        required_gb=$(echo "$storage_req" | sed -n 's/^>=\([0-9]*\).*/\1/p')
+    if [[ "$storage_req" =~ ^[0-9]+.*GB? ]]; then
+        required_gb="${storage_req%%[^0-9]*}"
+    elif [[ "$storage_req" =~ ^\>=.*GB? ]]; then
+        required_gb="${storage_req#>=}"
+        required_gb="${required_gb%%[^0-9]*}"
     else
         warning "Unable to parse storage requirement: $storage_req"
         return 0

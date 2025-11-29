@@ -355,13 +355,8 @@ list_available_templates() {
     local templates_json
     templates_json=$(fetch_available_templates_official)
     
-    if command -v jq >/dev/null 2>&1; then
-        echo "Available templates:"
-        echo "$templates_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"'
-    else
-        echo "Available templates (install jq for better formatting):"
-        echo "$templates_json" | grep -o '"id": "[^"]*"' | sed 's/"id": "//; s/"//'
-    fi
+    echo "Available templates:"
+    echo "$templates_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"'
 }
 
 # List available features with descriptions  
@@ -369,13 +364,8 @@ list_available_features() {
     local features_json
     features_json=$(fetch_available_features_official)
     
-    if command -v jq >/dev/null 2>&1; then
-        echo "Available features:"
-        echo "$features_json" | jq -r '.[] | "  \(.id) (\(.registry)): \(.name) - \(.description)"'
-    else
-        echo "Available features (install jq for better formatting):"
-        echo "$features_json" | grep -o '"id": "[^"]*"' | sed 's/"id": "//; s/"//'
-    fi
+    echo "Available features:"
+    echo "$features_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"'
 }
 
 # Enhanced wizard mode with official devcontainer integration

@@ -256,7 +256,9 @@ get_current_devcontainer_name() {
 
     # Use project directory to generate container name (matching devcontainer CLI convention)
     # The devcontainer CLI uses a consistent naming scheme based on the workspace path
-    echo "devcontainer_$(basename "$project_dir")_$(echo "$project_dir" | md5sum | cut -d' ' -f1 | head -c 8)"
+    local hash
+    hash=$(python3 -c "import hashlib; print(hashlib.md5('$project_dir'.encode()).hexdigest())")
+    echo "devcontainer_$(basename "$project_dir")_${hash:0:8}"
 }
 
 # Enhanced dcutil command that wraps official CLI with better UX

@@ -56,7 +56,7 @@ check_disk_space() {
 
     # Check available disk space in MB
     if command -v df >/dev/null 2>&1; then
-        available_mb=$(df -m "$PROJECT_DIR" 2>/dev/null | tail -1 | awk '{print $4}')
+        available_mb=$(df -m "$PROJECT_DIR" 2>/dev/null | tail -1 | { read _ _ _ avail _; echo "$avail"; })
         if [ -n "$available_mb" ] && [ "$available_mb" -lt "$required_mb" ]; then
             warning "Low disk space: ${available_mb}MB available, ${required_mb}MB recommended"
             if [ -t 0 ] && [ "${DCUTIL_IGNORE_DISK_SPACE:-}" != "1" ]; then
@@ -244,8 +244,8 @@ validate_user_input() {
     local input="$1"
     local input_type="${2:-general}"
 
-    # Remove null bytes and other dangerous characters
-    input=$(printf '%s' "$input" | tr -d '\000-\037\177')
+    # Remove null bytes and other dangerous characters using Python
+    input=$(python3 -c "import sys; s=sys.argv[1]; print(''.join(c for c in s if ord(c) >= 32 and ord(c) != 127))" "$input")
 
     # Length limits based on input type
     case "$input_type" in
@@ -316,7 +316,7 @@ safe_path() {
         "~"*) echo "$HOME" ;;
         *) echo "$path" ;;
     esac | while IFS= read -r line; do
-        realpath -m "$line" 2>/dev/null || echo "$line"
+        python3 -c "import os; print(os.path.abspath('$line'))" 2>/dev/null || echo "$line"
     done
 }
 
@@ -415,7 +415,7 @@ initialize_devcontainer_config() {
     fi
 
     if [ -n "$cfg" ]; then
-        DEVCONTAINER_CONFIG_FILE=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
+        DEVCONTAINER_CONFIG_FILE=$(python3 -c "import os; print(os.path.abspath('$cfg'))" 2>/dev/null || echo "$cfg")
         export DEVCONTAINER_CONFIG_FILE
     else
         export DEVCONTAINER_CONFIG_FILE=""

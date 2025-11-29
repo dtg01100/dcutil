@@ -43,7 +43,8 @@ parse_build_config() {
         BUILD_CONTEXT=$(jq -r '.build.context // "."' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         if [ -n "$BUILD_CONTEXT" ] && [ "$BUILD_CONTEXT" != "null" ]; then
             # Expand variables in context path
-            BUILD_CONTEXT=$(echo "$BUILD_CONTEXT" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+            BUILD_CONTEXT="${BUILD_CONTEXT//\$\{workspaceFolder\}/$PROJECT_DIR}"
+        BUILD_CONTEXT="${BUILD_CONTEXT//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
             info "Using build context: $BUILD_CONTEXT"
         fi
 
@@ -51,7 +52,8 @@ parse_build_config() {
         BUILD_DOCKERFILE=$(jq -r '.build.dockerfile // "Dockerfile"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         if [ -n "$BUILD_DOCKERFILE" ] && [ "$BUILD_DOCKERFILE" != "null" ]; then
             # Expand variables in dockerfile path
-            BUILD_DOCKERFILE=$(echo "$BUILD_DOCKERFILE" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+            BUILD_DOCKERFILE="${BUILD_DOCKERFILE//\$\{workspaceFolder\}/$PROJECT_DIR}"
+        BUILD_DOCKERFILE="${BUILD_DOCKERFILE//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
 
             # If dockerfile path is relative and devcontainer.json is in a subdirectory,
             # make it relative to the build context
@@ -90,8 +92,9 @@ parse_build_config() {
             while IFS= read -r arg; do
                 if [ -n "$arg" ] && [ "$arg" != "null" ]; then
                     # Expand variables in build args
-                    local expanded_arg
-                    expanded_arg=$(echo "$arg" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+                    local expanded_arg="$arg"
+                    expanded_arg="${expanded_arg//\$\{workspaceFolder\}/$PROJECT_DIR}"
+                    expanded_arg="${expanded_arg//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
                     BUILD_ARGS+=("$expanded_arg")
                 fi
             done < <(jq -r '.build.args | to_entries[] | "\(.key)=\(.value|tostring)"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")

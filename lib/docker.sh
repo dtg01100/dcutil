@@ -7,48 +7,11 @@
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Source additional modules if available
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/compose.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/compose.sh"
-fi
-
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/build.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/build.sh"
-fi
-
-# Optional userprobe support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/userprobe.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/userprobe.sh"
-fi
-
-# Optional merging support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/merging.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/merging.sh"
-fi
-
-# Optional integration support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/integration.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/integration.sh"
-fi
-
-# Optional advanced features support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/advanced.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/advanced.sh"
-fi
-
-# Optional features support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/features.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/features.sh"
-fi
-
-# Optional lifecycle support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/lifecycle.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/lifecycle.sh"
-fi
-
-# Optional environment support
-if [ -f "$(dirname "${BASH_SOURCE[0]}")/environment.sh" ]; then
-    source "$(dirname "${BASH_SOURCE[0]}")/environment.sh"
-fi
+_lib_dir="$(dirname "${BASH_SOURCE[0]}")"
+for module in compose build userprobe merging integration advanced features lifecycle environment; do
+    [ -f "$_lib_dir/$module.sh" ] && source "$_lib_dir/$module.sh"
+done
+unset _lib_dir module
 
 # Global variables
 CONTAINER_NAME=""
@@ -89,7 +52,7 @@ get_container_name_for_project() {
 rename_conflicting_container() {
     local name="$1"
     local ts
-    ts=$(date +%s)
+    ts=$(python3 -c 'import time; print(int(time.time()))')
     local new_name="${name}-orphan-${ts}"
     info "Stopping existing container $name to avoid collisions"
     if docker ps -q --filter "name=^${name}$" | grep -q .; then
@@ -129,7 +92,7 @@ check_container_daemon() {
 
 # Backward compatibility alias
 check_docker_daemon() {
-    check_container_daemon "$@"
+    check_container_daemon
 }
 
 # Helper function to validate devcontainer JSON with devcontainer CLI
@@ -178,7 +141,7 @@ parse_devcontainer_config() {
         error_exit "Configuration required" "$EXIT_CONFIG_ERROR"
     fi
     
-    DEVCONTAINER_CONFIG_FILE=$(realpath -m "$config_file" 2>/dev/null || echo "$config_file")
+    DEVCONTAINER_CONFIG_FILE=$(python3 -c "import os; print(os.path.abspath('$config_file'))" 2>/dev/null || echo "$config_file")
     
     # Validate devcontainer JSON specially since it may contain comments
     validate_devcontainer_json "$DEVCONTAINER_CONFIG_FILE"
@@ -197,8 +160,6 @@ parse_devcontainer_config() {
     REMOTE_USER="vscode"
     MOUNTS=()
     FEATURES=()
-    CONTAINER_ENV=()
-    REMOTE_ENV=()
     PRIVILEGED=false
     CAP_ADD=()
     SECURITY_OPT=()
@@ -226,6 +187,7 @@ parse_devcontainer_config() {
             # Expand known placeholders in workspace folder
             workspace_from_config="${workspace_from_config//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
             workspace_from_config="${workspace_from_config//\$\{localWorkspaceFolderBasename\}/${PROJECT_DIR##*/}}"
+            # shellcheck disable=SC2034  # WORKSPACE_FOLDER may be used by sourced modules
             WORKSPACE_FOLDER="$workspace_from_config"
         fi
         CONTAINER_USER=$(jq -r '.containerUser // "vscode"' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$CONTAINER_USER")
@@ -727,9 +689,8 @@ docker_run() {
     shift  # Remove project_dir from arguments
     validate_run_command "$@"
 
-    # Additional validation for the command string
-    local cmd_string
-    cmd_string=$(validate_user_input "$*" "command")
+    # Validate the command string
+    validate_user_input "$*" "command" >/dev/null
     info "Running command in container: $*"
     check_docker_daemon
 
@@ -850,7 +811,7 @@ docker_clean() {
     
     # Remove orphan containers matching the naming scheme to keep CI clean
     if [ -n "${CONTAINER_NAME:-}" ]; then
-        docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format "{{.ID}} {{.Names}} {{.Status}}" | while read -r id name status; do
+        docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format "{{.ID}} {{.Names}} {{.Status}}" | while read -r id name _; do
             info "Removing orphan container if exists: $name ($id)"
             docker rm -f "$id" 2>/dev/null || true
         done || true

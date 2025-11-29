@@ -214,7 +214,7 @@ list_volumes() {
         fi
 
         if [ -f "$volume_file" ]; then
-            info "Volumes file size: $(stat -c%s "$volume_file") bytes"
+            info "Volumes file size: $(python3 -c "import os; print(os.path.getsize('$volume_file'))") bytes"
         fi
 
         if command -v jq &> /dev/null; then
@@ -388,11 +388,6 @@ mount_volume() {
         host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
         container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
         mount_type=$(jq -r ".volumes[\"$volume_name\"].mount_type" "$volume_file" 2>/dev/null)
-    else
-        # Fallback parsing
-        host_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-        container_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "container_path" | sed 's/.*: "\(.*\)",.*/\1/')
-        mount_type=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "mount_type" | sed 's/.*: "\(.*\)",.*/\1/')
     fi
 
     # Validate volume exists
@@ -447,7 +442,9 @@ mount_volume() {
             echo ""
 
             # Offer to copy files as demonstration
-            if [ -d "$host_path" ] && [ "$(find "$host_path" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)" -gt 0 ]; then
+            local file_count
+            file_count=$(python3 -c "import os; print(len(os.listdir('$host_path')) if os.path.isdir('$host_path') else 0)" 2>/dev/null || echo 0)
+            if [ -d "$host_path" ] && [ "$file_count" -gt 0 ]; then
                 echo ""
                 read -r -p "Copy files from host to container as demonstration? (y/N): " copy_files
                 if [[ "$copy_files" =~ ^[Yy] ]]; then
@@ -529,11 +526,7 @@ unmount_volume() {
     local volume_file
     volume_file=$(get_volume_config_file)
 
-    if command -v jq &> /dev/null; then
-        container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
-    else
-        container_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "container_path" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
+    container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
 
     if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
@@ -597,11 +590,7 @@ backup_volume() {
 
     # Get volume configuration
     local host_path=""
-    if command -v jq &> /dev/null; then
-        host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
-    else
-        host_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
+    host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
 
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
         error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
@@ -616,7 +605,7 @@ backup_volume() {
 
     # Determine backup path
     if [ -z "$backup_path" ]; then
-        backup_path="./${volume_name}_backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+        backup_path="./${volume_name}_backup_$(python3 -c 'import datetime; print(datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))').tar.gz"
     fi
 
     info "Creating backup of volume '$volume_name'..."
@@ -653,11 +642,7 @@ restore_volume() {
 
     # Get volume configuration
     local host_path=""
-    if command -v jq &> /dev/null; then
-        host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
-    else
-        host_path=$(grep -A5 "\"$volume_name\"" "$volume_file" | grep "host_path" | sed 's/.*: "\(.*\)",.*/\1/')
-    fi
+    host_path=$(jq -r ".volumes[\"$volume_name\"].host_path" "$volume_file" 2>/dev/null)
 
     if [ -z "$host_path" ] || [ "$host_path" = "null" ]; then
         error_exit "Volume '$volume_name' not found" "$EXIT_CONFIG_ERROR"
@@ -687,7 +672,7 @@ restore_volume() {
     # Create backup of current data
     if [ -d "$host_path" ]; then
         local current_backup
-        current_backup="./${volume_name}_pre_restore_$(date +%Y%m%d_%H%M%S).tar.gz"
+        current_backup="./${volume_name}_pre_restore_$(python3 -c 'import datetime; print(datetime.datetime.now().strftime("%Y%m%d_%H%M%S"))').tar.gz"
         info "Creating backup of current data..."
         if tar -czf "$current_backup" -C "$(dirname "$host_path")" "$(basename "$host_path")" 2>/dev/null; then
             info "Current data backed up to: $current_backup"

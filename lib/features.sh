@@ -151,11 +151,13 @@ parse_features_config() {
             fi
             # If key contains container registry and numeric like ghcr.io/devcontainers/features/2
             if [[ "$key" =~ ^ghcr.io/devcontainers/features/[0-9]+(:.*)?$ ]]; then
-                local idx_map
-                idx_map=$(echo "$key" | sed -n 's/^ghcr.io\/devcontainers\/features\/[0-9]\+\(:.*\)?$/\0/p' 2>/dev/null || true)
-                # fallback to jq mapping for the index
+                # Extract numeric ID from feature path
                 local id_match
-                id_match=$(echo "$key" | sed -n 's/^.*\/\([0-9]\+\)\(:.*\)?$/\1/p')
+                if [[ "$key" =~ /([0-9]+)(:|$) ]]; then
+                    id_match="${BASH_REMATCH[1]}"
+                else
+                    id_match=""
+                fi
                 if [[ "$id_match" =~ ^[0-9]+$ ]]; then
                     local idx=$((id_match - 1))
                     local mapped_id
@@ -512,8 +514,8 @@ download_feature() {
         cat > "$tmp_install_script_file" << 'FEATURE_INSTALL_SCRIPT'
 #!/usr/bin/env bash
 echo "Feature $FEATURE_NAME installed (fallback script)"
-env | sed -n 's/^DCUTIL_INPUT_/DCUTIL_INPUT_/p' | sed 's/^/DCUTIL_INPUT: /'
-env | sed -n 's/^DCUTIL_FEATURE_INPUT_/DCUTIL_FEATURE_INPUT_/p' | sed 's/^/DCUTIL_FEATURE_INPUT: /'
+env | grep '^DCUTIL_INPUT_' | sed 's/^/DCUTIL_INPUT: /'
+env | grep '^DCUTIL_FEATURE_INPUT_' | sed 's/^/DCUTIL_FEATURE_INPUT: /'
 exit 0
 FEATURE_INSTALL_SCRIPT
         chmod +x "$tmp_install_script_file"
@@ -588,7 +590,8 @@ env_prepare_inputs_for_feature() {
     local feature_version
     feature_version=$(parse_feature_spec "$feature_spec" | cut -d: -f2)
     local feature_safe_name
-    feature_safe_name=$(echo "$feature_name" | sed 's#[/\\.-]#_#g' | tr '[:lower:]' '[:upper:]')
+    feature_safe_name="${feature_name//[\/\\.-]/_}"
+    feature_safe_name="${feature_safe_name^^}"
 
     # Export standard feature environment variables
     export "FEATURE_ID=$feature_id"
@@ -599,7 +602,8 @@ env_prepare_inputs_for_feature() {
     # Set environment variables for feature inputs (global inputs)
     for input_name in "${INPUTS_NAMES[@]}"; do
         local input_upper
-        input_upper=$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')
+        input_upper="${input_name//[-.]/_}"
+        input_upper="${input_upper^^}"
         local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
         local val="${INPUTS_VALUES[$input_name]:-}"
 
@@ -635,7 +639,8 @@ env_prepare_inputs_for_feature() {
                 if [ -z "$(jq -r --arg k "$opt" '.[$k] // empty' <<< "$feature_config" 2>/dev/null || echo "")" ]; then
                     # Append or export as environment variable
                     local key_upper
-                    key_upper=$(echo "$opt" | sed 's#[-\\.]#_#g' | tr '[:lower:]' '[:upper:]')
+                    key_upper="${opt//[-\\.]/_}"
+                    key_upper="${key_upper^^}"
                     export "DCUTIL_FEATURE_INPUT_${feature_safe_name}_${key_upper}=$opt_default"
                     export "DCUTIL_INPUT_${key_upper}=$opt_default"
                     export "${key_upper}=$opt_default"
@@ -651,7 +656,8 @@ env_prepare_inputs_for_feature() {
                 val=$(jq -r --arg k "$key" '.[$k] // empty' <<< "$feature_config" 2>/dev/null || echo "")
                 if [ -n "$val" ] && [ "$val" != "null" ]; then
                     local key_upper
-                    key_upper=$(echo "$key" | sed 's#[-\\.]#_#g' | tr '[:lower:]' '[:upper:]')
+                    key_upper="${key//[-\\.]/_}"
+                    key_upper="${key_upper^^}"
                     export "DCUTIL_FEATURE_INPUT_${feature_safe_name}_${key_upper}=$val"
                     export "DCUTIL_INPUT_${key_upper}=$val"
                     export "${key_upper}=$val"
@@ -667,7 +673,8 @@ env_clear_inputs_for_feature() {
     local feature_safe_name="$1"
     for input_name in "${INPUTS_NAMES[@]}"; do
         local input_upper
-        input_upper=$(echo "$input_name" | sed 's#[-\.]#_#g' | tr '[:lower:]' '[:upper:]')
+        input_upper="${input_name//[-.]/_}"
+        input_upper="${input_upper^^}"
         local var_name="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
         unset "DCUTIL_INPUT_${input_name^^}"
         unset "$var_name"
@@ -749,7 +756,8 @@ execute_feature_install_in_container() {
         local env_args=()
         for input_name in "${INPUTS_NAMES[@]}"; do
             local input_upper
-            input_upper=$(echo "$input_name" | sed 's#[-\. ]#_#g' | tr '[:lower:]' '[:upper:]')
+            input_upper="${input_name//[-. ]/_}"
+            input_upper="${input_upper^^}"
             local var_global="DCUTIL_INPUT_${input_upper}"
             local var_feature="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
             if [ -n "${!var_global:-}" ]; then
@@ -781,7 +789,8 @@ execute_feature_install_in_container() {
     local env_inline=""
     for input_name in "${INPUTS_NAMES[@]}"; do
         local input_upper
-        input_upper=$(echo "$input_name" | sed 's#[-\. ]#_#g' | tr '[:lower:]' '[:upper:]')
+        input_upper="${input_name//[-. ]/_}"
+        input_upper="${input_upper^^}"
         local var_global="DCUTIL_INPUT_${input_upper}"
         local var_feature="DCUTIL_FEATURE_INPUT_${feature_safe_name}_${input_upper}"
         if [ -n "${!var_global:-}" ]; then
@@ -841,7 +850,8 @@ install_feature() {
     feature_id=$(parse_feature_spec "$effective_spec" | cut -d: -f1)
     local feature_name="${feature_id##*/}"
     local feature_safe_name
-    feature_safe_name=$(echo "$feature_name" | sed 's#[/\\.-]#_#g' | tr '[:lower:]' '[:upper:]')
+    feature_safe_name="${feature_name//[\/\\.-]/_}"
+    feature_safe_name="${feature_safe_name^^}"
     local feature_version
     feature_version=$(parse_feature_spec "$effective_spec" | cut -d: -f2)
     
@@ -1658,7 +1668,7 @@ features_package() {
     fi
 
     # Sanitize feature_name to ensure it's a valid filename
-    feature_name=$(echo "$feature_name" | sed 's/[^a-zA-Z0-9._-]/_/g')
+    feature_name="${feature_name//[^a-zA-Z0-9._-]/_}"
 
     # Copy feature files to temp directory
     cp -r "$target"/* "$temp_dir/" 2>/dev/null || true

@@ -48,8 +48,9 @@ parse_compose_config() {
                 DOCKER_COMPOSE_FILE=""
                 while IFS= read -r file; do
                     if [ -n "$file" ] && [ "$file" != "null" ]; then
-                        local expanded_file
-                        expanded_file=$(echo "$file" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+                        local expanded_file="$file"
+                        expanded_file="${expanded_file//\$\{workspaceFolder\}/$PROJECT_DIR}"
+                        expanded_file="${expanded_file//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
                         if [ -f "$expanded_file" ]; then
                             if [ -z "$DOCKER_COMPOSE_FILE" ]; then
                                 DOCKER_COMPOSE_FILE="$expanded_file"
@@ -63,7 +64,9 @@ parse_compose_config() {
                 done < <(jq -r '.dockerComposeFile[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
             else
                 # Single compose file
-                DOCKER_COMPOSE_FILE=$(echo "$compose_files" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+                DOCKER_COMPOSE_FILE="$compose_files"
+                DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE//\$\{workspaceFolder\}/$PROJECT_DIR}"
+                DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
             fi
             
             # Check if service is specified
@@ -113,7 +116,7 @@ parse_compose_config() {
             COMPOSE_PROJECT_NAME="dcutil-$(basename "$PROJECT_DIR")"
             
             # Add timestamp to avoid conflicts
-            COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}-$(date +%Y%m%d)"
+            COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME}-$(python3 -c 'import datetime; print(datetime.datetime.now().strftime("%Y%m%d"))')"
             
             info "Docker Compose configuration found:"
             info "  Files: $DOCKER_COMPOSE_FILE"

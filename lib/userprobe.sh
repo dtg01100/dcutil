@@ -116,7 +116,9 @@ EOF
     rm -f "$probe_script"
     
     if [ -n "$probe_output" ]; then
-        info "Environment probing completed, found $(echo "$probe_output" | wc -l) variables"
+        local var_count
+        var_count=$(python3 -c "print(len('''$probe_output'''.strip().split('\n')))")
+        info "Environment probing completed, found $var_count variables"
         
         # Store probed environment variables
         while IFS= read -r env_var; do
@@ -273,7 +275,9 @@ expand_dynamic_variables() {
     # Handle ${localEnv:VAR_NAME} syntax
     if [[ "$input_string" == *"\${localEnv:"* ]]; then
         local var_name
-        var_name=$(echo "$input_string" | sed -n 's/.*\${localEnv:\([^}]*\)}.*/\1/p')
+        # Extract variable name between ${localEnv: and }
+        var_name="${input_string#*\$\{localEnv:}"
+        var_name="${var_name%%\}*}"
         
         # Find the variable in probed environment
         local var_value=""
@@ -294,7 +298,9 @@ expand_dynamic_variables() {
     # Handle ${config:setting} syntax
     if [[ "$input_string" == *"\${config:"* ]]; then
         local config_key
-        config_key=$(echo "$input_string" | sed -n 's/.*\${config:\([^}]*\)}.*/\1/p')
+        # Extract config key between ${config: and }
+        config_key="${input_string#*\$\{config:}"
+        config_key="${config_key%%\}*}"
 
         # Extract config value from devcontainer.json
         local config_value=""

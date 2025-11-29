@@ -20,7 +20,10 @@ check_podman_availability() {
         # Test basic Podman functionality
         if podman info >/dev/null 2>&1; then
             PODMAN_AVAILABLE=true
-            PODMAN_VERSION=$(podman --version | awk '{print $3}' | sed 's/v//')
+            local version_output
+            version_output=$(podman --version)
+            PODMAN_VERSION="${version_output##* }"
+            PODMAN_VERSION="${PODMAN_VERSION#v}"
             success "Podman available: version $PODMAN_VERSION"
             return 0
         else

@@ -94,7 +94,8 @@ parse_advanced_features_config() {
         WORKSPACE_MOUNT=$(jq -r '.workspaceMount // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         if [ -n "$WORKSPACE_MOUNT" ] && [ "$WORKSPACE_MOUNT" != "null" ]; then
             # Expand variables in workspaceMount
-            WORKSPACE_MOUNT=$(echo "$WORKSPACE_MOUNT" | sed "s|\${workspaceFolder}|$PROJECT_DIR|g" | sed "s|\${localWorkspaceFolder}|$PROJECT_DIR|g")
+            WORKSPACE_MOUNT="${WORKSPACE_MOUNT//\$\{workspaceFolder\}/$PROJECT_DIR}"
+            WORKSPACE_MOUNT="${WORKSPACE_MOUNT//\$\{localWorkspaceFolder\}/$PROJECT_DIR}"
             info "Workspace mount: $WORKSPACE_MOUNT"
         fi
         

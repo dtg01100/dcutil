@@ -19,7 +19,7 @@ format_bytes() {
     fi
     
     # Remove any non-numeric characters
-    bytes=$(echo "$bytes" | sed 's/[^0-9]//g')
+    bytes="${bytes//[^0-9]/}"
     
     if [ "$bytes" -lt 1024 ]; then
         echo "${bytes} B"
@@ -44,12 +44,12 @@ parse_memory_stats() {
     
     # Calculate percentage
     local usage_bytes limit_bytes
-    usage_bytes=$(echo "$mem_usage" | sed 's/[^0-9.]//g')
-    limit_bytes=$(echo "$mem_limit" | sed 's/[^0-9.]//g')
+    usage_bytes="${mem_usage//[^0-9.]/}"
+    limit_bytes="${mem_limit//[^0-9.]/}"
     
     if [ -n "$usage_bytes" ] && [ -n "$limit_bytes" ] && [ "$limit_bytes" != "0" ]; then
         local percent
-        percent=$(awk "BEGIN {printf \"%.1f\", ($usage_bytes/$limit_bytes)*100}")
+        percent=$(python3 -c "print(f'{($usage_bytes / $limit_bytes * 100):.1f}')")
         echo "$mem_usage / $mem_limit (${percent}%)"
     else
         echo "$mem_usage / $mem_limit"
