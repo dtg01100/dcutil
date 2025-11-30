@@ -20,6 +20,16 @@ declare -A INPUTS_VALUES=()
 # Controls for installation behavior
 FEATURES_DRY_RUN=${FEATURES_DRY_RUN:-false}
 # Per-feature version normalization map
+declare -A FEATURES_VERSION_NORMALIZATION=()
+FEATURES_VERSION_NORMALIZATION["git"]="latest"
+FEATURES_VERSION_NORMALIZATION["docker-in-docker"]="latest"
+FEATURES_VERSION_NORMALIZATION["docker-in-docker-in-docker"]="latest"
+
+# Track per-feature environment variables set during installation
+
+
+# Load inputs values interactively if not already set
+load_input_values() {
     
     if [ ${#INPUTS_NAMES[@]} -eq 0 ]; then
         return 0
