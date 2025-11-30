@@ -1,1 +1,1 @@
-(content omitted for brevity in the tool call)
+<FULL_TEMPLATE_INTEGRATION_CONTENT_REPLACED>
