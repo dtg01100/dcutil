@@ -4,7 +4,7 @@
 # Tests only the most essential features
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DCUTIL="$SCRIPT_DIR/dcutil"
+DCUTIL="$SCRIPT_DIR/dcutil-files/dcutil"
 
 echo "🎯 MINIMAL DCUTIL FUNCTIONALITY TEST"
 echo "==================================="
@@ -64,33 +64,17 @@ run_test "list" "\"$DCUTIL\" list >/dev/null 2>&1" 0
 
 echo ""
 echo "🏗️  INIT TESTS"
-# Skip init tests if test directories don't exist (CI environment)
-if [ -d "$SCRIPT_DIR/test-ubuntu" ]; then
-    run_test "init fast ubuntu" "cd test-ubuntu && rm -rf .devcontainer && \"$DCUTIL\" init fast 2>&1 | grep -q successfully" 0
-else
-    echo "⏭️  Skipping init tests (test directories not found - CI environment)"
-fi
-
-if [ -d "$SCRIPT_DIR/test-node" ]; then
-    run_test "init fast node" "cd test-node && rm -rf .devcontainer && \"$DCUTIL\" init fast 2>&1 | grep -q successfully" 0
-fi
+run_test "init fast ubuntu" "cd test-ubuntu && rm -rf .devcontainer && \"$DCUTIL\" init fast 2>&1 | grep -q successfully" 0
+run_test "init fast node" "cd test-node && rm -rf .devcontainer && \"$DCUTIL\" init fast 2>&1 | grep -q successfully" 0
 
 echo ""
 echo "📊 VALIDATION TESTS"
-# Skip validation tests if test directories don't exist
-if [ -d "$SCRIPT_DIR/test-ubuntu" ]; then
-    run_test "ubuntu schema" "cd test-ubuntu && \"$DCUTIL\" schema validate 2>&1 | grep -q valid" 0
-else
-    echo "⏭️  Skipping validation tests (test directories not found - CI environment)"
-fi
-
-if [ -d "$SCRIPT_DIR/test-node" ]; then
-    run_test "node schema" "cd test-node && \"$DCUTIL\" schema validate 2>&1 | grep -q valid" 0
-fi
+run_test "ubuntu schema" "cd test-ubuntu && \"$DCUTIL\" schema validate 2>&1 | grep -q valid" 0
+run_test "node schema" "cd test-node && \"$DCUTIL\" schema validate 2>&1 | grep -q valid" 0
 
 echo ""
 echo "⚙️  SUBSYSTEM TESTS"
-run_test "features info" "\"$DCUTIL\" features info 2>&1 | grep -q info" 0
+run_test "features info" "\"$DCUTIL\" features info 2>&1 | grep -qi 'info'" 0
 run_test "volumes list" "\"$DCUTIL\" volumes list >/dev/null 2>&1" 0
 run_test "compose status" "\"$DCUTIL\" compose status >/dev/null 2>&1" 1
 run_test "podman status" "\"$DCUTIL\" podman status >/dev/null 2>&1" 0
@@ -102,17 +86,13 @@ run_test "run no args" "\"$DCUTIL\" run 2>&1 | grep -q requires" 1
 
 echo ""
 echo "🧪 LIBRARY TESTS"
-LIB_DIR="$SCRIPT_DIR/lib"
-if [ -d "$LIB_DIR" ]; then
-    for lib_file in "$LIB_DIR"/*.sh; do
-        if [ -f "$lib_file" ]; then
-            lib_name=$(basename "$lib_file" .sh)
-            run_test "$lib_name syntax" "bash -n \"$lib_file\"" 0
-        fi
-    done
-else
-    echo "⚠️  Library directory not found at $LIB_DIR"
-fi
+LIB_DIR="$SCRIPT_DIR/dcutil-files/lib"
+for lib_file in "$LIB_DIR"/*.sh; do
+    if [ -f "$lib_file" ]; then
+        lib_name=$(basename "$lib_file" .sh)
+        run_test "$lib_name syntax" "bash -n \"$lib_file\"" 0
+    fi
+done
 
 echo ""
 echo "=== MINIMAL TEST RESULTS ==="
