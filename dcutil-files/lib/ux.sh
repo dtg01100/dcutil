@@ -18,20 +18,20 @@ levenshtein_distance() {
         return
     fi
     
-    if [ $len1 -eq 0 ]; then
-        echo $len2
+    if [ "$len1" -eq 0 ]; then
+        echo "${len2}"
         return
     fi
     
-    if [ $len2 -eq 0 ]; then
-        echo $len1
+    if [ "${len2}" -eq 0 ]; then
+        echo "${len1}"
         return
     fi
     
     # For very short strings, use a simple approach
     local distance=0
     local i=0
-    while [ $i -lt $len1 ] && [ $i -lt $len2 ]; do
+    while [ "$i" -lt "$len1" ] && [ "$i" -lt "$len2" ]; do
         local c1="${s1:$i:1}"
         local c2="${s2:$i:1}"
         if [ "$c1" != "$c2" ]; then
@@ -42,7 +42,7 @@ levenshtein_distance() {
     
     # Add remaining characters
     distance=$((distance + len1 - i + len2 - i))
-    echo $distance
+    echo "${distance}"
 }
 
 # Suggest similar commands when user enters an invalid command

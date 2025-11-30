@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # Enhanced template integration with official devcontainer ecosystem
 # This file provides integration with official templates, features, and CLI
 

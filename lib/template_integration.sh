@@ -1,3 +1,7 @@
+#!/usr/bin/env bash
+#!/usr/bin/env bash
+#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Enhanced template integration with official devcontainer ecosystem
 # This file provides integration with official templates, features, and CLI
 
@@ -202,7 +206,7 @@ detect_project_template() {
         echo "ghcr.io/devcontainers/templates/python"
     elif [ -f "Cargo.toml" ]; then
         echo "ghcr.io/devcontainers/templates/rust"
-    elif ls *.csproj *.fsproj *.vbproj 2>/dev/null | head -1 | grep -q .; then
+    elif find . -maxdepth 1 -type f \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" \) -print -quit | grep -q .; then
         echo "ghcr.io/devcontainers/templates/dotnet"
     elif [ -f "pom.xml" ] || [ -f "*.gradle" ] || [ -f "build.gradle" ]; then
         echo "ghcr.io/devcontainers/templates/java"

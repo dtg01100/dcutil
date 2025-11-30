@@ -18,20 +18,20 @@ levenshtein_distance() {
         return
     fi
     
-    if [ $len1 -eq 0 ]; then
-        echo $len2
+        if [ "$len1" -eq 0 ]; then
+        echo "$len2"
         return
     fi
     
-    if [ $len2 -eq 0 ]; then
-        echo $len1
+        if [ "$len2" -eq 0 ]; then
+        echo "$len1"
         return
     fi
     
     # For very short strings, use a simple approach
     local distance=0
     local i=0
-    while [ $i -lt $len1 ] && [ $i -lt $len2 ]; do
+        while [ "$i" -lt "$len1" ] && [ "$i" -lt "$len2" ]; do
         local c1="${s1:$i:1}"
         local c2="${s2:$i:1}"
         if [ "$c1" != "$c2" ]; then
@@ -48,13 +48,18 @@ levenshtein_distance() {
 # Suggest similar commands when user enters an invalid command
 suggest_command() {
     local invalid_cmd="$1"
-    local valid_commands="up down restart enter build clean status stats logs list run init check volumes features install-agent ssh compose advanced integration hostrequirements rebuild schema version completion help"
+    # Prefer arrays for command lists to avoid word-splitting/globbing issues
+    local -a valid_commands=(
+        up down restart enter build clean status stats logs list run init check
+        volumes features install-agent ssh compose advanced integration
+        hostrequirements rebuild schema version completion help
+    )
     
     local best_match=""
     local best_distance=999
     local threshold=3  # Maximum distance to suggest
     
-    for cmd in $valid_commands; do
+    for cmd in "${valid_commands[@]}"; do
         local dist
         dist=$(levenshtein_distance "$invalid_cmd" "$cmd")
         if [ "$dist" -lt "$best_distance" ] && [ "$dist" -le "$threshold" ]; then
@@ -211,13 +216,14 @@ show_contextual_tips() {
 show_progress() {
     local message="$1"
     shift
-    local command="$@"
+    # Capture the full command string to execute (join args safely)
+    local cmd_str="$*"
     
     local spinners=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
     
     # Execute command in background and capture its PID
-    eval "$command" &
+    eval "$cmd_str" &
     local pid=$!
     
     # Hide cursor
