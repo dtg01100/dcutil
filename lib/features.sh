@@ -68,11 +68,6 @@ FEATURES_DEFAULT_VERSION="latest"
 # Per-feature version normalization for numeric-only versions
 # This maps feature name -> normalized version string (e.g., latest)
 # Use numeric-only normalization for features that expect 'latest' rather than numeric versions
-FEATURES_VERSION_NORMALIZATION=(
-  ["git"]="latest"
-  ["docker-in-docker"]="latest"
-  ["docker-in-docker-in-docker"]="latest"
-)
 
 
 # Check if Features are configured
