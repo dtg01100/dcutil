@@ -144,9 +144,12 @@ add_volume() {
         validate_safe_path "$host_path"
 
         if [ ! -e "$host_path" ]; then
-            if ! [ -t 0 ]; then
-                # Non-interactive: create directory if it doesn't exist
-                mkdir -p "$host_path" 2>/dev/null || true
+            # Consider interactive only when both stdin and stdout are TTYs (avoid prompting when output is piped)
+            if ! ([ -t 0 ] && [ -t 1 ]); then
+                # Non-interactive: attempt to create directory; fail if creation is not possible
+                if ! mkdir -p "$host_path" 2>/dev/null; then
+                    error_exit "Failed to create host path '$host_path'" "$EXIT_CONFIG_ERROR"
+                fi
             else
                 if confirm_prompt "Host path '$host_path' does not exist. Create it? (y/N):"; then
                     mkdir -p "$host_path" || {
@@ -174,7 +177,9 @@ add_volume() {
             warning "Failed to update volume file using jq; printing current file for debugging"
             head -n 200 "$volume_file" 2>/dev/null || true
             rm -f "$temp_file" || true
-            close_lock "$fd"
+            if [ -n "${fd:-}" ]; then
+                close_lock "$fd"
+            fi
             error_exit "Failed to update volume config using jq" "$EXIT_CONFIG_ERROR"
         fi
         mv "$temp_file" "$volume_file"
@@ -182,7 +187,9 @@ add_volume() {
         error_exit "jq is required for volume management" "$EXIT_CONFIG_ERROR"
     fi
 
-    close_lock "$fd"
+    if [ -n "${fd:-}" ]; then
+        close_lock "$fd"
+    fi
 
     success "Added volume '$volume_name'"
     info "  On your computer: $host_path"

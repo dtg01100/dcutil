@@ -163,6 +163,19 @@ dcutil help
 - `list` - List running devcontainers
 - `run <cmd>` - Run a command in the container
 
+### SSH key propagation
+
+dcutil can optionally propagate your host's SSH agent into the container so your private keys are available for Git/SSH operations without copying keys into the container.
+
+Commands:
+
+- `dcutil ssh enable`  — add the necessary runArgs to your `.devcontainer/devcontainer.json` so the host SSH agent socket is forwarded into the container
+- `dcutil ssh disable` — remove the SSH agent binding and environment entry from your configuration
+- `dcutil ssh toggle`  — flip the current SSH propagation state on or off
+- `dcutil ssh status`  — show whether SSH propagation is currently enabled or disabled
+
+Security: SSH propagation is OFF by default when the wizard creates a configuration. Enabling it mounts your host SSH agent socket into the container (convenient, but with security implications) so only enable it when you know the environment is trusted.
+
 ### Advanced Features
 
 - `features <cmd>` - Devcontainer Features management (install, info, validate, clean, update)

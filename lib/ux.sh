@@ -256,6 +256,13 @@ is_first_run() {
 
 # Show quick start guide for first-time users
 show_first_time_welcome() {
+    # Only show the interactive welcome and prompt on real interactive terminals
+    # (both stdin and stdout must be TTYs). When running in CI or piped contexts
+    # we must avoid prompting and blocking.
+    if ! [ -t 0 ] || ! [ -t 1 ]; then
+        return 0
+    fi
+
     if is_first_run; then
         echo ""
         echo "╔════════════════════════════════════════════════════════════════╗"
@@ -329,7 +336,8 @@ show_smart_suggestions() {
 show_error_with_help() {
     local error_type="$1"
     shift
-    local error_details="$@"
+    # Join any remaining args into a single string for display
+    local error_details="$*"
     
     echo ""
     case "$error_type" in

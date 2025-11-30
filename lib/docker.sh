@@ -625,8 +625,19 @@ docker_status() {
 
 # Show devcontainer logs
 docker_logs() {
+    local project_dir="${1:-}"
     info "Showing container logs..."
-    
+
+    # Set project directory
+    if [ -z "$project_dir" ]; then
+        project_dir="$(pwd)"
+    fi
+    PROJECT_DIR="$project_dir"
+
+    # Set container name for this project
+    CONTAINER_NAME=$(get_container_name_for_project "$project_dir")
+    info "Using container name: $CONTAINER_NAME"
+
     # Check if we're in Docker Compose mode
     if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
         docker_compose_logs
@@ -731,7 +742,9 @@ docker_clean() {
     echo ""
     warning "This will remove all environment data and configuration files"
     local confirm=""
-    if [ -t 0 ]; then
+    # Consider interactive only when both stdin and stdout are TTYs. When stdout is piped
+    # the command should behave non-interactively to avoid blocking (e.g. when piped to grep).
+    if [ -t 0 ] && [ -t 1 ]; then
         read -r -p "Are you sure? (y/N): " confirm
     elif [ "${DCUTIL_FORCE:-}" = "1" ]; then
         # Non-interactive with force flag: assume confirmation

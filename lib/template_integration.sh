@@ -28,8 +28,19 @@ fetch_available_templates_official() {
         fi
     fi
 
-    # Create cache directory
-    mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
+    # Create cache directory (if possible). If we can't create the cache directory
+    # make a best-effort attempt but fall back to the static list so we don't
+    # end up attempting network operations in environments that cannot write
+    # to $HOME (CI or restricted shells). This avoids long network timeouts
+    # or permission errors when $HOME is unwritable.
+    local cache_dir
+    cache_dir="$(dirname "$cache_file")"
+    mkdir -p "$cache_dir" 2>/dev/null || true
+    if [ ! -d "$cache_dir" ] || [ ! -w "$cache_dir" ]; then
+        # Can't use cache; fall back to the bundled templates list
+        get_fallback_templates
+        return
+    fi
 
     # Fetch from GitHub API like VSCode does
     if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
@@ -47,7 +58,6 @@ fetch_available_templates_official() {
                 local template_info=""
                 template_info=$(curl -s "$template_url" 2>/dev/null)
                 if [ $? -eq 0 ] && [ -n "$template_info" ]; then
-                    if [ "$template" = "python" ]; then echo "template_info: $template_info" >&2; fi
                     local id name description
                     id=$(echo "$template_info" | jq -r '.id' 2>/dev/null || echo "$template")
                     name=$(echo "$template_info" | jq -r '.name' 2>/dev/null || echo "$template")
@@ -112,8 +122,15 @@ fetch_available_features_official() {
         fi
     fi
 
-    # Create cache directory
-    mkdir -p "$(dirname "$cache_file")" 2>/dev/null || true
+    # Create cache directory (see note above for behavior in restricted environments)
+    local cache_dir
+    cache_dir="$(dirname "$cache_file")"
+    mkdir -p "$cache_dir" 2>/dev/null || true
+    if [ ! -d "$cache_dir" ] || [ ! -w "$cache_dir" ]; then
+        # Can't use cache; fall back to the bundled features list
+        get_fallback_features
+        return
+    fi
 
     # Fetch from GitHub API like VSCode does
     if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
@@ -290,7 +307,7 @@ enhance_with_dcutil_additions() {
     local temp_file="${devcontainer_file}.tmp"
     
     # Set up cleanup trap
-    trap 'rm -f "$temp_file"' RETURN EXIT INT TERM
+    trap 'rm -f "${temp_file:-}"' RETURN EXIT INT TERM
     
     # Add our enhancement comment while preserving everything else
     # Just copy the file without adding comments to JSON
@@ -323,7 +340,7 @@ sanitize_features_json() {
 
     # Set up cleanup trap for temp file
     local temp_file="$dev_file.tmp"
-    trap 'rm -f "$temp_file"' RETURN EXIT INT TERM
+    trap 'rm -f "${temp_file:-}"' RETURN EXIT INT TERM
 
     # Run jq transformation: detect numeric suffix in feature key and map to pref array
     jq --argjson pref "$features_json" '
@@ -337,6 +354,160 @@ sanitize_features_json() {
             else k end;
         .features = (.features // {} | to_entries | map(.key = mapkey(.key)) | from_entries)
     ' "$dev_file" > "$temp_file" && mv "$temp_file" "$dev_file"
+}
+
+# ------------------------------------------------------------------
+# SSH propagation management (top-level functions)
+# These need to be available whenever the library is sourced so the
+# main `dcutil ssh` commands can call them directly. They were
+# previously defined inside the interactive wizard function which meant
+# they were only created when the wizard ran.
+# ------------------------------------------------------------------
+
+# Function to enable SSH propagation in existing configuration
+enable_ssh_propagation() {
+    local dev_file="${1:-.devcontainer/devcontainer.json}"
+
+    if [ ! -f "$dev_file" ]; then
+        error "No devcontainer.json found at $dev_file"
+        return 1
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        error "jq is required to modify the configuration"
+        return 1
+    fi
+
+    # Check if SSH is already enabled (any occurrence of ssh-agent.sock in runArgs)
+    if jq -e '(.runArgs // []) | join(" ") | test("ssh-agent.sock")' "$dev_file" >/dev/null 2>&1; then
+        info "SSH propagation is already enabled"
+        return 0
+    fi
+
+    # Add SSH propagation - append to existing runArgs if present instead of replacing
+    local temp_file="$dev_file.tmp"
+    # Use jq to ensure we preserve existing runArgs and avoid creating duplicates
+    jq '(.runArgs // []) as $r | .runArgs = ($r + ["--volume", "${SSH_AUTH_SOCK:-/tmp/ssh-agent.sock}:/ssh-agent.sock", "--env", "SSH_AUTH_SOCK=/ssh-agent.sock"])' "$dev_file" > "$temp_file" && mv "$temp_file" "$dev_file"
+
+    success "SSH propagation enabled"
+    info "SSH keys and agent will now be accessible inside the container"
+}
+
+
+# Function to disable SSH propagation in existing configuration
+disable_ssh_propagation() {
+    local dev_file="${1:-.devcontainer/devcontainer.json}"
+
+    if [ ! -f "$dev_file" ]; then
+        error "No devcontainer.json found at $dev_file"
+        return 1
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        error "jq is required to modify the configuration"
+        return 1
+    fi
+
+    # Check if SSH is already disabled (no ssh-agent.sock anywhere in runArgs)
+    if ! jq -e '(.runArgs // []) | join(" ") | test("ssh-agent.sock")' "$dev_file" >/dev/null 2>&1; then
+        info "SSH propagation is already disabled"
+        return 0
+    fi
+
+    # Remove SSH propagation - remove volume/env entries and their paired flags
+    local temp_file="$dev_file.tmp"
+
+    # Read existing runArgs into a bash array (safe with jq)
+    mapfile -t existing_args < <(jq -r '.runArgs // [] | .[]' "$dev_file")
+
+    # Build new args array by skipping --volume <ssh-agent> and --env SSH_AUTH_SOCK pairs
+    new_args=()
+    i=0
+    while [ $i -lt ${#existing_args[@]} ]; do
+        item="${existing_args[$i]}"
+        next_index=$((i + 1))
+        next_item="${existing_args[$next_index]:-}"
+
+        if [ "$item" = "--volume" ] && [[ "$next_item" =~ ssh-agent.sock ]]; then
+            i=$((i + 2))
+            continue
+        fi
+
+        if [ "$item" = "--env" ] && [ "$next_item" = "SSH_AUTH_SOCK=/ssh-agent.sock" ]; then
+            i=$((i + 2))
+            continue
+        fi
+
+        if [[ "$item" =~ ssh-agent.sock ]] || [ "$item" = "SSH_AUTH_SOCK=/ssh-agent.sock" ]; then
+            i=$((i + 1))
+            continue
+        fi
+
+        new_args+=("$item")
+        i=$((i + 1))
+    done
+
+    # Persist new args back into the JSON file
+    # Convert bash array to JSON array safely using jq
+    if [ ${#new_args[@]} -eq 0 ]; then
+        # remove runArgs entirely if nothing left
+        jq 'del(.runArgs)' "$dev_file" > "$temp_file" && mv "$temp_file" "$dev_file"
+    else
+        jq --argjson new_args "$(printf '%s
+' "${new_args[@]}" | jq -R . | jq -s .)" '.runArgs = $new_args' "$dev_file" > "$temp_file" && mv "$temp_file" "$dev_file"
+    fi
+
+    success "SSH propagation disabled"
+    info "SSH keys and agent will no longer be accessible inside the container"
+}
+
+
+# Function to check SSH propagation status
+check_ssh_propagation_status() {
+    local dev_file="${1:-.devcontainer/devcontainer.json}"
+
+    if [ ! -f "$dev_file" ]; then
+        echo "❌ No devcontainer.json found"
+        return 1
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "❌ jq is required to check the configuration"
+        return 1
+    fi
+
+    if jq -e '(.runArgs // []) | join(" ") | test("ssh-agent.sock")' "$dev_file" >/dev/null 2>&1; then
+        echo "✅ SSH propagation is ENABLED"
+        return 0
+    else
+        echo "❌ SSH propagation is DISABLED"
+        return 1
+    fi
+}
+
+
+# Function to toggle SSH propagation
+toggle_ssh_propagation() {
+    local dev_file="${1:-.devcontainer/devcontainer.json}"
+
+    if [ ! -f "$dev_file" ]; then
+        error "No devcontainer.json found at $dev_file"
+        return 1
+    fi
+
+    if ! command -v jq >/dev/null 2>&1; then
+        error "jq is required to modify the configuration"
+        return 1
+    fi
+
+    # Check current status
+    if jq -e '(.runArgs // []) | join(" ") | test("ssh-agent.sock")' "$dev_file" >/dev/null 2>&1; then
+        disable_ssh_propagation "$dev_file"
+        info "SSH propagation has been disabled"
+    else
+        enable_ssh_propagation "$dev_file"
+        info "SSH propagation has been enabled"
+    fi
 }
 
 # Get template metadata
@@ -440,60 +611,21 @@ wizard_with_official_integration() {
     read -r features_input
     features_input=${features_input:-"git,common-utils"}
     
-    # Build features array (normalize IDs to canonical registry paths)
+    # Build features array (simplified)
     local features_array="[]"
     if [ -n "$features_input" ]; then
         IFS=',' read -ra feature_ids <<< "$features_input"
         for feature_id in "${feature_ids[@]}"; do
             feature_id=$(echo "$feature_id" | xargs)  # trim whitespace
-            local full_id registry mapped_id mapped_registry idx
-            unset full_id registry mapped_id mapped_registry
-            if [[ "$feature_id" != "custom:"* ]]; then
-                # Numeric input: map to index in features_json (1-based)
-                if [[ "$feature_id" =~ ^[0-9]+$ ]] && command -v jq >/dev/null 2>&1 && [ -n "$features_json" ]; then
-                    idx=$((feature_id - 1))
-                    mapped_id=$(echo "$features_json" | jq -r ".[$idx].id // empty" 2>/dev/null | head -n1)
-                    mapped_registry=$(echo "$features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null | head -n1)
-                    # The fetched features id may already be a full registry path (ghcr.io/...)
-                    if [ -n "$mapped_id" ]; then
-                        feature_id="$mapped_id"
-                        # If mapped_id contains 'ghcr.io' then treat full_id as mapped_id
-                        if [[ "$mapped_id" == ghcr.io/* ]]; then
-                            full_id="$mapped_id"
-                        elif [ -n "$mapped_registry" ]; then
-                            full_id="$mapped_registry/$mapped_id"
-                        else
-                            full_id="ghcr.io/devcontainers/features/$mapped_id"
-                        fi
-                    fi
+            if [ -n "$feature_id" ]; then
+                # Default to ghcr.io/devcontainers/features registry
+                local full_id="$feature_id"
+                if [[ "$feature_id" != ghcr.io/* ]] && [[ "$feature_id" != "custom:"* ]]; then
+                    full_id="ghcr.io/devcontainers/features/$feature_id"
                 fi
-
-                # If user provided full registry path, use it as-is
-                if [[ -z "${full_id:-}" ]]; then
-                    if [[ "$feature_id" == ghcr.io/* ]]; then
-                        full_id="$feature_id"
-                    else
-                        # Try to find registry for this feature in fetched features list
-                        if command -v jq >/dev/null 2>&1 && [ -n "$features_json" ]; then
-                            registry=$(echo "$features_json" | jq -r --arg id "$feature_id" '.[] | select(.id == $id) | .registry' 2>/dev/null | head -n1)
-                            # If registry empty, try matching alternate id forms
-                            if [ -z "$registry" ]; then
-                                registry=$(echo "$features_json" | jq -r --arg id "$feature_id" '.[] | select(.id == $id or .id == ("ghcr.io/devcontainers/features/" + $id)) | .registry' 2>/dev/null | head -n1)
-                            fi
-                        fi
-                        if [ -n "$registry" ]; then
-                            full_id="$registry/$feature_id"
-                        else
-                            # fallback to default registry prefix
-                            full_id="ghcr.io/devcontainers/features/$feature_id"
-                        fi
-                    fi
-                fi
-
                 features_array=$(echo "$features_array" | jq ". + [{\"id\": \"$full_id\", \"options\": {}}]")
             fi
         done
-
     fi
     # Compact the JSON to avoid multiline issues
     info "Raw features_array before compact: $features_array"
@@ -524,9 +656,25 @@ wizard_with_official_integration() {
         remote_user="vscode"
     fi
     
-    # Step 4: VS Code customizations
+    # Step 4: SSH Configuration
     echo ""
-    echo "📦 Step 4: VS Code Customizations"
+    echo "🔐 Step 4: SSH Configuration"
+    echo "----------------------------------------"
+    
+    # Ask if user wants SSH propagation (SECURITY: Default to OFF)
+    if [ -t 0 ] && [ -t 1 ]; then
+        echo "SSH propagation allows your host SSH keys and agent to be accessible inside the container."
+        echo "This is convenient but has security implications."
+        echo ""
+        read -r -p "Enable SSH propagation? (y/N): " enable_ssh_propagation
+        enable_ssh_propagation=${enable_ssh_propagation:-N}
+    else
+        enable_ssh_propagation="n"
+    fi
+    
+    # Step 5: VS Code customizations
+    echo ""
+    echo "📦 Step 5: VS Code Customizations"
     echo "----------------------------------------"
 
     # Ask if user wants to add VS Code customizations
@@ -598,9 +746,9 @@ wizard_with_official_integration() {
         info "Skipping VS Code customizations"
     fi
     
-    # Step 5: Apply configuration
+    # Step 6: Apply configuration
     echo ""
-    echo "🚀 Step 5: Creating Configuration"
+    echo "🚀 Step 6: Creating Configuration"
     echo "----------------------------------------"
     
     if [[ "$selected_template_id" == custom:* ]]; then
@@ -608,41 +756,26 @@ wizard_with_official_integration() {
         local custom_image="${selected_template_id#custom:}"
 
         # Create devcontainer.json for custom image
-        # Only include customizations if user requested them
-        if [[ "$add_vscode_customizations" =~ ^[Yy] ]] && ([ "$(echo "$all_extensions_array" | jq length)" -gt 0 ] || [ "$vscode_settings_json" != "{}" ]); then
-            if ! cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "$custom_image",
-    "workspaceFolder": "$workspace_folder",
-    "remoteUser": "$remote_user",
-    "containerUser": "$container_user",
-    "customizations": {
-        "vscode": {
-            "extensions": $all_extensions_array,
-            "settings": $vscode_settings_json
-        }
-    }
-}
-EOF
-            then
-                error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
-            fi
-        else
-            # Create without VSCode customizations
-            if ! cat > .devcontainer/devcontainer.json << EOF
-{
-    "name": "$container_name",
-    "image": "$custom_image",
-    "workspaceFolder": "$workspace_folder",
-    "remoteUser": "$remote_user",
-    "containerUser": "$container_user"
-}
-EOF
-            then
-                error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
-            fi
+        # Build base configuration
+        local base_config="{\"name\": \"$container_name\", \"image\": \"$custom_image\", \"workspaceFolder\": \"$workspace_folder\", \"remoteUser\": \"$remote_user\", \"containerUser\": \"$container_user\"}"
+        
+        # Add SSH propagation if enabled
+        if [[ "$enable_ssh_propagation" =~ ^[Yy] ]]; then
+            base_config=$(echo "$base_config" | jq '. + {"runArgs": ["--volume", "${SSH_AUTH_SOCK:-/tmp/ssh-agent.sock}:/ssh-agent.sock", "--env", "SSH_AUTH_SOCK=/ssh-agent.sock"]}')
         fi
+        
+        # Add VS Code customizations if user requested them
+        if [[ "$add_vscode_customizations" =~ ^[Yy] ]] && ([ "$(echo "$all_extensions_array" | jq length)" -gt 0 ] || [ "$vscode_settings_json" != "{}" ]); then
+            base_config=$(echo "$base_config" | jq '. + {"customizations": {"vscode": {"extensions": '"$all_extensions_array"', "settings": '"$vscode_settings_json"'}}}')
+        fi
+        
+        # Write the configuration
+        local temp_file=".devcontainer/devcontainer.json.tmp"
+        if ! echo "$base_config" | jq '.' > "$temp_file"; then
+            rm -f "$temp_file"
+            error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
+        fi
+        mv "$temp_file" .devcontainer/devcontainer.json
         
     else
         # Use official template with devcontainer CLI
@@ -659,41 +792,56 @@ EOF
                 error_exit "Failed to apply official template" "$EXIT_DEVCONTAINER_ERROR"
             fi
             
-            # Enhance with our customizations using devcontainer CLI metadata (if user requested)
-            if [[ "$add_vscode_customizations" =~ ^[Yy] ]] && [ -f ".devcontainer/devcontainer.json" ]; then
+            # SSH helper functions are defined at top-level so they are available
+            # when this library is sourced by the main dcutil script.
+
+# Enhance with SSH and VS Code customizations using devcontainer CLI metadata
+            if [ -f ".devcontainer/devcontainer.json" ]; then
                 # Use devcontainer CLI to enhance the configuration
                 if command -v jq >/dev/null 2>&1; then
-                    # Check if we have extensions or settings to add
-                    local has_extensions=false
-                    local has_settings=false
+                    # Get current configuration
+                    local current_config
+                    current_config=$(cat .devcontainer/devcontainer.json)
+                    local updated_config="$current_config"
 
-                    if [ "$(echo "$all_extensions_array" | jq length)" -gt 0 ]; then
-                        has_extensions=true
+                    # Add SSH propagation if enabled
+                    if [[ "$enable_ssh_propagation" =~ ^[Yy] ]]; then
+                        info "Adding SSH propagation to configuration"
+                        # Append runArgs while preserving any existing runArgs
+                        updated_config=$(echo "$updated_config" | jq '(.runArgs // []) as $r | .runArgs = ($r + ["--volume", "${SSH_AUTH_SOCK:-/tmp/ssh-agent.sock}:/ssh-agent.sock", "--env", "SSH_AUTH_SOCK=/ssh-agent.sock"])')
+                    else
+                        info "SSH propagation disabled"
                     fi
 
-                    if [ "$vscode_settings_json" != "{}" ]; then
-                        has_settings=true
-                    fi
+                    # Only add VS Code customizations if user requested them
+                    if [[ "$add_vscode_customizations" =~ ^[Yy] ]]; then
+                        # Check if we have extensions or settings to add
+                        local has_extensions=false
+                        local has_settings=false
 
-                    if [ "$has_extensions" = true ] || [ "$has_settings" = true ]; then
-                        # Get current configuration
-                        local current_config
-                        current_config=$(cat .devcontainer/devcontainer.json)
-
-                        # Add customizations based on what's requested
-                        local updated_config="$current_config"
-
-                        if [ "$has_extensions" = true ]; then
-                            updated_config=$(echo "$updated_config" | jq '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.extensions = ((.customizations.vscode.extensions // []) + '"$all_extensions_array"' | unique)')
+                        if [ "$(echo "$all_extensions_array" | jq length)" -gt 0 ]; then
+                            has_extensions=true
                         fi
 
-                        if [ "$has_settings" = true ]; then
-                            updated_config=$(echo "$updated_config" | jq '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.settings = (.customizations.vscode.settings // {} * '"$vscode_settings_json"')')
+                        if [ "$vscode_settings_json" != "{}" ]; then
+                            has_settings=true
                         fi
 
-                        # Write updated configuration
-                        echo "$updated_config" > .devcontainer/devcontainer.json
+                        if [ "$has_extensions" = true ] || [ "$has_settings" = true ]; then
+                            if [ "$has_extensions" = true ]; then
+                                updated_config=$(echo "$updated_config" | jq --argjson ext "$all_extensions_array" '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.extensions = ((.customizations.vscode.extensions // []) + $ext | unique)')
+                            fi
+
+                            if [ "$has_settings" = true ]; then
+                                updated_config=$(echo "$updated_config" | jq --argjson settings "$vscode_settings_json" '.customizations = (.customizations // {}) | .customizations.vscode = (.customizations.vscode // {}) | .customizations.vscode.settings = (.customizations.vscode.settings // {} * $settings)')
+                            fi
+                        fi
                     fi
+
+                    # Write updated configuration
+                    local temp_file=".devcontainer/devcontainer.json.tmp"
+                    echo "$updated_config" > "$temp_file"
+                    mv "$temp_file" .devcontainer/devcontainer.json
                 fi
             fi
         else

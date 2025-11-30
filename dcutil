@@ -3,7 +3,7 @@
 # Main dcutil script
 # Routes commands to appropriate modules
 
-VERSION="v1.5.11"
+VERSION="v1.5.12"
 
 set -euo pipefail
 
@@ -198,7 +198,7 @@ _dcutil() {
     local commands="up down restart enter build clean status stats logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman lockfile version help completion test menu"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
-    local ssh_commands="start add list mount test connect help --help -h"
+    local ssh_commands="start add list mount test connect enable disable toggle status help --help -h"
     local compose_commands="up down restart status list exec logs build clean help --help -h"
     local stats_commands="show watch detailed top help --help -h"
     local build_commands="info validate clean help --help -h"
@@ -548,7 +548,7 @@ Setup & Configuration:
 
 Advanced:
   install-agent    Install AI coding assistants
-  ssh              SSH key management
+  ssh              SSH key management (enable, disable, toggle)
   compose          Multi-container environments
   advanced         Advanced configuration options
   integration      Tool integrations
@@ -1952,6 +1952,75 @@ case "$COMMAND" in
                 ;;
             *)
                 error_exit "Unknown shutdown subcommand: $subcommand. Use 'dcutil shutdown help' for usage." "$EXIT_INVALID_ARGS"
+                ;;
+        esac
+        ;;
+    "ssh")
+        if [ $# -eq 0 ]; then
+            echo "Usage: dcutil ssh <command> [options]"
+            echo "SSH commands for managing SSH key propagation to containers:"
+            echo "  enable                Enable SSH key propagation to container"
+            echo "  disable               Disable SSH key propagation to container"
+            echo "  toggle                Toggle SSH key propagation (on/off)"
+            echo "  status                Show current SSH propagation status"
+            echo "  help                  Show this help message"
+            exit $EXIT_INVALID_ARGS
+        fi
+
+        subcommand="$1"
+        shift
+
+        # Load SSH functions from template_integration module if available
+        if [ -f "$LIB_DIR/template_integration.sh" ]; then
+            source "$LIB_DIR/template_integration.sh"
+        fi
+
+        case "$subcommand" in
+            "enable")
+                if command -v enable_ssh_propagation >/dev/null 2>&1; then
+                    enable_ssh_propagation
+                else
+                    error_exit "SSH enable function not available. SSH module not loaded." "$EXIT_CONFIG_ERROR"
+                fi
+                ;;
+            "disable")
+                if command -v disable_ssh_propagation >/dev/null 2>&1; then
+                    disable_ssh_propagation
+                else
+                    error_exit "SSH disable function not available. SSH module not loaded." "$EXIT_CONFIG_ERROR"
+                fi
+                ;;
+            "toggle")
+                if command -v toggle_ssh_propagation >/dev/null 2>&1; then
+                    toggle_ssh_propagation
+                else
+                    error_exit "SSH toggle function not available. SSH module not loaded." "$EXIT_CONFIG_ERROR"
+                fi
+                ;;
+            "status")
+                if command -v check_ssh_propagation_status >/dev/null 2>&1; then
+                    check_ssh_propagation_status
+                else
+                    error_exit "SSH status function not available. SSH module not loaded." "$EXIT_CONFIG_ERROR"
+                fi
+                ;;
+            "help"|"-h"|"--help")
+                echo "Usage: dcutil ssh <command> [options]"
+                echo ""
+                echo "SSH key management for devcontainer environments:"
+                echo "  enable                Enable SSH key propagation to container"
+                echo "  disable               Disable SSH key propagation to container"
+                echo "  toggle                Toggle SSH key propagation (on/off)"
+                echo "  status                Show current SSH propagation status"
+                echo ""
+                echo "Examples:"
+                echo "  dcutil ssh enable      Enable SSH keys in container"
+                echo "  dcutil ssh disable     Disable SSH keys in container"
+                echo "  dcutil ssh toggle      Toggle SSH key status"
+                echo "  dcutil ssh status      Check SSH key propagation status"
+                ;;
+            *)
+                error_exit "Unknown ssh subcommand: $subcommand. Use 'dcutil ssh help' for usage." "$EXIT_INVALID_ARGS"
                 ;;
         esac
         ;;
