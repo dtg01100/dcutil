@@ -4,6 +4,7 @@
 # Provides Podman compatibility layer for Docker-native operations
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for Podman backend
@@ -202,7 +203,7 @@ execute_podman_command() {
     
     # Execute the command
     info "Executing Podman: $cmd ${podman_args[*]}"
-    if podman $cmd "${podman_args[@]}"; then
+    if podman "$cmd" "${podman_args[@]}"; then
         return 0
     else
         local exit_code=$?
@@ -210,7 +211,7 @@ execute_podman_command() {
         # Try fallback to Docker if enabled
         if [ "$PODMAN_FALLBACK_ENABLED" = true ]; then
             warning "Podman command failed, attempting Docker fallback..."
-            if docker $cmd "${@:1}"; then
+            if docker "$cmd" "${@:1}"; then
                 info "Docker fallback successful"
                 return 0
             fi

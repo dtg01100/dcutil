@@ -3,6 +3,7 @@
 # Devcontainer CLI Interface for dcutil
 # Provides a bridge to the official devcontainer CLI while adding enhanced UX
 
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variable to cache detected backend for the current project
@@ -248,6 +249,8 @@ execute_command_in_container_via_cli() {
 }
 
 # Get current devcontainer name based on project
+## Allow positional arg use when callers provide it
+# shellcheck disable=SC2120
 get_current_devcontainer_name() {
     local project_dir="${1:-$PROJECT_DIR}"
     if [ -z "$project_dir" ]; then

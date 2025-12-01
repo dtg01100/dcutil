@@ -4,6 +4,7 @@
 # Implements additional lifecycle hooks from devcontainer specification
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for lifecycle commands

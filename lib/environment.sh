@@ -3,6 +3,7 @@
 # Environment management for dcutil
 # Handles containerEnv, remoteEnv, and user management
 
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global environment variables
@@ -23,6 +24,7 @@ parse_environment_config() {
     fi
 
     # Clear existing environment variables
+     # shellcheck disable=SC1091
     CONTAINER_ENV=()
     REMOTE_ENV=()
 

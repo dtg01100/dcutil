@@ -29,7 +29,7 @@ echo ""
 
 # Step 2: Stage and commit all changes
 echo "💾 Step 2: Committing all changes..."
-read -p "Commit changes? (y/N): " commit_choice
+    read -r -p "Commit changes? (y/N): " commit_choice
 if [[ "$commit_choice" =~ ^[Yy]$ ]]; then
     git add -A
     git commit -m "Release $VERSION: Resource Monitoring & Beginner-Friendly UX
@@ -56,7 +56,7 @@ echo ""
 
 # Step 3: Create tag
 echo "🏷️  Step 3: Creating git tag $VERSION..."
-read -p "Create tag? (y/N): " tag_choice
+    read -r -p "Create tag? (y/N): " tag_choice
 if [[ "$tag_choice" =~ ^[Yy]$ ]]; then
     git tag -a "$VERSION" -m "dcutil $VERSION - Resource Monitoring & Beginner-Friendly UX"
     echo "✅ Tag created"
@@ -67,7 +67,7 @@ echo ""
 
 # Step 4: Push to remote
 echo "📤 Step 4: Pushing to remote..."
-read -p "Push commits and tags? (y/N): " push_choice
+    read -r -p "Push commits and tags? (y/N): " push_choice
 if [[ "$push_choice" =~ ^[Yy]$ ]]; then
     git push origin master
     git push origin "$VERSION"
@@ -79,7 +79,7 @@ echo ""
 
 # Step 5: Create GitHub release
 echo "📦 Step 5: Creating GitHub Release..."
-read -p "Create GitHub release with gh CLI? (y/N): " release_choice
+    read -r -p "Create GitHub release with gh CLI? (y/N): " release_choice
 if [[ "$release_choice" =~ ^[Yy]$ ]]; then
     # Check if gh is available
     if ! command -v gh &> /dev/null; then
@@ -96,7 +96,8 @@ if [[ "$release_choice" =~ ^[Yy]$ ]]; then
             --notes-file release_notes.txt \
             --repo dtg01100/dcutil
         
-        if [ $? -eq 0 ]; then
+        rc=$?
+        if [ "$rc" -eq 0 ]; then
             echo "✅ GitHub release created successfully!"
         else
             echo "⚠️  Release creation failed. Create manually at:"
@@ -112,7 +113,7 @@ else
     echo "   4. Publish release"
 fi
 echo ""
-read -p "Press Enter after GitHub release is confirmed..."
+    read -r -p "Press Enter after GitHub release is confirmed..."
 echo ""
 
 # Step 6: Wait for GitHub Action
@@ -124,7 +125,7 @@ echo "   - Create a pull request or commit directly"
 echo ""
 echo "   Check progress at: https://github.com/dtg01100/dcutil/actions"
 echo ""
-read -p "Press Enter after GitHub Action completes..."
+    read -r -p "Press Enter after GitHub Action completes..."
 echo ""
 
 # Step 7: Test installation

@@ -4,6 +4,7 @@
 # Implements advanced devcontainer specification features
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Wrapper functions for main script compatibility

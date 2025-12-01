@@ -3,7 +3,10 @@
 # Main dcutil script
 # Routes commands to appropriate modules
 
-VERSION="v1.5.12"
+# VERSION is intentionally defined here as repository metadata and read by packaging
+# tools; it may be referenced by external wrappers or at runtime by other scripts.
+# shellcheck disable=SC2034
+VERSION="v1.5.13"
 
 set -euo pipefail
 

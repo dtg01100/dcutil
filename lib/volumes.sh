@@ -3,6 +3,7 @@
 # Volume management functionality for dcutil
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Constants for lock retry and delays

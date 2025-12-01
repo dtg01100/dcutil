@@ -4,10 +4,12 @@
 # Direct Docker operations without external dependencies
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Source additional modules if available
 _lib_dir="$(dirname "${BASH_SOURCE[0]}")"
+# shellcheck disable=SC1090
 for module in compose build userprobe merging integration advanced features lifecycle environment; do
     [ -f "$_lib_dir/$module.sh" ] && source "$_lib_dir/$module.sh"
 done

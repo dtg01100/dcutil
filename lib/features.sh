@@ -4,6 +4,7 @@
 # Implements Devcontainer Features specification for adding tools and runtimes
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for Features
@@ -20,10 +21,14 @@ declare -A INPUTS_VALUES=()
 # Controls for installation behavior
 FEATURES_DRY_RUN=${FEATURES_DRY_RUN:-false}
 # Per-feature version normalization map
+# This map may be populated for normalizing numeric feature versions; it's intentionally predeclared
+# shellcheck disable=SC2034
 declare -A FEATURES_VERSION_NORMALIZATION=()
 FEATURES_VERSION_NORMALIZATION["git"]="latest"
 FEATURES_VERSION_NORMALIZATION["docker-in-docker"]="latest"
 FEATURES_VERSION_NORMALIZATION["docker-in-docker-in-docker"]="latest"
+
+: "${FEATURES_VERSION_NORMALIZATION[*]:-}"
 
 # Track per-feature environment variables set during installation
 
@@ -1645,8 +1650,9 @@ features_package() {
     fi
 
     # Create a temporary directory for packaging
-    local temp_dir=$(mktemp -d)
-    if [ $? -ne 0 ] || [ -z "$temp_dir" ] || [ ! -d "$temp_dir" ]; then
+    local temp_dir
+    temp_dir=$(mktemp -d) || true
+    if [ -z "$temp_dir" ] || [ ! -d "$temp_dir" ]; then
         error_exit "Failed to create temporary directory for packaging" "$EXIT_CONFIG_ERROR"
     fi
 
@@ -1673,7 +1679,8 @@ features_package() {
     cp -r "$target"/* "$temp_dir/" 2>/dev/null || true
 
     # Get current working directory for absolute path
-    local current_dir=$(pwd)
+    local current_dir
+    current_dir="$(pwd)"
 
     # Create the package (tar file) using absolute path
     local output_file="${feature_name}.tgz"

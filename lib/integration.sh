@@ -4,6 +4,7 @@
 # Implements customizations and metadata parsing from devcontainer specification
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Wrapper functions for main script compatibility
@@ -142,12 +143,12 @@ parse_image_metadata() {
         
         # Parse metadata array
         if command -v jq &> /dev/null; then
-            echo "$metadata_label" | jq -r '.[]' 2>/dev/null | while IFS= read -r metadata_entry; do
+            while IFS= read -r metadata_entry; do
                 if [ -n "$metadata_entry" ]; then
                     IMAGE_METADATA+=("$metadata_entry")
                     info "Image metadata entry: $metadata_entry"
                 fi
-            done
+            done < <(echo "$metadata_label" | jq -r '.[]' 2>/dev/null)
         fi
     else
         info "No image metadata found"
@@ -203,7 +204,8 @@ apply_vscode_customizations() {
 
     # Create VS Code settings directory in container
     local vscode_settings_dir="/home/${CONTAINER_USER:-vscode}/.vscode-server/data/User"
-    execute_in_container sh -c "mkdir -p '$vscode_settings_dir'" 2>/dev/null || true
+            # shellcheck disable=SC2086
+            execute_in_container sh -c "mkdir -p '$vscode_settings_dir'" 2>/dev/null || true
 
     # Skip extension installation - extensions will be installed when VS Code connects to the container
     # This avoids blocking the enter command waiting for extension installation
@@ -220,9 +222,8 @@ apply_vscode_customizations() {
         # If settings object is empty or null, skip this step
         if [ "$(echo "$settings_object" | jq -r 'if . == null or . == {} then "empty" else "not_empty" end' 2>/dev/null)" = "not_empty" ]; then
             # Create the settings file with proper JSON
-            execute_in_container sh -c "mkdir -p '$(dirname "$settings_file")' && echo '$settings_object' > '$settings_file'" 2>/dev/null || warning "Could not write VS Code settings"
-
-            if [ $? -eq 0 ]; then
+            # shellcheck disable=SC2086
+            if execute_in_container sh -c "mkdir -p '$(dirname \"$settings_file\")' && echo '$settings_object' > '$settings_file'" 2>/dev/null; then
                 info "VS Code settings applied"
             else
                 warning "Could not write VS Code settings to container"

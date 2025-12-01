@@ -3,6 +3,8 @@
 # Initialization functionality for dcutil
 
 # Source core functionality first, then template integration
+# Source core functionality first, then template integration
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/template_integration.sh"
 

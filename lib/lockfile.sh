@@ -4,6 +4,7 @@
 # Implements devcontainer-lock.json functionality for reproducible builds
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for lockfile
@@ -49,6 +50,7 @@ has_lockfile() {
 }
 
 # Parse lockfile configuration
+## shellcheck disable=SC2120
 parse_lockfile_config() {
     local project_dir="${1:-$PROJECT_DIR}"
     
@@ -144,7 +146,7 @@ LOCKFILE_BASE
     # Add feature information if features are configured
     if command -v parse_features_config >/dev/null 2>&1 && parse_features_config >/dev/null 2>&1; then
         if [ ${#FEATURES_IDS[@]} -gt 0 ]; then
-            local features_lock=()
+            # features_lock intentionally not used in this helper - previously reserved for future collection
             
             for feature_id in "${FEATURES_IDS[@]}"; do
                 local feature_spec="$feature_id"
@@ -311,7 +313,7 @@ apply_lockfile() {
 
 # Show lockfile information
 show_lockfile_info() {
-    if ! command -v parse_lockfile_config >/dev/null 2>&1 || ! parse_lockfile_config >/dev/null 2>&1; then
+    if ! command -v parse_lockfile_config >/dev/null 2>&1 || ! parse_lockfile_config "$PROJECT_DIR" >/dev/null 2>&1; then
         echo "No lockfile configuration found."
         return 1
     fi
@@ -334,7 +336,7 @@ show_lockfile_info() {
 
 # Validate lockfile configuration
 validate_lockfile_config() {
-    if ! command -v parse_lockfile_config >/dev/null 2>&1 || ! parse_lockfile_config >/dev/null 2>&1; then
+    if ! command -v parse_lockfile_config >/dev/null 2>&1 || ! parse_lockfile_config "$PROJECT_DIR" >/dev/null 2>&1; then
         echo "No lockfile configuration found."
         return 0
     fi

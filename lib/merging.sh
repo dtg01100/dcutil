@@ -4,6 +4,7 @@
 # Implements the merge logic between image metadata and devcontainer.json per specification
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Wrapper functions for main script compatibility
@@ -85,11 +86,11 @@ merge_image_metadata() {
     
     # Parse metadata array
     if command -v jq &> /dev/null; then
-        echo "$metadata_label" | jq -c '.[]' 2>/dev/null | while IFS= read -r metadata_entry; do
+        while IFS= read -r metadata_entry; do
             if [ -n "$metadata_entry" ]; then
                 IMAGE_METADATA_MERGED+=("$metadata_entry")
             fi
-        done
+        done < <(echo "$metadata_label" | jq -c '.[]' 2>/dev/null)
         
         # Apply merge logic for each metadata entry
         for metadata_entry in "${IMAGE_METADATA_MERGED[@]}"; do
@@ -343,7 +344,7 @@ show_merged_config() {
     
     echo "Merged Configuration (Image Metadata + devcontainer.json):"
     echo "========================================================"
-    cat "$MERGED_CONFIG_FILE" | jq '.' 2>/dev/null || cat "$MERGED_CONFIG_FILE"
+    jq '.' "$MERGED_CONFIG_FILE" 2>/dev/null || cat "$MERGED_CONFIG_FILE"
 }
 
 # Validate merged configuration
