@@ -413,20 +413,28 @@ validate_backend_config() {
 
 # Initialize Podman backend
 init_podman_backend() {
-    info "Initializing Podman backend support..."
-
-    # Auto-detect backend preference
-    auto_detect_backend
-
-    # Validate configuration
-    validate_backend_config
-
-    if [ "$PODMAN_BACKEND_ENABLED" = true ]; then
-        success "Podman backend initialized successfully"
-        info "Using Podman version $PODMAN_VERSION"
-
-        # Offer to apply Podman-specific tweaks to devcontainer.json
-        offer_podman_tweaks
+    # Only initialize if Docker is not available or Podman is explicitly requested
+    if [ "${DCUTIL_BACKEND:-}" = "podman" ] || ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        info "Initializing Podman backend support..."
+        
+        # Auto-detect backend preference
+        auto_detect_backend
+        
+        # Validate configuration
+        validate_backend_config
+        
+        if [ "$PODMAN_BACKEND_ENABLED" = true ]; then
+            success "Podman backend initialized successfully"
+            info "Using Podman version $PODMAN_VERSION"
+            
+            # Offer to apply Podman-specific tweaks to devcontainer.json
+            offer_podman_tweaks
+        else
+            info "Docker backend validated successfully"
+        fi
+    else
+        # Docker is available, skip Podman checks for performance
+        info "Docker backend validated successfully"
     fi
 }
 
