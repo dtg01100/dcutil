@@ -4,6 +4,7 @@
 # Implements validation of system requirements per devcontainer specification
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for host requirements
@@ -292,7 +293,8 @@ validate_host_requirements() {
     # Parse requirements
     local requirements
     requirements=$(parse_host_requirements)
-    if [ $? -ne 0 ]; then
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
         error "Failed to parse host requirements"
         return 1
     fi

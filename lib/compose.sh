@@ -4,6 +4,7 @@
 # Handles docker-compose.yml based devcontainer configurations
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for Docker Compose
@@ -27,7 +28,8 @@ check_docker_compose() {
 get_compose_command() {
     if command -v docker-compose &> /dev/null; then
         echo "docker-compose"
-    elif docker compose version &> /dev/null; then
+                read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+                "$compose_cmd" "${up_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d "${COMPOSE_DEPENDENCIES[@]}"
         echo "docker compose"
     else
         error_exit "Docker Compose is not available." "$EXIT_DOCKER_ERROR"
@@ -255,26 +257,28 @@ docker_compose_up() {
         if [ -n "$DOCKER_COMPOSE_FILE" ]; then
             if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
                 # Multiple compose files
-                $compose_cmd "${up_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" up -d "${services_to_start[@]}"
+                read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+                "$compose_cmd" "${up_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d "${services_to_start[@]}"
             else
                 # Single compose file
-                $compose_cmd "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${services_to_start[@]}"
+                "$compose_cmd" "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d "${services_to_start[@]}"
             fi
         else
-            $compose_cmd "${up_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d "${services_to_start[@]}"
+            "$compose_cmd" "${up_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d "${services_to_start[@]}"
         fi
     else
         # Start all services
         if [ -n "$DOCKER_COMPOSE_FILE" ]; then
             if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
                 # Multiple compose files
-                $compose_cmd "${up_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" up -d
+                read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+                "$compose_cmd" "${up_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d
             else
                 # Single compose file
-                $compose_cmd "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d
+                "$compose_cmd" "${up_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d
             fi
         else
-            $compose_cmd "${up_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d
+            "$compose_cmd" "${up_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d
         fi
     fi
     
@@ -285,7 +289,8 @@ docker_compose_up() {
         # This is here for future enhancement
     fi
     
-    if [ $? -eq 0 ]; then
+    local rc=$?
+    if [ "$rc" -eq 0 ]; then
         success "Docker Compose environment started successfully"
     else
         error_exit "Failed to start Docker Compose environment" "$EXIT_DEVCONTAINER_ERROR"
@@ -315,16 +320,18 @@ docker_compose_down() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd "${down_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" down
+            read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+            "$compose_cmd" "${down_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" down
         else
             # Single compose file
-            $compose_cmd "${down_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" down
+            "$compose_cmd" "${down_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" down
         fi
     else
-        $compose_cmd "${down_args[@]}" -p "$COMPOSE_PROJECT_NAME" down
+        "$compose_cmd" "${down_args[@]}" -p "$COMPOSE_PROJECT_NAME" down
     fi
     
-    if [ $? -eq 0 ]; then
+    local rc=$?
+    if [ "$rc" -eq 0 ]; then
         success "Docker Compose environment stopped successfully"
     else
         error_exit "Failed to stop Docker Compose environment" "$EXIT_DEVCONTAINER_ERROR"
@@ -366,13 +373,14 @@ docker_compose_config() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd "${config_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" config
+            read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+            "$compose_cmd" "${config_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" config
         else
             # Single compose file
-            $compose_cmd "${config_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" config
+            "$compose_cmd" "${config_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" config
         fi
     else
-        $compose_cmd "${config_args[@]}" -p "$COMPOSE_PROJECT_NAME" config
+        "$compose_cmd" "${config_args[@]}" -p "$COMPOSE_PROJECT_NAME" config
     fi
 }
 
@@ -403,14 +411,15 @@ docker_compose_logs() {
     
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
-            # Multiple compose files
-            $compose_cmd "${logs_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" logs -f $service_arg
+            # Multiple compose files - split into array and pass each as its own arg
+            read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+            "$compose_cmd" "${logs_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" logs -f "$service_arg"
         else
             # Single compose file
-            $compose_cmd "${logs_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" logs -f $service_arg
+            "$compose_cmd" "${logs_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" logs -f "$service_arg"
         fi
     else
-        $compose_cmd "${logs_args[@]}" -p "$COMPOSE_PROJECT_NAME" logs -f $service_arg
+        "$compose_cmd" "${logs_args[@]}" -p "$COMPOSE_PROJECT_NAME" logs -f "$service_arg"
     fi
 }
 
@@ -475,13 +484,14 @@ docker_compose_status() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd "${ps_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" ps
+            read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+            "$compose_cmd" "${ps_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" ps
         else
             # Single compose file
-            $compose_cmd "${ps_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" ps
+            "$compose_cmd" "${ps_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" ps
         fi
     else
-        $compose_cmd "${ps_args[@]}" -p "$COMPOSE_PROJECT_NAME" ps
+        "$compose_cmd" "${ps_args[@]}" -p "$COMPOSE_PROJECT_NAME" ps
     fi
 }
 
@@ -528,13 +538,14 @@ docker_compose_clean() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd "${clean_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
+            read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+            "$compose_cmd" "${clean_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
         else
             # Single compose file
-            $compose_cmd "${clean_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
+            "$compose_cmd" "${clean_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
         fi
     else
-        $compose_cmd "${clean_args[@]}" -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
+        "$compose_cmd" "${clean_args[@]}" -p "$COMPOSE_PROJECT_NAME" down -v --remove-orphans
     fi
     
     # Remove unused images
@@ -573,16 +584,18 @@ docker_compose_scale() {
     if [ -n "$DOCKER_COMPOSE_FILE" ]; then
         if [[ "$DOCKER_COMPOSE_FILE" == *"-f "* ]]; then
             # Multiple compose files
-            $compose_cmd "${scale_args[@]}" -f $DOCKER_COMPOSE_FILE -p "$COMPOSE_PROJECT_NAME" up -d --scale "$service_name=$replicas"
+            read -r -a file_args <<< "$DOCKER_COMPOSE_FILE"
+            "$compose_cmd" "${scale_args[@]}" "${file_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d --scale "$service_name=$replicas"
         else
             # Single compose file
-            $compose_cmd "${scale_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d --scale "$service_name=$replicas"
+            "$compose_cmd" "${scale_args[@]}" -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d --scale "$service_name=$replicas"
         fi
     else
-        $compose_cmd "${scale_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d --scale "$service_name=$replicas"
+        "$compose_cmd" "${scale_args[@]}" -p "$COMPOSE_PROJECT_NAME" up -d --scale "$service_name=$replicas"
     fi
     
-    if [ $? -eq 0 ]; then
+    local rc=$?
+    if [ "$rc" -eq 0 ]; then
         success "Service '$service_name' scaled to $replicas replicas"
     else
         error_exit "Failed to scale service '$service_name'" "$EXIT_DEVCONTAINER_ERROR"

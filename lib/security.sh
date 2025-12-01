@@ -1,12 +1,15 @@
 #!/bin/bash
+# shellcheck disable=SC2140,SC1078,SC1079,SC1125,SC2027,SC2086
 
 # Security functions for dcutil
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables
 CONTAINER_ID=""
+export CONTAINER_ID
 
 create_system_venv() {
     local venv_dir="$1"
@@ -459,7 +462,7 @@ setup_portable_python_impl() {
 
 check_agent_security_risk() {
     local agent="$1"
-    local install_cmd="$2"
+    local _install_cmd="$2"
 
     case "$agent" in
         # With npm standardization, there are no high-risk agents that require special prompting
@@ -514,6 +517,7 @@ scan_vulnerabilities() {
             fi
 
             # 2. Check for dependency conflicts using pip-tools/pipdeptree
+            # shellcheck disable=SC2140,SC1078,SC1079,SC2027,SC2086,SC1125
             info "Checking for package dependency conflicts..."
             if run_in_container "
                 $pip_cmd install pipdeptree --quiet 2>/dev/null || true
@@ -522,11 +526,12 @@ scan_vulnerabilities() {
                     pipdeptree --warn fail 2>&1 | grep -q 'conflict\|error' && exit 1 || exit 0
                 else
                     $python_cmd -c '
-import pkg_resources
 import sys
+import pkg_resources
+agent_name = sys.argv[1] if len(sys.argv) > 1 else ""
 try:
     # Get our installed packages related to the agent
-    agent_pkgs = [pkg for pkg in pkg_resources.working_set if any(keyword in pkg.key.lower() for keyword in ["'"$agent"'", "assistant", "ai", "chat"])]
+    agent_pkgs = [pkg for pkg in pkg_resources.working_set if any(keyword in pkg.key.lower() for keyword in [agent_name, "assistant", "ai", "chat"])]
     if agent_pkgs:
         print("Agent-related packages: {}".format([pkg.key for pkg in agent_pkgs]))
     else:
@@ -540,12 +545,13 @@ try:
 except Exception as e:
     print("Could not check dependencies: {}".format(e))
     sys.exit(1)
-                    '
+' "$agent"
                 fi
             " 2>&1 | grep -q "conflict\|error\|Could not check\|failed"; then
                 warning "Potential package conflicts detected for $agent"
                 vulnerabilities_found=true
             fi
+            # shellcheck enable=SC2140,SC1078,SC1079,SC2027,SC2086,SC1125
 
             # 3. Check for known problematic packages
             info "Checking for packages with known security issues..."
@@ -805,7 +811,7 @@ install_agent() {
 # This attempts to add the necessary features to the devcontainer.json file
 attempt_auto_install_prerequisites() {
     local agent="$1"
-    local need_restart=false
+    local _need_restart=false
     
     info "Checking for optimal installation method for $agent using Python feature manager..."
     

@@ -4,9 +4,12 @@
 # Implements JSON Schema validation for devcontainer.json files
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variables for schema validation
+# This flag may be consulted by external modules; mark as intentionally present
+# shellcheck disable=SC2034
 SCHEMA_VALIDATION_ENABLED=true
 SCHEMA_ERRORS=()
 SCHEMA_WARNINGS=()

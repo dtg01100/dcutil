@@ -4,6 +4,7 @@
 # Implements shutdown actions per devcontainer specification
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Wrapper functions for main script compatibility
@@ -25,6 +26,8 @@ devcontainer_shutdown_cleanup() {
 
 # Global variables for shutdown actions
 SHUTDOWN_ACTION=""
+# This array may be populated and used by other modules or runtime flows; suppress unused warning
+# shellcheck disable=SC2034
 SHUTDOWN_COMMANDS=()
 
 # Check if shutdownAction is configured
@@ -245,6 +248,8 @@ validate_shutdown_action_config() {
 # Cleanup shutdown configuration
 cleanup_shutdown_action() {
     SHUTDOWN_ACTION=""
+    # suppress SC2034 for re-initializing global array used elsewhere
+    # shellcheck disable=SC2034
     SHUTDOWN_COMMANDS=()
     # Remove any existing trap
     trap - EXIT

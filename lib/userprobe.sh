@@ -4,6 +4,7 @@
 # Implements shell-based environment variable probing per devcontainer specification
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Wrapper functions for main script compatibility

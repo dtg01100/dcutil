@@ -8,12 +8,18 @@
 
 # Exit codes
 EXIT_SUCCESS=0
+export EXIT_SUCCESS
 EXIT_INVALID_ARGS=1
+# The following exit codes are used by other sourced modules; mark as intentionally exported/externally used
+# shellcheck disable=SC2034
 EXIT_DEP_NOT_FOUND=2
 EXIT_DOCKER_ERROR=3
 EXIT_DEVCONTAINER_ERROR=4
 EXIT_PERMISSION_ERROR=5
 EXIT_CONFIG_ERROR=6
+
+# Ensure these constants are visible to sourced modules and subshells
+export EXIT_DEP_NOT_FOUND EXIT_DOCKER_ERROR DETECTED_BACKEND
 
 # Colors for output
 RED='\033[0;31m'
@@ -309,15 +315,20 @@ validate_safe_path() {
     fi
 }
 
+## Allow tilde detection without relying on shell expansion; we'll handle it explicitly
+# shellcheck disable=SC2088
 safe_path() {
     local path="$1"
-    case "$path" in
-        "~/"*) echo "$HOME/${path#"~/"}" ;;
-        "~"*) echo "$HOME" ;;
-        *) echo "$path" ;;
-    esac | while IFS= read -r line; do
+    if [ "${path:0:2}" = "~/" ]; then
+        # handle paths beginning with ~/
+        path="$HOME/${path:2}"
+    elif [[ "$path" == "~" ]]; then
+        path="$HOME"
+    fi
+
+    while IFS= read -r line; do
         python3 -c "import os; print(os.path.abspath('$line'))" 2>/dev/null || echo "$line"
-    done
+    done <<<"$path"
 }
 
 # Validate a workspace folder path provided for devcontainer configuration

@@ -145,13 +145,47 @@ run_test "parse_feature_spec full" "bash -c 'source \"$SCRIPT_DIR/lib/features.s
 run_test "get_effective_feature_spec git numeric->latest" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; get_effective_feature_spec \"git:1\" \"{}\" | grep -q \"^ghcr.io/devcontainers/features/git:latest$\"'"
 
 # Test: validate_feature_cache_dir
-run_test "validate_feature_cache_dir" "bash -c 'tmpdir=$(mktemp -d); mkdir -p \"$tmpdir/src\"; echo \"{}\" > \"$tmpdir/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpdir/src/install.sh\"; chmod +x \"$tmpdir/src/install.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; validate_feature_cache_dir \"$tmpdir\"'"
+_run_validate_feature_cache_dir() {
+    tmpdir=$(mktemp -d)
+    mkdir -p "$tmpdir/src"
+    echo "{}" > "$tmpdir/devcontainer-feature.json"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$tmpdir/src/install.sh"
+    chmod +x "$tmpdir/src/install.sh"
+    source "$SCRIPT_DIR/lib/features.sh"
+    validate_feature_cache_dir "$tmpdir"
+}
+run_test "validate_feature_cache_dir" "_run_validate_feature_cache_dir"
 
 # Test: parse_features_config mapping
-run_test "parse_features_config mapping" "bash -c 'source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/docker.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; PROJECT_DIR=\"$(cd .. >/dev/null && pwd)\"; export PROJECT_DIR; parse_devcontainer_config; parse_features_config >/dev/null; printf "%s\n" \"${FEATURES_IDS[*]}\" | grep -q \"ghcr.io/devcontainers/features/git\"'"
-
+_run_parse_features_config_mapping() {
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib/core.sh"
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib/docker.sh"
+    # shellcheck disable=SC1091
+    source "$SCRIPT_DIR/lib/features.sh"
+    PROJECT_DIR="$(cd .. >/dev/null && pwd)"
+    export PROJECT_DIR
+    parse_devcontainer_config
+    parse_features_config >/dev/null
+    printf "%s\n" "${FEATURES_IDS[*]}" | grep -q "ghcr.io/devcontainers/features/git"
+}
+run_test "parse_features_config mapping" "_run_parse_features_config_mapping"
 # Test: resolve_feature_install_order
-run_test "resolve_feature_install_order" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_a_latest/src\"; echo \"{\\\"id\\\":\\\"a\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_a_latest/devcontainer-feature.json\"; printf \"ghcr.io/devcontainers/features/b:latest\\n\" > \"$tmpcache/ghcr.io_devcontainers_features_a_latest/dependsOn.list\"; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_b_latest/src\"; echo \"{\\\"id\\\":\\\"b\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_b_latest/devcontainer-feature.json\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; resolve_feature_install_order \"ghcr.io/devcontainers/features/a:latest\" \"ghcr.io/devcontainers/features/b:latest\" | sed -n 1,2p | grep -q \"ghcr.io/devcontainers/features/b:latest\"'"
+_run_resolve_feature_install_order() {
+    tmpcache=$(mktemp -d)
+    export FEATURES_CACHE_DIR="$tmpcache"
+    mkdir -p "$tmpcache/ghcr.io_devcontainers_features_a_latest/src"
+    printf '%s' '{"id":"a"}' > "$tmpcache/ghcr.io_devcontainers_features_a_latest/devcontainer-feature.json"
+    printf 'ghcr.io/devcontainers/features/b:latest\n' > "$tmpcache/ghcr.io_devcontainers_features_a_latest/dependsOn.list"
+    mkdir -p "$tmpcache/ghcr.io_devcontainers_features_b_latest/src"
+    printf '%s' '{"id":"b"}' > "$tmpcache/ghcr.io_devcontainers_features_b_latest/devcontainer-feature.json"
+        # shellcheck disable=SC1091
+        source "$SCRIPT_DIR/lib/core.sh"
+    source "$SCRIPT_DIR/lib/features.sh"
+    resolve_feature_install_order "ghcr.io/devcontainers/features/a:latest" "ghcr.io/devcontainers/features/b:latest" | sed -n 1,2p | grep -q "ghcr.io/devcontainers/features/b:latest"
+}
+run_test "resolve_feature_install_order" "_run_resolve_feature_install_order"
 
 # Test: Features install dry-run
 run_test "Features install dry-run" "\"$DCUTIL\" features install --dry-run >/dev/null" 
@@ -160,7 +194,27 @@ run_test "Features install dry-run" "\"$DCUTIL\" features install --dry-run >/de
 run_test "install_feature host mock" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src\"; echo \"{\\\"id\\\":\\\"git\\\",\\\"version\\\":\\\"1.3.4\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; chmod +x \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; export FEATURES_FORCE_HOST_INSTALL=true; install_feature ghcr.io/devcontainers/features/git:latest'"
 
 # Test: sanitize_features_json mapping of numeric keys
-run_test "sanitize_features_json mapping" "bash -c 'tmpproj=$(mktemp -d); mkdir -p \"$tmpproj/.devcontainer\"; cat > \"$tmpproj/.devcontainer/devcontainer.json\" <<JD\n{\n  \"name\": \"tmpl\",\n  \"features\": {\n    \"1\": {},\n    \"ghcr.io/devcontainers/features/2\": {}\n  }\n}\nJD\n; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/template_integration.sh\"; fetch_available_features_official() { echo \"[{\\\"id\\\":\\\"git\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"},{\\\"id\\\":\\\"docker-in-docker\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"}]\"; }; cd \"$tmpproj\"; sanitize_features_json; grep -q \"ghcr.io/devcontainers/features/git\" .devcontainer/devcontainer.json'"
+_run_sanitize_features_json_mapping() {
+        tmpproj=$(mktemp -d)
+        mkdir -p "$tmpproj/.devcontainer"
+        cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "tmpl",
+    "features": {
+        "1": {},
+        "ghcr.io/devcontainers/features/2": {}
+    }
+}
+JD
+        # shellcheck disable=SC1091
+        source "$SCRIPT_DIR/lib/core.sh"
+        source "$SCRIPT_DIR/lib/template_integration.sh"
+        fetch_available_features_official() { echo '[{"id":"git","registry":"ghcr.io/devcontainers/features"},{"id":"docker-in-docker","registry":"ghcr.io/devcontainers/features"}]'; }
+        cd "$tmpproj"
+        sanitize_features_json
+        grep -q "ghcr.io/devcontainers/features/git" .devcontainer/devcontainer.json
+}
+run_test "sanitize_features_json mapping" "_run_sanitize_features_json_mapping"
 
 
 # Test: New helper functions exist in security module
@@ -170,7 +224,15 @@ run_test "New helper functions syntax" "bash -c 'source \"$SCRIPT_DIR/lib/securi
 run_test "attempt_auto_install_prerequisites function exists" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; declare -f attempt_auto_install_prerequisites >/dev/null 2>&1'"
 
 # Test: Function can be called without error (when no valid agent is provided, returns 1)
-run_test "attempt_auto_install_prerequisites with invalid agent" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; PROJECT_DIR=\"/tmp\"; export PROJECT_DIR; attempt_auto_install_prerequisites \"invalid_agent\"; exit_code=$?; [ $exit_code -ne 0 ]'"
+_run_attempt_auto_install_prerequisites_with_invalid_agent() {
+    source "$SCRIPT_DIR/lib/security.sh"
+    PROJECT_DIR="/tmp"
+    export PROJECT_DIR
+    attempt_auto_install_prerequisites "invalid_agent"
+    local rc=$?
+    [ $rc -ne 0 ]
+}
+run_test "attempt_auto_install_prerequisites with invalid agent" "_run_attempt_auto_install_prerequisites_with_invalid_agent"
 
 # Interactive UI Tests using expect
 # Test: Interactive menu functionality

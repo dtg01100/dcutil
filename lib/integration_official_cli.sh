@@ -4,6 +4,7 @@
 # Provides compatibility and enhanced functionality using the official devcontainer CLI
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 
@@ -60,11 +61,13 @@ run_devcontainer_down() {
 
 # Run command in container using official CLI
 run_devcontainer_exec() {
-    local cmd="$*"
+    # Preserve argument boundaries and pass through to devcontainer
+    # Use "$@" when forwarding multiple command arguments
+    : # no-op, we forward "$@" directly below
 
     info "Executing command in devcontainer using official CLI..."
 
     # The devcontainer exec command works differently
     # We need to find the appropriate container
-    devcontainer exec --workspace-folder . $cmd
+    devcontainer exec --workspace-folder . -- "$@"
 }

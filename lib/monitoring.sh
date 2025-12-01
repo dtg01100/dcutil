@@ -7,6 +7,7 @@
 # Provides CPU, memory, network, and disk I/O statistics
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Format bytes to human-readable size
@@ -205,6 +206,10 @@ show_detailed_stats() {
         echo "  💡 Your code can use as much processing power as needed"
     fi
     
+    # Print CPU shares if available
+    if [ -n "$cpu_shares" ] && [ "$cpu_shares" != "N/A" ]; then
+        echo "  Shares: $cpu_shares"
+    fi
     echo ""
     # Memory limits
     local mem_limit mem_reservation mem_swap
@@ -218,6 +223,7 @@ show_detailed_stats() {
         echo "  💡 Your code can use as much RAM as the system has"
     else
         echo "  Limited to $(format_bytes "$mem_limit")"
+        echo "  Swap: $mem_swap"
         echo "  💡 Your code can use up to this much RAM before hitting the limit"
     fi
     
@@ -269,7 +275,7 @@ show_detailed_stats() {
     echo ""
     
     # Show additional useful information
-    local container_state uptime restart_count
+    local container_state restart_count
     container_state=$(echo "$inspect_data" | jq -r '.[0].State.Status // "unknown"' 2>/dev/null || echo "unknown")
     local started_at
     started_at=$(echo "$inspect_data" | jq -r '.[0].State.StartedAt // "unknown"' 2>/dev/null || echo "unknown")
@@ -314,7 +320,6 @@ show_container_top() {
 handle_stats_command() {
     local project_dir="${1:-$(pwd)}"
     local subcommand="${2:-show}"
-    local option="${3:-}"
     
     # Determine container name
     local container_name

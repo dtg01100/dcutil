@@ -6,6 +6,7 @@
 # This file provides integration with official templates, features, and CLI
 
 # Source core functionality
+# shellcheck disable=SC1091
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Constants
@@ -60,8 +61,8 @@ fetch_available_templates_official() {
             for template in $template_dirs; do
                 local template_url="https://raw.githubusercontent.com/devcontainers/templates/main/src/${template}/devcontainer-template.json"
                 local template_info=""
-                template_info=$(curl -s "$template_url" 2>/dev/null)
-                if [ $? -eq 0 ] && [ -n "$template_info" ]; then
+                template_info=$(curl -s "$template_url" 2>/dev/null || true)
+                if [ -n "$template_info" ]; then
                     local id name description
                     id=$(echo "$template_info" | jq -r '.id' 2>/dev/null || echo "$template")
                     name=$(echo "$template_info" | jq -r '.name' 2>/dev/null || echo "$template")
@@ -150,8 +151,8 @@ fetch_available_features_official() {
             for feature in $feature_dirs; do
                 local feature_url="https://raw.githubusercontent.com/devcontainers/features/main/src/${feature}/devcontainer-feature.json"
                 local feature_info=""
-                feature_info=$(curl -s "$feature_url" 2>/dev/null)
-                if [ $? -eq 0 ] && [ -n "$feature_info" ]; then
+                feature_info=$(curl -s "$feature_url" 2>/dev/null || true)
+                if [ -n "$feature_info" ]; then
                     local id name description
                     id=$(echo "$feature_info" | jq -r '.id // empty' 2>/dev/null || echo "$feature")
                     name=$(echo "$feature_info" | jq -r '.name // empty' 2>/dev/null || echo "$feature")
