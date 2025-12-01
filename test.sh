@@ -82,8 +82,6 @@ run_test "List command" "\"$DCUTIL\" list >/dev/null"
 # Test: Podman status
 run_test "Podman status" "\"$DCUTIL\" podman status >/dev/null"
 
-# Test: Agent help
-run_test "Agent help" "\"$DCUTIL\" install-agent >/dev/null" 1
 
 # Test: Volumes help
 run_test "Volumes help" "\"$DCUTIL\" volumes >/dev/null" 1
@@ -220,19 +218,14 @@ run_test "sanitize_features_json mapping" "_run_sanitize_features_json_mapping"
 # Test: New helper functions exist in security module
 run_test "New helper functions syntax" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; declare -f copy_agent_config_files >/dev/null 2>&1 && declare -f copy_single_file >/dev/null 2>&1 && declare -f copy_dir_content >/dev/null 2>&1'"
 
-# Test: attempt_auto_install_prerequisites function exists
-run_test "attempt_auto_install_prerequisites function exists" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; declare -f attempt_auto_install_prerequisites >/dev/null 2>&1'"
 
 # Test: Function can be called without error (when no valid agent is provided, returns 1)
-_run_attempt_auto_install_prerequisites_with_invalid_agent() {
     source "$SCRIPT_DIR/lib/security.sh"
     PROJECT_DIR="/tmp"
     export PROJECT_DIR
-    attempt_auto_install_prerequisites "invalid_agent"
     local rc=$?
     [ $rc -ne 0 ]
 }
-run_test "attempt_auto_install_prerequisites with invalid agent" "_run_attempt_auto_install_prerequisites_with_invalid_agent"
 
 # Interactive UI Tests using expect
 # Test: Interactive menu functionality

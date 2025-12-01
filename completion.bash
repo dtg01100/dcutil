@@ -8,13 +8,13 @@ _dcutil() {
     _init_completion || return
 
     # Main commands
-    local commands="up down restart enter build clean status stats logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman version completion test menu help"
+    local commands="up down restart enter build clean status stats logs list run init check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman version completion test menu help"
 
     # Subcommands for various modules
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
     local stats_commands="show watch detailed top help --help -h"
-    local ssh_commands="start add list mount test connect help --help -h"
+    local ssh_commands="enable disable status help --help -h"
     local compose_commands="up down restart status list exec logs build clean help --help -h"
     local build_commands="info validate clean help --help -h"
     local features_commands="install info validate clean update check-updates help --help -h"
@@ -36,7 +36,7 @@ _dcutil() {
     local restart_options="--help -h"
     local run_options="--help -h"
     local check_options="--help -h"
-    local install_agent_options="--help -h"
+    
     local list_options="--help -h"
     local version_options="--help -h"
     local completion_options="--help -h"
@@ -172,10 +172,7 @@ _dcutil() {
             mapfile -t COMPREPLY < <(compgen -W "${check_options}" -- "${cur}")
             return
             ;;
-        install-agent)
-            mapfile -t COMPREPLY < <(compgen -W "${install_agent_options}" -- "${cur}")
-            return
-            ;;
+
         list)
             mapfile -t COMPREPLY < <(compgen -W "${list_options}" -- "${cur}")
             return

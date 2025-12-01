@@ -1532,6 +1532,12 @@ features_cli() {
     shift
 
     case "$subcommand" in
+        "add")
+            features_add "$@"
+            ;;
+        "remove")
+            features_remove "$@"
+            ;;
         "install")
             install_features "$@"
             ;;
@@ -1583,6 +1589,8 @@ Usage: dcutil features <command> [options]
 Devcontainer Features commands for adding tools and runtimes:
 
 Commands:
+  add                  Add a feature to devcontainer configuration
+  remove               Remove a feature from devcontainer configuration
   install              Install all configured features
   info                 Show features configuration and status
   validate             Validate features configuration
@@ -1596,6 +1604,8 @@ Commands:
   generate-docs        Generate documentation for configured features (similar to devcontainer CLI)
 
 Examples:
+  dcutil features add node
+  dcutil features remove node
   dcutil features install
   dcutil features info
   dcutil features validate
@@ -1736,6 +1746,276 @@ features_resolve_dependencies() {
     else
         info "Could not resolve dependencies"
         return 1
+    fi
+}
+
+# Generate documentation for features (similar to devcontainer CLI)
+features_generate_docs() {
+    info "Generating feature documentation..."
+
+    if ! parse_features_config; then
+        info "No features configured to generate documentation for"
+        return 0
+    fi
+
+    echo "# Devcontainer Features Documentation"
+    echo ""
+    echo "This document describes the features configured in this development environment."
+    echo ""
+
+    for feature_key in "${FEATURES_IDS[@]}"; do
+        local parsed_spec
+        parsed_spec=$(parse_feature_spec "$feature_key")
+        local feature_id="${parsed_spec%:*}"
+        local feature_version="${parsed_spec#*:}"
+        local feature_name="${feature_id##*/}"
+
+        echo "## $feature_name ($feature_id:$feature_version)"
+        echo ""
+
+        # Try to get more detailed info from the cached feature metadata
+        local cache_key="${feature_id//\//_}_$feature_version"
+        local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
+        if [ -f "$cache_dir/devcontainer-feature.json" ] && command -v jq &> /dev/null; then
+            local description
+            description=$(jq -r '.description // empty' "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
+            if [ -n "$description" ] && [ "$description" != "null" ]; then
+                echo "$description"
+                echo ""
+            fi
+
+            # Show options if available
+            if jq -e '.options' "$cache_dir/devcontainer-feature.json" >/dev/null 2>&1; then
+                echo "### Options:"
+                echo ""
+                while IFS= read -r option_name; do
+                    if [ -n "$option_name" ] && [ "$option_name" != "null" ]; then
+                        local opt_desc
+                        opt_desc=$(jq -r ".options[\"$option_name\"].description // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
+                        local opt_default
+                        opt_default=$(jq -r ".options[\"$option_name\"].default // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
+                        echo "- **$option_name**"
+                        if [ -n "$opt_desc" ] && [ "$opt_desc" != "null" ]; then
+                            echo "  - Description: $opt_desc"
+                        fi
+                        if [ -n "$opt_default" ] && [ "$opt_default" != "null" ]; then
+                            echo "  - Default: $opt_default"
+                        fi
+                        echo ""
+                    fi
+                done < <(jq -r '.options | keys[]' "$cache_dir/devcontainer-feature.json" 2>/dev/null)
+            fi
+        fi
+    done
+}
+
+# Function to add a feature to devcontainer.json
+add_feature_to_config() {
+    local feature_spec="$1"
+    local feature_options="${2:-}"  # JSON string of options, defaults to empty object
+
+    if [ -z "$feature_spec" ]; then
+        error_exit "Feature specification is required" "$EXIT_INVALID_ARGS"
+    fi
+
+    if [ -z "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
+        error_exit "⚠️  No development environment found.\n    Run 'dcutil init' to set one up first." "$EXIT_CONFIG_ERROR"
+    fi
+
+    # Use jq to add the feature to the devcontainer.json file
+    if command -v jq &> /dev/null; then
+        # Check if features key exists and if it's an object or array
+        local features_format
+        features_format=$(jq -r '.features | if type == "object" then "object" elif type == "array" then "array" else "none" end' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "none")
+
+        local new_features_json
+        if [ "$features_format" = "object" ]; then
+            # If features is an object, add the new feature as a key
+            local feature_id
+            feature_id=$(parse_feature_spec "$feature_spec" | cut -d: -f1)
+            local feature_name="${feature_id##*/}"
+
+            if [ -n "$feature_options" ] && [ "$feature_options" != "{}" ]; then
+                new_features_json=$(jq --arg name "$feature_name" --argjson opts "$feature_options" '.features[$name] = $opts' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            else
+                new_features_json=$(jq --arg name "$feature_name" '.features[$name] = {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            fi
+        elif [ "$features_format" = "array" ]; then
+            # If features is an array, add the new feature to the array
+            if [ -n "$feature_options" ] && [ "$feature_options" != "{}" ]; then
+                # Add as object with id and options
+                new_features_json=$(jq --arg id "$feature_spec" --argjson opts "$feature_options" '.features += [{"id": $id}] | .features[-1] *= $opts' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            else
+                # Add as string
+                new_features_json=$(jq --arg id "$feature_spec" '.features += [$id]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            fi
+        else
+            # If no features key, create new object format (which is the recommended format)
+            if [ -n "$feature_options" ] && [ "$feature_options" != "{}" ]; then
+                new_features_json=$(jq --arg name "$feature_spec" --argjson opts "$feature_options" '.features = {($name): $opts}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            else
+                new_features_json=$(jq --arg name "$feature_spec" '.features = {($name): {}}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            fi
+        fi
+
+        if [ -n "$new_features_json" ]; then
+            echo "$new_features_json" > "$DEVCONTAINER_CONFIG_FILE"
+            success "Added feature '$feature_spec' to devcontainer.json"
+        else
+            error_exit "Failed to modify devcontainer.json" "$EXIT_CONFIG_ERROR"
+        fi
+    else
+        error_exit "jq is required to modify features" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Function to remove a feature from devcontainer.json
+remove_feature_from_config() {
+    local feature_name="$1"
+
+    if [ -z "$feature_name" ]; then
+        error_exit "Feature name is required" "$EXIT_INVALID_ARGS"
+    fi
+
+    if [ -z "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
+        error_exit "⚠️  No development environment found.\n    Run 'dcutil init' to set one up first." "$EXIT_CONFIG_ERROR"
+    fi
+
+    if command -v jq &> /dev/null; then
+        # Check if features key exists and if it's an object or array
+        local features_format
+        features_format=$(jq -r '.features | if type == "object" then "object" elif type == "array" then "array" else "none" end' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "none")
+
+        local new_features_json
+        if [ "$features_format" = "object" ]; then
+            # If features is an object, remove the feature key
+            new_features_json=$(jq --arg name "$feature_name" 'del(.features[$name])' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        elif [ "$features_format" = "array" ]; then
+            # If features is an array, remove the feature from the array
+            new_features_json=$(jq --arg name "$feature_name" '.features |= map(select(. != $name))' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+        else
+            # No features key to remove from
+            warning "No features configured in devcontainer.json"
+            return 0
+        fi
+
+        if [ -n "$new_features_json" ]; then
+            echo "$new_features_json" > "$DEVCONTAINER_CONFIG_FILE"
+            success "Removed feature '$feature_name' from devcontainer.json"
+        else
+            error_exit "Failed to modify devcontainer.json" "$EXIT_CONFIG_ERROR"
+        fi
+    else
+        error_exit "jq is required to modify features" "$EXIT_CONFIG_ERROR"
+    fi
+}
+
+# Feature addition functionality
+features_add() {
+    local feature_spec=""
+    local feature_options="{}"  # Default to empty object
+    local should_rebuild=false
+    local temp_args=()
+
+    # Parse all arguments, handling options first
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --rebuild)
+                should_rebuild=true
+                shift
+                ;;
+            -*)
+                error_exit "Unknown option: $1. Use 'dcutil features help' for usage." "$EXIT_INVALID_ARGS"
+                ;;
+            *)
+                # This must be the feature spec or options JSON
+                if [ -z "$feature_spec" ]; then
+                    feature_spec="$1"
+                elif [ -z "$feature_options" ] || [ "$feature_options" = "{}" ]; then
+                    feature_options="$1"
+                else
+                    # Too many arguments
+                    error_exit "Usage: dcutil features add <feature_spec> [options_json] [--rebuild]" "$EXIT_INVALID_ARGS"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$feature_spec" ]; then
+        error_exit "Usage: dcutil features add <feature_spec> [options_json] [--rebuild]" "$EXIT_INVALID_ARGS"
+    fi
+
+    info "Adding feature: $feature_spec"
+
+    if [ -n "$feature_options" ] && [ "$feature_options" != "{}" ]; then
+        info "With options: $feature_options"
+    fi
+
+    add_feature_to_config "$feature_spec" "$feature_options"
+
+    success "Feature '$feature_spec' has been added to your devcontainer configuration"
+
+    if [ "$should_rebuild" = true ]; then
+        info "Rebuilding container to apply changes..."
+        if command -v devcontainer_rebuild >/dev/null 2>&1; then
+            devcontainer_rebuild
+        else
+            error "Rebuild functionality not available"
+            return 1
+        fi
+    else
+        info "To apply the changes, rebuild your container with: dcutil rebuild"
+    fi
+}
+
+# Feature removal functionality
+features_remove() {
+    local feature_name=""
+    local should_rebuild=false
+
+    # Parse all arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --rebuild)
+                should_rebuild=true
+                shift
+                ;;
+            -*)
+                error_exit "Unknown option: $1. Use 'dcutil features help' for usage." "$EXIT_INVALID_ARGS"
+                ;;
+            *)
+                if [ -z "$feature_name" ]; then
+                    feature_name="$1"
+                else
+                    # Too many arguments
+                    error_exit "Usage: dcutil features remove <feature_name> [--rebuild]" "$EXIT_INVALID_ARGS"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$feature_name" ]; then
+        error_exit "Usage: dcutil features remove <feature_name> [--rebuild]" "$EXIT_INVALID_ARGS"
+    fi
+
+    info "Removing feature: $feature_name"
+
+    remove_feature_from_config "$feature_name"
+
+    success "Feature '$feature_name' has been removed from your devcontainer configuration"
+
+    if [ "$should_rebuild" = true ]; then
+        info "Rebuilding container to apply changes..."
+        if command -v devcontainer_rebuild >/dev/null 2>&1; then
+            devcontainer_rebuild
+        else
+            error "Rebuild functionality not available"
+            return 1
+        fi
+    else
+        info "To apply the changes, rebuild your container with: dcutil rebuild"
     fi
 }
 

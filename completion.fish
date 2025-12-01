@@ -14,7 +14,6 @@ complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommand
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "list" -d "List running devcontainers"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "run" -d "Run a command in the container"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "init" -d "Initialize a devcontainer"
-complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "install-agent" -d "Install authentication agent inside the devcontainer"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "check" -d "Check devcontainer configuration"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "ssh" -d "SSH key management"
 complete -c dcutil -f -n "not __fish_seen_subcommand_from $dcutil_all_subcommands" -a "volumes" -d "Volume management"

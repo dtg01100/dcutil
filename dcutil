@@ -196,10 +196,10 @@ _dcutil() {
     local cur prev words cword
     _init_completion || return
 
-    local commands="up down restart enter build clean status stats logs list run init install-agent check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman lockfile version help completion test menu"
+    local commands="up down restart enter build clean status stats logs list run init check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown rebuild schema podman lockfile version help completion test menu"
     local init_commands="fast wizard --fast --wizard --help -h"
     local volumes_commands="list add remove mount unmount status backup restore help --help -h"
-    local ssh_commands="start add list mount test connect enable disable toggle status help --help -h"
+    local ssh_commands="enable disable status help --help -h"
     local compose_commands="up down restart status list exec logs build clean help --help -h"
     local stats_commands="show watch detailed top help --help -h"
     local build_commands="info validate clean help --help -h"
@@ -304,7 +304,6 @@ local -a commands
         'list:List running devcontainers'
         'run:Run a command in the container'
         'init:Initialize a devcontainer'
-        'install-agent:Install AI agent inside the devcontainer'
         'ssh:SSH key management'
         'volumes:Volume management'
         'compose:Docker Compose support'
@@ -548,8 +547,8 @@ Setup & Configuration:
   features    Add tools and languages to your environment
 
 Advanced:
-  install-agent    Install AI coding assistants
-  ssh              SSH key management (enable, disable, toggle)
+
+  ssh              SSH key management (enable, disable, status)
   compose          Multi-container environments
   advanced         Advanced configuration options
   integration      Tool integrations
@@ -591,16 +590,7 @@ if [ "$COMMAND" = "run" ]; then
         determine_project_dir
         shift 1
     fi
-elif [ "$COMMAND" = "install-agent" ]; then
-    if [ -n "${2:-}" ] && [ -d "$2" ]; then
-        # Second arg is project path, agent is third
-        determine_project_dir "$2"
-        shift 2
-    else
-        # Second arg is agent, no project path
-        determine_project_dir
-        shift 1
-    fi
+
 elif [ "$COMMAND" = "ssh" ]; then
     # SSH command doesn't need project directory
     determine_project_dir
@@ -1369,6 +1359,8 @@ Usage: dcutil features <command> [options]
 Devcontainer Features commands for adding tools and runtimes:
 
 Commands:
+  add                  Add a feature to devcontainer configuration
+  remove               Remove a feature from devcontainer configuration
   install              Install all configured features
   info                 Show features configuration and status
   validate             Validate features configuration
@@ -1382,6 +1374,10 @@ Commands:
   generate-docs        Generate documentation for configured features (similar to devcontainer CLI)
 
 Examples:
+  dcutil features add node
+  dcutil features remove node
+  dcutil features add python --rebuild
+  dcutil features remove git --rebuild
   dcutil features install
   dcutil features info
   dcutil features validate
@@ -1614,12 +1610,7 @@ case "$COMMAND" in
          determine_project_dir
          devcontainer_check
          ;;
-     "install-agent")
-        if [ $# -eq 0 ]; then
-            error_exit "install-agent command requires an agent name. Usage: dcutil install-agent <agent>" "$EXIT_INVALID_ARGS"
-        fi
-        install_agent "$1"
-        ;;
+
     "volumes")
         if [ $# -eq 0 ]; then
             print_volumes_usage
@@ -1991,13 +1982,7 @@ case "$COMMAND" in
                     error_exit "SSH disable function not available. SSH module not loaded." "$EXIT_CONFIG_ERROR"
                 fi
                 ;;
-            "toggle")
-                if command -v toggle_ssh_propagation >/dev/null 2>&1; then
-                    toggle_ssh_propagation
-                else
-                    error_exit "SSH toggle function not available. SSH module not loaded." "$EXIT_CONFIG_ERROR"
-                fi
-                ;;
+
             "status")
                 if command -v check_ssh_propagation_status >/dev/null 2>&1; then
                     check_ssh_propagation_status
@@ -2011,13 +1996,13 @@ case "$COMMAND" in
                 echo "SSH key management for devcontainer environments:"
                 echo "  enable                Enable SSH key propagation to container"
                 echo "  disable               Disable SSH key propagation to container"
-                echo "  toggle                Toggle SSH key propagation (on/off)"
+
                 echo "  status                Show current SSH propagation status"
                 echo ""
                 echo "Examples:"
                 echo "  dcutil ssh enable      Enable SSH keys in container"
                 echo "  dcutil ssh disable     Disable SSH keys in container"
-                echo "  dcutil ssh toggle      Toggle SSH key status"
+
                 echo "  dcutil ssh status      Check SSH key propagation status"
                 ;;
             *)

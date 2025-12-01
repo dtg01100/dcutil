@@ -492,28 +492,7 @@ check_ssh_propagation_status() {
 
 
 # Function to toggle SSH propagation
-toggle_ssh_propagation() {
-    local dev_file="${1:-.devcontainer/devcontainer.json}"
 
-    if [ ! -f "$dev_file" ]; then
-        error "No devcontainer.json found at $dev_file"
-        return 1
-    fi
-
-    if ! command -v jq >/dev/null 2>&1; then
-        error "jq is required to modify the configuration"
-        return 1
-    fi
-
-    # Check current status
-    if jq -e '(.runArgs // []) | join(" ") | test("ssh-agent.sock")' "$dev_file" >/dev/null 2>&1; then
-        disable_ssh_propagation "$dev_file"
-        info "SSH propagation has been disabled"
-    else
-        enable_ssh_propagation "$dev_file"
-        info "SSH propagation has been enabled"
-    fi
-}
 
 # Get template metadata
 get_template_metadata() {

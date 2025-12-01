@@ -18,7 +18,6 @@ _dcutil() {
         'list:List running devcontainers'
         'run:Run a command in the container'
         'init:Initialize a devcontainer'
-        'install-agent:Install authentication agent inside the devcontainer'
         'check:Check devcontainer configuration'
         'ssh:SSH key management'
         'volumes:Volume management'
@@ -67,12 +66,9 @@ _dcutil() {
 
     local -a ssh_commands
     ssh_commands=(
-        'start:Start SSH agent'
-        'add:Add SSH key to agent'
-        'list:List SSH keys in agent'
-        'mount:Mount SSH agent socket'
-        'test:Test SSH connectivity'
-        'connect:Connect to SSH server'
+        'enable:Enable SSH key propagation to container'
+        'disable:Disable SSH key propagation to container'
+        'status:Show current SSH propagation status'
         'help:Show SSH help'
         '--help:Show help'
         '-h:Show help'

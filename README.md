@@ -20,7 +20,7 @@ dcutil is a command-line tool that makes it simple to create, run, and manage is
 - **Monitor Resources**: `dcutil stats` - See CPU, memory usage in plain language
 - **Manage Storage**: `dcutil volumes` - Handle persistent data easily
 - **Add Tools**: `dcutil features` - Install languages and tools with one command
-- **AI Assistants**: `dcutil install-agent` - Add coding helpers to your environment
+
 
 ## For the Curious
 
@@ -171,7 +171,7 @@ Commands:
 
 - `dcutil ssh enable`  — add the necessary runArgs to your `.devcontainer/devcontainer.json` so the host SSH agent socket is forwarded into the container
 - `dcutil ssh disable` — remove the SSH agent binding and environment entry from your configuration
-- `dcutil ssh toggle`  — flip the current SSH propagation state on or off
+
 - `dcutil ssh status`  — show whether SSH propagation is currently enabled or disabled
 
 Security: SSH propagation is OFF by default when the wizard creates a configuration. Enabling it mounts your host SSH agent socket into the container (convenient, but with security implications) so only enable it when you know the environment is trusted.
@@ -201,7 +201,7 @@ Security: SSH propagation is OFF by default when the wizard creates a configurat
 - `volumes <cmd>` - Volume management (list, add, remove, mount, unmount, status, backup, restore)
 - `environment <cmd>` - Environment configuration (export-env, info, validate)
 - `init` - Initialize a devcontainer (fast or wizard mode)
-- `install-agent <agent>` - Install AI agent inside the devcontainer
+
 - `completion` - Generate shell completion scripts
 - `help` - Show help message
 
@@ -476,31 +476,7 @@ The `export-env` command generates shell export statements that replicate the en
 
 Use this to run Docker/Podman commands with the same environment settings that devcontainer would use.
 
-### Installing AI Agents
 
-Use the `install-agent` command to install AI coding assistants inside your devcontainer. Agents are installed hermetically using portable Python binaries, ensuring no conflicts with system packages:
-
-```bash
-# Install opencode
-./dcutil install-agent opencode
-
-# Install aider
-./dcutil install-agent aider
-
-# Install in specific project
-./dcutil install-agent aider /path/to/project
-```
-
-Currently supported agents:
-
-- `opencode` - Installs opencode AI assistant
-- `aider` - Installs aider-chat AI coding assistant
-- `copilot-cli` - Installs GitHub Copilot CLI
-- `cody` - Installs Sourcegraph Cody CLI
-- `qwen-cli` - Installs Qwen CLI
-- `gemini` - Installs Gemini CLI
-- `claude-cli` - Installs Claude CLI
-- `openai-cli` - Installs OpenAI CLI
 
 ## Auto-completion
 

@@ -51,7 +51,7 @@ suggest_command() {
     # Prefer arrays for command lists to avoid word-splitting/globbing issues
     local -a valid_commands=(
         up down restart enter build clean status stats logs list run init check
-        volumes features install-agent ssh compose advanced integration
+        volumes features ssh compose advanced integration
         hostrequirements rebuild schema version completion help
     )
     
@@ -92,11 +92,12 @@ show_interactive_menu() {
     echo "  6) Set up a new project"
     echo "  7) View logs"
     echo "  8) Manage shared storage"
-    echo "  9) See all commands"
+    echo "  9) Manage devcontainer features"
+    echo "  10) See all commands"
     echo "  0) Exit"
     echo ""
-    read -r -p "Enter your choice (1-9, 0): " choice
-    
+    read -r -p "Enter your choice (1-10, 0): " choice
+
     case "$choice" in
         1)
             echo ""
@@ -139,7 +140,25 @@ show_interactive_menu() {
             return 8  # Signal to run 'volumes list' command
             ;;
         9)
-            return 9  # Signal to show help
+            # Check if currently in a configured project directory
+            if [ -f ".devcontainer/devcontainer.json" ] || [ -f "devcontainer.json" ]; then
+                echo ""
+                info "Managing devcontainer features..."
+                if command -v show_interactive_feature_management >/dev/null 2>&1; then
+                    show_interactive_feature_management
+                    return 0  # Show menu again after feature management
+                else
+                    warning "Feature management interface not available"
+                    return 0  # Show menu again
+                fi
+            else
+                warning "No devcontainer configuration found in current directory"
+                info "Please change to a directory with a devcontainer configuration"
+                return 0  # Show menu again
+            fi
+            ;;
+        10)
+            return 9  # Signal to show help (reuse the return code)
             ;;
         0)
             echo ""
@@ -148,7 +167,7 @@ show_interactive_menu() {
             ;;
         *)
             echo ""
-            warning "Invalid choice. Please enter a number between 0 and 9."
+            warning "Invalid choice. Please enter a number between 0 and 10."
             return 0  # Signal to show menu again
             ;;
     esac
@@ -158,7 +177,7 @@ show_interactive_menu() {
 execute_menu_choice() {
     local choice=$1
     shift  # Remove choice from arguments
-    
+
     case $choice in
         1) return 1 ;;  # up
         2) return 2 ;;  # enter
@@ -168,7 +187,7 @@ execute_menu_choice() {
         6) return 6 ;;  # init
         7) return 7 ;;  # logs
         8) return 8 ;;  # volumes list
-        9) return 9 ;;  # help
+        9) return 9 ;;  # help (originally for menu option 10, reused here)
         *) return 0 ;;  # show menu again
     esac
 }
@@ -410,4 +429,199 @@ show_completion_hints() {
         fi
     done
     echo ""
+}
+
+# Interactive feature management for already configured devcontainer
+show_interactive_feature_management() {
+    # Ensure we're in the project directory with a devcontainer config
+    if [ ! -f ".devcontainer/devcontainer.json" ] && [ ! -f "devcontainer.json" ]; then
+        error "No devcontainer configuration found in current directory"
+        info "Please change to a directory with a devcontainer configuration first"
+        return 1
+    fi
+
+    # Initialize the devcontainer configuration variables
+    if command -v parse_devcontainer_config >/dev/null 2>&1; then
+        parse_devcontainer_config
+    else
+        error "parse_devcontainer_config function not available"
+        return 1
+    fi
+
+    echo ""
+    echo "🔧 Interactive Feature Management"
+    echo "=================================="
+    echo ""
+
+    # Load available features from registry
+    info "Loading available features..."
+    local features_json
+    if command -v fetch_available_features_official >/dev/null 2>&1; then
+        features_json=$(fetch_available_features_official 2>/dev/null || echo "[]")
+    else
+        # Fallback to a basic feature list
+        features_json='[
+          {"id": "node", "name": "Node.js", "description": "Node.js runtime and package manager"},
+          {"id": "python", "name": "Python", "description": "Python runtime and pip"},
+          {"id": "go", "name": "Go", "description": "Go programming language"},
+          {"id": "rust", "name": "Rust", "description": "Rust programming language"},
+          {"id": "git", "name": "Git", "description": "Git version control"},
+          {"id": "common-utils", "name": "Common Utilities", "description": "curl, wget, git, and other common tools"}
+        ]'
+    fi
+
+    # Parse current features using the same function as other features code
+    if ! command -v parse_features_config >/dev/null 2>&1; then
+        # If parse_features_config is not available, manually parse features
+        if command -v jq >/dev/null 2>&1; then
+            local current_features_json
+            if [ -n "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
+                current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
+            else
+                error "No devcontainer configuration file set"
+                return 1
+            fi
+        else
+            error "jq is required to parse features"
+            return 1
+        fi
+    else
+        # Use the existing features parsing functionality
+        if ! parse_features_config; then
+            # If no features configured, set to empty object
+            local current_features_json="{}"
+        else
+            # Extract current features from the global variable
+            local current_features_json="{}"
+            if command -v jq >/dev/null 2>&1 && [ -n "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
+                current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
+            fi
+        fi
+    fi
+
+    local choice
+    while true; do
+        echo ""
+        echo "📋 Current features in your configuration:"
+        if [ "$current_features_json" = "{}" ] || [ "$(echo "$current_features_json" | jq length 2>/dev/null)" -eq 0 ]; then
+            echo "  (No features configured)"
+        else
+            echo "$current_features_json" | jq -r 'to_entries[] | "  - \(.key): \(.value // {} | tojson)"' 2>/dev/null || echo "  (Could not parse features)"
+        fi
+        echo ""
+        echo "What would you like to do?"
+        echo "  1) Add a feature"
+        echo "  2) Remove a feature"
+        echo "  3) View available features"
+        echo "  4) Save changes and exit"
+        echo "  5) Exit without saving"
+        echo ""
+        read -r -p "Enter your choice (1-5): " choice
+
+        case "$choice" in
+            1)
+                # Add a feature
+                echo ""
+                echo "Available features:"
+                echo "$features_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"' 2>/dev/null || {
+                    echo "  node: Node.js runtime"
+                    echo "  python: Python runtime"
+                    echo "  go: Go programming language"
+                    echo "  rust: Rust programming language"
+                    echo "  git: Git version control"
+                    echo "  common-utils: Common utilities"
+                }
+                echo ""
+
+                read -r -p "Enter feature ID to add: " feature_id
+                if [ -n "$feature_id" ]; then
+                    # Check if feature already exists
+                    if command -v jq >/dev/null 2>&1 && [ "$current_features_json" != "{}" ]; then
+                        local exists
+                        exists=$(echo "$current_features_json" | jq -r "has(\"$feature_id\")" 2>/dev/null)
+                        if [ "$exists" = "true" ]; then
+                            warning "Feature '$feature_id' is already configured"
+                            continue
+                        fi
+                    fi
+
+                    echo "Adding feature: $feature_id"
+                    # Use the function from features.sh
+                    if command -v add_feature_to_config >/dev/null 2>&1; then
+                        add_feature_to_config "$feature_id" "{}"
+                        # Refresh current features
+                        current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
+                    else
+                        error "add_feature_to_config function not available"
+                    fi
+                fi
+                ;;
+            2)
+                # Remove a feature
+                if [ "$current_features_json" = "{}" ] || [ "$(echo "$current_features_json" | jq length 2>/dev/null)" -eq 0 ]; then
+                    warning "No features configured to remove"
+                    continue
+                fi
+
+                echo ""
+                echo "Currently configured features:"
+                local current_feature_keys
+                current_feature_keys=$(echo "$current_features_json" | jq -r 'keys[]' 2>/dev/null)
+                local i=1
+                local feature_array=()
+                while IFS= read -r key; do
+                    if [ -n "$key" ]; then
+                        feature_array+=("$key")
+                        echo "  $i) $key"
+                    fi
+                    ((i++))
+                done <<< "$current_feature_keys"
+
+                echo ""
+                read -r -p "Enter the number of the feature to remove: " remove_choice
+                if [[ "$remove_choice" =~ ^[0-9]+$ ]] && [ "$remove_choice" -ge 1 ] && [ "$remove_choice" -le "${#feature_array[@]}" ]; then
+                    local feature_to_remove="${feature_array[$((remove_choice-1))]}"
+                    echo "Removing feature: $feature_to_remove"
+                    # Use the function from features.sh
+                    if command -v remove_feature_from_config >/dev/null 2>&1; then
+                        remove_feature_from_config "$feature_to_remove"
+                        # Refresh current features
+                        current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
+                    else
+                        error "remove_feature_from_config function not available"
+                    fi
+                else
+                    warning "Invalid choice"
+                fi
+                ;;
+            3)
+                # View available features
+                echo ""
+                echo "Available features:"
+                echo "$features_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"' 2>/dev/null || {
+                    echo "  node: Node.js runtime"
+                    echo "  python: Python runtime"
+                    echo "  go: Go programming language"
+                    echo "  rust: Rust programming language"
+                    echo "  git: Git version control"
+                    echo "  common-utils: Common utilities"
+                }
+                echo ""
+                ;;
+            4)
+                # Save changes and exit
+                info "Changes have been saved to your devcontainer configuration"
+                info "To apply the changes, run: dcutil rebuild"
+                return 0
+                ;;
+            5)
+                # Exit without saving
+                info "Exiting without saving changes"
+                return 0
+                ;;
+            *)
+                warning "Invalid choice. Please enter a number between 1 and 5."
+                ;;
+        esac
+    done
 }

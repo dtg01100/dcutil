@@ -884,8 +884,8 @@ devcontainer_rebuild() {
                 echo "  --force, -f           Force rebuild without confirmation"
                 echo "  --preserve-volumes    Preserve volume data"
                 echo "  --preserve-ssh        Preserve SSH keys"
-                echo "  --preserve-agents     Preserve installed agents"
-                echo "  --preserve-all        Preserve all data (volumes, SSH, agents)"
+
+                echo "  --preserve-all        Preserve all data (volumes, SSH)"
                 echo "  --help, -h           Show this help"
                 exit "$EXIT_SUCCESS"
                 ;;
