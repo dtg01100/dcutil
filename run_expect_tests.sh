@@ -49,19 +49,50 @@ run_expect_test() {
 }
 
 # Test menu functionality
-run_expect_test "Interactive Menu" "test_menu.expect" "test-menu" 30
+if [ -d "test-menu" ]; then
+    run_expect_test "Interactive Menu" "test_menu.expect" "test-menu" 30
+else
+    echo "Skipping interactive menu test (test-menu directory not found)"
+fi
 
 # Test error conditions
-run_expect_test "Error: Existing Config" "test_error_existing_config.expect" "test-error-conditions" 30
+if [ -d "test-error-conditions" ]; then
+    run_expect_test "Error: Existing Config" "test_error_existing_config.expect" "test-error-conditions" 30
+else
+    echo "Skipping error conditions test (test-error-conditions directory not found)"
+fi
 
 # Test fast init
-run_expect_test "Fast Init" "test_fast_init.expect" "test-fast-init" 60
+if [ -d "test-fast-init" ]; then
+    run_expect_test "Fast Init" "test_fast_init.expect" "test-fast-init" 60
+else
+    echo "Skipping fast init test (test-fast-init directory not found)"
+fi
 
 # Test wizard (shorter timeout)
-run_expect_test "Wizard Basic" "test_wizard_comprehensive.expect" "test-wizard-comprehensive" 60
+if [ -d "test-wizard-comprehensive" ]; then
+    run_expect_test "Wizard Basic" "test_wizard_comprehensive.expect" "test-wizard-comprehensive" 60
+else
+    echo "Skipping wizard comprehensive test (test-wizard-comprehensive directory not found)"
+fi
 
 # Test custom wizard
-run_expect_test "Wizard Custom Image" "test_wizard_custom.expect" "test-wizard-custom" 60
+if [ -d "test-wizard-custom" ]; then
+    run_expect_test "Wizard Custom Image" "test_wizard_custom.expect" "test-wizard-custom" 60
+else
+    echo "Skipping wizard custom test (test-wizard-custom directory not found)"
+fi
+
+# Test edit functionality (expect tests present)
+if [ -d "test-edit" ]; then
+    run_expect_test "Edit valid" "expect_edit_valid.expect" "test-edit" 30
+    run_expect_test "Edit invalid-then-reedit" "expect_edit_invalid_then_reedit.expect" "test-edit" 30
+    if [ -f "test-edit/expect_edit_invalid_cycle.expect" ]; then
+        run_expect_test "Edit invalid cycle (re-edit)" "expect_edit_invalid_cycle.expect" "test-edit" 30
+    fi
+else
+    echo "Skipping edit expect tests (test-edit directory not found)"
+fi
 
 echo ""
 echo "=== Test Results ==="

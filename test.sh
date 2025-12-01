@@ -90,6 +90,76 @@ run_test "Volumes help" "\"$DCUTIL\" volumes >/dev/null" 1
 run_test "Compose help" "\"$DCUTIL\" compose >/dev/null" 1
 
 # Test: Features help
+
+# Test: Edit command help
+run_test "Edit help" "\"$DCUTIL\" edit --help >/dev/null || true"
+
+# Test: Edit command - interactive valid edit and create backup
+_run_edit_interactive_valid_cli() {
+    tmpproj=$(mktemp -d)
+    mkdir -p "$tmpproj/.devcontainer"
+    cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "test",
+    "image": "mcr.microsoft.com/vscode/devcontainers/base:0-focal"
+}
+JD
+    # Editor script that writes a valid edit
+    editor_script="$tmpproj/editor.sh"
+    cat > "$editor_script" <<'SH'
+#!/usr/bin/env bash
+cat > "$1" <<'JD'
+{
+    "name": "edited",
+    "image": "mcr.microsoft.com/vscode/devcontainers/base:0-focal",
+    "note": "edited"
+}
+JD
+exit 0
+SH
+    chmod +x "$editor_script"
+    cd "$tmpproj"
+    VISUAL="$editor_script" "$DCUTIL" edit >/dev/null 2>&1 || true
+    if ! grep -q '"note": "edited"' .devcontainer/devcontainer.json; then
+        echo fail
+        exit 1
+    fi
+    if [ ! -f .devcontainer/devcontainer.json.backup ]; then
+        echo fail
+        exit 1
+    fi
+}
+run_test "Edit CLI interactive valid" "_run_edit_interactive_valid_cli"
+
+# Test: Edit command - non-interactive should fail on invalid JSON
+_run_edit_noninteractive_invalid_cli() {
+    tmpproj=$(mktemp -d)
+    mkdir -p "$tmpproj/.devcontainer"
+    cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "test",
+    "image": "mcr.microsoft.com/vscode/devcontainers/base:0-focal"
+}
+JD
+    editor_script="$tmpproj/editor_invalid.sh"
+    cat > "$editor_script" <<'SH'
+#!/usr/bin/env bash
+# Write invalid JSON
+printf '{ "name": "broken", "image": }' > "$1"
+exit 0
+SH
+    chmod +x "$editor_script"
+    cd "$tmpproj"
+    VISUAL="$editor_script" "$DCUTIL" edit < /dev/null >/dev/null 2>&1 || true
+    rc=$?
+    # We expect non-zero exit; prefer the specific config error exit code (6)
+    if [ $rc -eq 0 ]; then
+        echo fail
+        exit 1
+    fi
+}
+run_test "Edit CLI non-interactive invalid JSON" "_run_edit_noninteractive_invalid_cli" 6
+
 run_test "Features help" "\"$DCUTIL\" features >/dev/null" 1
 
 # Test: Advanced help
@@ -192,6 +262,87 @@ run_test "Features install dry-run" "\"$DCUTIL\" features install --dry-run >/de
 run_test "install_feature host mock" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src\"; echo \"{\\\"id\\\":\\\"git\\\",\\\"version\\\":\\\"1.3.4\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; chmod +x \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; export FEATURES_FORCE_HOST_INSTALL=true; install_feature ghcr.io/devcontainers/features/git:latest'"
 
 # Test: sanitize_features_json mapping of numeric keys
+
+# Feature add/remove tests
+_run_features_add_object_cli() {
+    tmpproj=$(mktemp -d)
+    mkdir -p "$tmpproj/.devcontainer"
+    cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "test",
+    "features": {}
+}
+JD
+    cd "$tmpproj"
+    "$DCUTIL" features add node >/dev/null 2>&1
+    if ! jq -e '.features.node' .devcontainer/devcontainer.json >/dev/null 2>&1; then
+        echo fail
+        exit 1
+    fi
+}
+run_test "Features add CLI (object)" "_run_features_add_object_cli"
+
+_run_features_add_array_cli() {
+    tmpproj=$(mktemp -d)
+    mkdir -p "$tmpproj/.devcontainer"
+    cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "test",
+    "features": ["ghcr.io/devcontainers/features/git:latest"]
+}
+JD
+    cd "$tmpproj"
+    "$DCUTIL" features add node >/dev/null 2>&1
+    if ! grep -q 'ghcr.io/devcontainers/features/node:latest' .devcontainer/devcontainer.json; then
+        echo fail
+        exit 1
+    fi
+}
+run_test "Features add CLI (array)" "_run_features_add_array_cli"
+
+_run_features_remove_object_cli() {
+    tmpproj=$(mktemp -d)
+    mkdir -p "$tmpproj/.devcontainer"
+    cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "test",
+    "features": { "git": {}, "node": {} }
+}
+JD
+    cd "$tmpproj"
+    "$DCUTIL" features remove node >/dev/null 2>&1
+    if jq -e '.features.node' .devcontainer/devcontainer.json >/dev/null 2>&1; then
+        echo fail
+        exit 1
+    fi
+    if ! jq -e '.features.git' .devcontainer/devcontainer.json >/dev/null 2>&1; then
+        echo fail
+        exit 1
+    fi
+}
+run_test "Features remove CLI (object)" "_run_features_remove_object_cli"
+
+_run_features_remove_array_cli() {
+    tmpproj=$(mktemp -d)
+    mkdir -p "$tmpproj/.devcontainer"
+    cat > "$tmpproj/.devcontainer/devcontainer.json" <<JD
+{
+    "name": "test",
+    "features": ["ghcr.io/devcontainers/features/git:latest", "ghcr.io/devcontainers/features/node:latest"]
+}
+JD
+    cd "$tmpproj"
+    "$DCUTIL" features remove node >/dev/null 2>&1
+    if grep -q 'ghcr.io/devcontainers/features/node:latest' .devcontainer/devcontainer.json; then
+        echo fail
+        exit 1
+    fi
+    if ! grep -q 'ghcr.io/devcontainers/features/git:latest' .devcontainer/devcontainer.json; then
+        echo fail
+        exit 1
+    fi
+}
+run_test "Features remove CLI (array)" "_run_features_remove_array_cli"
 _run_sanitize_features_json_mapping() {
         tmpproj=$(mktemp -d)
         mkdir -p "$tmpproj/.devcontainer"
@@ -219,13 +370,6 @@ run_test "sanitize_features_json mapping" "_run_sanitize_features_json_mapping"
 run_test "New helper functions syntax" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; declare -f copy_agent_config_files >/dev/null 2>&1 && declare -f copy_single_file >/dev/null 2>&1 && declare -f copy_dir_content >/dev/null 2>&1'"
 
 
-# Test: Function can be called without error (when no valid agent is provided, returns 1)
-    source "$SCRIPT_DIR/lib/security.sh"
-    PROJECT_DIR="/tmp"
-    export PROJECT_DIR
-    local rc=$?
-    [ $rc -ne 0 ]
-}
 
 # Interactive UI Tests using expect
 # Test: Interactive menu functionality

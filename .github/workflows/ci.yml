@@ -16,7 +16,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y jq curl expect
+        sudo apt-get install -y jq curl expect nodejs npm
 
     - name: Install devcontainer CLI
       run: |
@@ -36,10 +36,9 @@ jobs:
 
     - name: Run comprehensive test suite
       run: |
-        # Skip test.sh as it requires test directories not available in CI
-        # Our custom test suites (minimal_test.sh, targeted_functionality_test.sh)
-        # are more appropriate for CI environment
-        echo "Skipping test.sh - using custom test suites instead"
+        echo "Running minimal and targeted tests for CI"
+        ./minimal_test.sh
+        ./targeted_functionality_test.sh
 
     - name: Run security and functionality tests
       run: |
@@ -50,7 +49,6 @@ jobs:
     - name: Test interactive features
       run: |
         # Skip expect tests in CI as they require test directories
-        # These tests are run locally during development
         echo "Skipping expect tests in CI environment"
 
     - name: Test project initialization
