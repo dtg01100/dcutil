@@ -37,7 +37,7 @@ DETECTED_BACKEND=""
 
 # Guardrail functions
 check_root_user() {
-    if [ "$(id -u)" -eq 0 ]; then
+if [ "$(id -u)" -eq 0 ]; then
         warning "Running as root user - this may cause permission issues with devcontainers"
         if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ] || [ "${DCUTIL_ALLOW_ROOT:-}" = "1" ]; then
             return 0
@@ -47,14 +47,23 @@ check_root_user() {
             read -r -p "Continue anyway? (y/N): " confirm
             if [[ ! "$confirm" =~ ^[Yy] ]]; then
                 info "Operation cancelled"
-                exit $EXIT_PERMISSION_ERROR
+                exit "$EXIT_PERMISSION_ERROR"
             fi
         else
             info "Non-interactive mode - cancelling root operation"
-            exit $EXIT_PERMISSION_ERROR
+            exit "$EXIT_PERMISSION_ERROR"
         fi
     fi
 }
+
+# Require devcontainer CLI to be installed for dcutil to function correctly
+require_devcontainer_cli() {
+    if ! command -v devcontainer >/dev/null 2>&1; then
+        error_exit "The official devcontainer CLI is required by dcutil. Please install it: https://github.com/devcontainers/cli" "$EXIT_DEP_NOT_FOUND"
+    fi
+}
+
+check_root_user
 
 check_disk_space() {
     local required_mb="${1:-$DEFAULT_DISK_SPACE_MB}"
@@ -62,7 +71,7 @@ check_disk_space() {
 
     # Check available disk space in MB
     if command -v df >/dev/null 2>&1; then
-        available_mb=$(df -m "$PROJECT_DIR" 2>/dev/null | tail -1 | { read _ _ _ avail _; echo "$avail"; })
+        available_mb=$(df -m "$PROJECT_DIR" 2>/dev/null | tail -1 | { read -r _ _ _ avail _; echo "$avail"; })
         if [ -n "$available_mb" ] && [ "$available_mb" -lt "$required_mb" ]; then
             warning "Low disk space: ${available_mb}MB available, ${required_mb}MB recommended"
             if [ -t 0 ] && [ "${DCUTIL_IGNORE_DISK_SPACE:-}" != "1" ]; then
@@ -70,7 +79,7 @@ check_disk_space() {
                 read -r -p "Continue anyway? (y/N): " confirm
                 if [[ ! "$confirm" =~ ^[Yy] ]]; then
                     info "Operation cancelled"
-                    exit $EXIT_PERMISSION_ERROR
+                    exit "$EXIT_PERMISSION_ERROR"
                 fi
             fi
         fi
@@ -200,7 +209,7 @@ confirm_prompt() {
 # Input validation functions
 validate_command() {
     local cmd="${1:-}"
-    local valid_commands="up down restart enter build clean status stats logs list run init check ssh volumes compose rebuild features lifecycle environment advanced integration merging userprobe hostrequirements shutdown schema podman version help completion test verify-dialog"
+    local valid_commands="up down restart enter build clean status stats logs list run init check ssh volumes compose features advanced integration merging userprobe hostrequirements shutdown schema podman version help completion test verify-dialog edit"
 
     if [[ ! " $valid_commands " =~ $cmd ]]; then
         error_exit "Invalid command '$cmd'. Use 'dcutil help' for available commands." "$EXIT_INVALID_ARGS"
@@ -371,6 +380,23 @@ validate_json_if_available() {
     fi
 }
 
+# Validate a devcontainer config file using official devcontainer CLI
+validate_devcontainer_config_cli() {
+    local cfg="$1"
+    if [ -z "$cfg" ] || [ ! -f "$cfg" ]; then
+        error_exit "JSON file not found for devcontainer CLI validation: $cfg" "$EXIT_CONFIG_ERROR"
+    fi
+
+    if ! command -v devcontainer >/dev/null 2>&1; then
+        error_exit "The official devcontainer CLI is required for this operation. Install it: https://github.com/devcontainers/cli" "$EXIT_DEP_NOT_FOUND"
+    fi
+
+    if ! devcontainer read-configuration --workspace-folder "$PROJECT_DIR" --config "$cfg" >/dev/null 2>&1; then
+        return 1
+    fi
+    return 0
+}
+
 # Best-effort: check whether a given user exists in a docker image (requires docker)
 check_user_in_image() {
     local image="$1"
@@ -487,45 +513,35 @@ print_volumes_usage() {
     echo "  - Use 'dcutil volumes status' to see current mount information"
 }
 
-print_usage() {
-    echo "Usage: dcutil <command> [project_path] [options]"
-    echo ""
-    echo "Commands:"
-    echo "  up [options]  Start the devcontainer (with optional --project-home)"
-    echo "  down        Stop the devcontainer"
-    echo "  restart     Restart the devcontainer"
-    echo "  enter       Enter the container shell"
-    echo "  build       Build the devcontainer image"
-    echo "  clean       Remove the devcontainer and clean up"
-    echo "  status      Show container status"
-    echo "  logs        Show container logs"
-    echo "  list        List running devcontainers"
-    echo "  run <cmd>   Run a command in the container"
-    echo "  init        Initialize a devcontainer (fast or wizard)"
 
-    echo "  volumes <cmd> Volume management (list, add, mount, backup, etc.)"
-    echo "  compose <cmd> Docker Compose support (up, down, status, etc.)"
-    echo "  build <cmd> Custom Dockerfile build support (info, validate, clean)"
-    echo "  rebuild [options]  Rebuild devcontainer with preservation options"
-    echo "  features <cmd> Devcontainer Features management"
-    echo "  advanced <cmd> Advanced devcontainer features"
-    echo "  integration <cmd> Tool integration features"
-    echo "  merging <cmd> Image metadata merging"
-    echo "  userprobe <cmd> User environment probing"
-    echo "  hostrequirements <cmd> Host system requirements validation"
-    echo "  shutdown <cmd> Container shutdown actions"
-    echo "  schema <cmd> Devcontainer configuration schema validation"
-    echo "  podman <cmd> Podman backend configuration and status"
-    echo "  completion  Generate completion script for bash/zsh"
-    echo "  test        Test dcutil improvements and functionality"
-    echo "  help        Show this help message"
-    echo ""
-    echo "Project path detection:"
-    echo "  - If provided as second argument, uses that directory"
-    echo "  - If current directory has .devcontainer/, uses current directory"
-    echo "  - Otherwise uses script's directory"
-    echo ""
-    echo "Special options:"
-    echo "  up command supports --project-home to set container home directory to project directory"
-    echo "  Usage: dcutil up --project-home [project_path]"
+# Generic unknown subcommand handler
+handle_unknown_subcommand() {
+    local command_name="$1"
+    local subcommand="$2"
+    error_exit "Unknown '${command_name}' subcommand: ${subcommand}. Use 'dcutil ${command_name} help' for usage." "$EXIT_INVALID_ARGS"
+}
+
+# Common argument validation utilities
+validate_min_args() {
+    local min_args="$1"
+    local usage_msg="$2"
+    
+    if [ $# -lt 2 ]; then
+        error_exit "validate_min_args requires min_args and usage_msg" "$EXIT_INVALID_ARGS"
+    fi
+    
+    shift 2  # Remove min_args and usage_msg from arguments
+    
+    if [ $# -lt "$min_args" ]; then
+        error_exit "$usage_msg" "$EXIT_INVALID_ARGS"
+    fi
+}
+
+validate_has_args() {
+    local usage_msg="$1"
+    shift
+    
+    if [ $# -eq 0 ]; then
+        error_exit "$usage_msg" "$EXIT_INVALID_ARGS"
+    fi
 }

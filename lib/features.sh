@@ -1525,7 +1525,7 @@ check_features_updates() {
 features_cli() {
     if [ $# -eq 0 ]; then
         print_features_usage
-        exit $EXIT_INVALID_ARGS
+        exit "$EXIT_INVALID_ARGS"
     fi
 
     local subcommand="$1"
@@ -1619,10 +1619,10 @@ Examples:
 Requires a devcontainer.json with features property containing feature specifications.
 EOF
             fi
-            exit $EXIT_SUCCESS
+            exit "$EXIT_SUCCESS"
             ;;
         *)
-            error_exit "Unknown features subcommand: $subcommand. Use 'dcutil features help' for usage." "$EXIT_INVALID_ARGS"
+            handle_unknown_subcommand "features" "$subcommand"
             ;;
     esac
 }
@@ -1841,13 +1841,18 @@ add_feature_to_config() {
                 new_features_json=$(jq --arg name "$feature_name" '.features[$name] = {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
             fi
         elif [ "$features_format" = "array" ]; then
-            # If features is an array, add the new feature to the array
+            # If features is an array, add the new feature to the array (use canonical spec)
+            local canonical_spec
+            canonical_spec=$(parse_feature_spec "$feature_spec")
+            if [ -z "$canonical_spec" ]; then
+                canonical_spec="$feature_spec"
+            fi
             if [ -n "$feature_options" ] && [ "$feature_options" != "{}" ]; then
-                # Add as object with id and options
-                new_features_json=$(jq --arg id "$feature_spec" --argjson opts "$feature_options" '.features += [{"id": $id}] | .features[-1] *= $opts' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+                # Add as object with id and options (id is canonical)
+                new_features_json=$(jq --arg id "$canonical_spec" --argjson opts "$feature_options" '.features += [{"id": $id}] | .features[-1] *= $opts' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
             else
-                # Add as string
-                new_features_json=$(jq --arg id "$feature_spec" '.features += [$id]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+                # Add as canonical string (so tests can assert full ids)
+                new_features_json=$(jq --arg id "$canonical_spec" '.features += [$id]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
             fi
         else
             # If no features key, create new object format (which is the recommended format)
@@ -1892,7 +1897,7 @@ remove_feature_from_config() {
             new_features_json=$(jq --arg name "$feature_name" 'del(.features[$name])' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         elif [ "$features_format" = "array" ]; then
             # If features is an array, remove the feature from the array
-            new_features_json=$(jq --arg name "$feature_name" '.features |= map(select(. != $name))' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
+            new_features_json=$(jq --arg name "$feature_name" '.features |= map(select( if type == "string" then ( . | test("(^|.*/)"+$name+"(:.*)?$") | not ) elif type == "object" then ( (.id // "") | test("(^|.*/)"+$name+"(:.*)?$") | not ) else true end ))' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null)
         else
             # No features key to remove from
             warning "No features configured in devcontainer.json"
@@ -1915,7 +1920,6 @@ features_add() {
     local feature_spec=""
     local feature_options="{}"  # Default to empty object
     local should_rebuild=false
-    local temp_args=()
 
     # Parse all arguments, handling options first
     while [ $# -gt 0 ]; do
@@ -2020,61 +2024,3 @@ features_remove() {
 }
 
 # Generate documentation for features (similar to devcontainer CLI)
-features_generate_docs() {
-    info "Generating feature documentation..."
-
-    if ! parse_features_config; then
-        info "No features configured to generate documentation for"
-        return 0
-    fi
-
-    echo "# Devcontainer Features Documentation"
-    echo ""
-    echo "This document describes the features configured in this development environment."
-    echo ""
-
-    for feature_key in "${FEATURES_IDS[@]}"; do
-        local parsed_spec
-        parsed_spec=$(parse_feature_spec "$feature_key")
-        local feature_id="${parsed_spec%:*}"
-        local feature_version="${parsed_spec#*:}"
-        local feature_name="${feature_id##*/}"
-
-        echo "## $feature_name ($feature_id:$feature_version)"
-        echo ""
-
-        # Try to get more detailed info from the cached feature metadata
-        local cache_key="${feature_id//\//_}_$feature_version"
-        local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
-        if [ -f "$cache_dir/devcontainer-feature.json" ] && command -v jq &> /dev/null; then
-            local description
-            description=$(jq -r '.description // empty' "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
-            if [ -n "$description" ] && [ "$description" != "null" ]; then
-                echo "$description"
-                echo ""
-            fi
-
-            # Show options if available
-            if jq -e '.options' "$cache_dir/devcontainer-feature.json" >/dev/null 2>&1; then
-                echo "### Options:"
-                echo ""
-                while IFS= read -r option_name; do
-                    if [ -n "$option_name" ] && [ "$option_name" != "null" ]; then
-                        local opt_desc
-                        opt_desc=$(jq -r ".options[\"$option_name\"].description // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
-                        local opt_default
-                        opt_default=$(jq -r ".options[\"$option_name\"].default // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
-                        echo "- **$option_name**"
-                        if [ -n "$opt_desc" ] && [ "$opt_desc" != "null" ]; then
-                            echo "  - Description: $opt_desc"
-                        fi
-                        if [ -n "$opt_default" ] && [ "$opt_default" != "null" ]; then
-                            echo "  - Default: $opt_default"
-                        fi
-                        echo ""
-                    fi
-                done < <(jq -r '.options | keys[]' "$cache_dir/devcontainer-feature.json" 2>/dev/null)
-            fi
-        fi
-    done
-}
