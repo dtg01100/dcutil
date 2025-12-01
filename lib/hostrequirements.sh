@@ -97,7 +97,7 @@ check_memory_requirements() {
     # Get available memory in MB
     local memory_mb=1024
     if [ -f /proc/meminfo ]; then
-        memory_mb=$(grep MemTotal /proc/meminfo | { read _ kb _; echo "$((kb / 1024))"; } 2>/dev/null || echo "1024")
+        memory_mb=$(grep MemTotal /proc/meminfo | { read -r _ kb _; echo "$((kb / 1024))"; } 2>/dev/null || echo "1024")
     elif command -v sysctl >/dev/null 2>&1; then
         memory_mb=$(sysctl -n hw.memsize_max 2>/dev/null || sysctl -n hw.physmem 2>/dev/null || echo "1073741824")
         memory_mb=$((memory_mb / 1024 / 1024))
@@ -145,7 +145,7 @@ check_storage_requirements() {
     local storage_gb=10
     if command -v df >/dev/null 2>&1; then
         local avail_str
-        avail_str=$(df -BG . 2>/dev/null | tail -1 | { read _ _ _ avail _; echo "$avail"; } || echo "10G")
+        avail_str=$(df -BG . 2>/dev/null | tail -1 | { read -r _ _ _ avail _; echo "$avail"; } || echo "10G")
         storage_gb="${avail_str%G}"
     fi
     

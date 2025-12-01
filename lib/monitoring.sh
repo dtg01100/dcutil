@@ -379,7 +379,7 @@ Tips:
 EOF
             ;;
         *)
-            error_exit "Unknown stats command: $subcommand. Use 'dcutil stats help' for usage." "$EXIT_INVALID_ARGS"
+            handle_unknown_subcommand "stats" "$subcommand"
             ;;
     esac
 }
