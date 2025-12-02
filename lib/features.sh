@@ -1474,7 +1474,7 @@ update_features() {
 check_features_updates() {
     if ! parse_features_config; then
         echo "No features configured."
-        return 1
+        return 0
     fi
 
     echo "Checking for feature updates..."
