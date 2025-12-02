@@ -94,6 +94,10 @@ fi
 if [ -f "$LIB_DIR/monitoring.sh" ]; then
     source "$LIB_DIR/monitoring.sh"
 fi
+# Template integration module is optional (needed by UX features)
+if [ -f "$LIB_DIR/template_integration.sh" ]; then
+    source "$LIB_DIR/template_integration.sh"
+fi
 # UX enhancements module is optional
 if [ -f "$LIB_DIR/ux.sh" ]; then
     source "$LIB_DIR/ux.sh"
@@ -947,7 +951,17 @@ EOF
             ;;
     esac
 elif [ "$COMMAND" = "features" ]; then
-    : # existing features command handling
+    # Features command doesn't need project directory until subcommand execution
+    determine_project_dir
+    shift 1
+
+    # Set up environment for features modules
+    export PROJECT_DIR
+    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
+
+    # Use the features_cli function which handles all subcommands
+    features_cli "$@"
+    exit "$EXIT_SUCCESS"
 elif [ "$COMMAND" = "edit" ]; then
     # Edit the devcontainer.json file in the default editor, validate, and allow re-editing like crontab
     determine_project_dir
@@ -1011,17 +1025,6 @@ elif [ "$COMMAND" = "edit" ]; then
         success "Configuration updated: $cfg"
         break
     done
-    exit "$EXIT_SUCCESS"
-    # Features command doesn't need project directory
-    determine_project_dir
-    shift 1
-
-    # Set up environment for features modules
-    export PROJECT_DIR
-    cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-
-    # Use the features_cli function which handles all subcommands
-    features_cli "$@"
     exit "$EXIT_SUCCESS"
 elif [ "$COMMAND" = "environment" ]; then
     # Environment command doesn't need project directory
@@ -1533,6 +1536,7 @@ case "$COMMAND" in
             print_usage
             exit "$EXIT_INVALID_ARGS"
         fi
+        determine_project_dir
         features_cli "$@"
         exit "$EXIT_SUCCESS"
         ;;

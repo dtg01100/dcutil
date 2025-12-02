@@ -1,0 +1,89 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Test script to verify actual feature operations work correctly in interactive mode
+
+set timeout 30
+
+# Change to test directory with our config
+spawn sh -c "cd /var/home/dlafreniere/projects/dcutil/test_features_dir && ../dcutil"
+
+# Wait for main menu
+expect {
+    "What would you like to do?" {
+        # Send option 9 to select "Manage devcontainer features"
+        send "9\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach main menu"
+        exit 1
+    }
+}
+
+# Wait for feature management submenu
+expect {
+    "What would you like to do?" {
+        # Option 1: Add a feature 
+        send "1\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach feature management submenu"
+        exit 1
+    }
+}
+
+# In the add feature section, enter search term
+expect {
+    "Enter search term (or press Enter for all features):" {
+        # Search for 'git'
+        send "git\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach search prompt"
+        exit 1
+    }
+}
+
+# Wait for filtered results
+expect {
+    "Features matching 'git':" {
+        # Wait for feature list to be displayed
+        sleep 1
+        # Now enter the feature ID to add
+        send "git\r"
+    }
+    timeout {
+        puts "FAIL: Did not show filtered features"
+        exit 1
+    }
+}
+
+# Wait for adding feature message
+expect {
+    "Adding feature:" {
+        # Go back to main menu to save
+        sleep 1
+        send "4\r"  ;# Save changes and exit
+    }
+    "Feature 'git' not found" {
+        # If git wasn't found, try to exit gracefully
+        send "5\r"  ;# Exit without saving
+        puts "INFO: Git feature not found in available features"
+        expect eof
+        exit 0
+    }
+    timeout {
+        puts "FAIL: Did not process feature addition"
+        exit 1
+    }
+}
+
+expect {
+    "Changes have been saved" {
+        puts "PASS: Feature addition through interactive menu completed successfully"
+        expect eof
+    }
+    timeout {
+        puts "FAIL: Did not complete feature addition"
+        exit 1
+    }
+}

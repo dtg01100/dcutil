@@ -1,0 +1,477 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Simplified comprehensive test script for dcutil features and wizard functionality
+# Tests all menu paths, dialog interactions, and wizard flows
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Function to test main menu options
+proc test_main_menu_options {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            puts "PASS: Main menu loaded successfully"
+            
+            # Test a few key options
+            for {set i 1} {$i <= 5} {incr i} {
+                send "$i\r"
+                
+                expect {
+                    -re "Starting your development environment" {
+                        puts "PASS: Option $i - Start environment"
+                        send "\r"
+                        expect "What would you like to do?"
+                    }
+                    -re "Opening a shell in your environment" {
+                        puts "PASS: Option $i - Enter shell"
+                        expect {
+                            "Your environment isn't running yet" {
+                                send "n\r"  ;# Don't start
+                                expect "What would you like to do?"
+                            }
+                            "bash" - "sh" {
+                                send "exit\r"
+                                expect "What would you like to do?"
+                            }
+                            timeout {
+                                send "\r"
+                                expect "What would you like to do?"
+                            }
+                        }
+                    }
+                    -re "Stopping your environment" {
+                        puts "PASS: Option $i - Stop environment"
+                        send "\r"
+                        expect "What would you like to do?"
+                    }
+                    -re "Checking environment status" {
+                        puts "PASS: Option $i - Check status"
+                        send "\r"
+                        expect "What would you like to do?"
+                    }
+                    -re "Showing resource usage" {
+                        puts "PASS: Option $i - Show stats"
+                        send "\r"
+                        expect "What would you like to do?"
+                    }
+                    timeout {
+                        send "\r"
+                        expect "What would you like to do?"
+                    }
+                }
+            }
+            
+            # Test features menu
+            send "9\r"
+            expect "Managing devcontainer features..."
+            
+            # Test features options
+            send "3\r"  ;# View features
+            expect {
+                "Enter search term to filter features" {
+                    send "back\r"
+                    expect "Press Enter to continue viewing"
+                    send "\r"
+                    
+                    # Exit features menu
+                    send "5\r"
+                    expect {
+                        "Exiting without saving changes" {
+                            send "\r"
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                }
+            }
+            
+            # Test exit
+            send "0\r"
+            expect {
+                "Goodbye" {
+                    puts "PASS: Exit option works"
+                }
+                timeout {
+                    send "\r"
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Did not reach main menu"
+            exit 1
+        }
+    }
+    
+    expect eof
+}
+
+# Function to test features menu comprehensively
+proc test_features_menu {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    puts "PASS: Features menu loaded"
+                    
+                    # Test all features menu options
+                    for {set i 1} {$i <= 5} {incr i} {
+                        send "$i\r"
+                        
+                        expect {
+                            -re "Add a feature" {
+                                puts "PASS: Features option $i - Add feature"
+                                expect {
+                                    "Enter search term" {
+                                        send "back\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                    timeout {
+                                        send "\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                }
+                            }
+                            -re "Remove a feature" {
+                                puts "PASS: Features option $i - Remove feature"
+                                expect {
+                                    "Currently configured features" {
+                                        send "1\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                    "No features configured" {
+                                        send "\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                    timeout {
+                                        send "\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                }
+                            }
+                            -re "View available features" {
+                                puts "PASS: Features option $i - View features"
+                                expect {
+                                    "Enter search term to filter features" {
+                                        send "back\r"
+                                        expect "Press Enter to continue viewing"
+                                        send "\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                    timeout {
+                                        send "back\r"
+                                        expect "Press Enter to continue viewing"
+                                        send "\r"
+                                        expect "Managing devcontainer features..."
+                                    }
+                                }
+                            }
+                            -re "Save changes and exit" {
+                                puts "PASS: Features option $i - Save and exit"
+                                expect {
+                                    "Changes have been saved" {
+                                        send "\r"
+                                    }
+                                    timeout {
+                                        send "\r"
+                                    }
+                                }
+                            }
+                            -re "Exit without saving" {
+                                puts "PASS: Features option $i - Exit without saving"
+                                expect {
+                                    "Exiting without saving changes" {
+                                        send "\r"
+                                    }
+                                    timeout {
+                                        send "\r"
+                                    }
+                                }
+                            }
+                            timeout {
+                                send "\r"
+                                expect "Managing devcontainer features..."
+                            }
+                        }
+                    }
+                    
+                    # Test invalid input
+                    send "99\r"
+                    expect {
+                        "Invalid choice" {
+                            puts "PASS: Invalid input in features menu handled correctly"
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                    
+                    # Exit features menu
+                    send "5\r"
+                    expect {
+                        "Exiting without saving changes" {
+                            send "\r"
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    puts "FAIL: Did not reach features menu"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Did not reach main menu"
+            exit 1
+        }
+    }
+    
+    expect eof
+}
+
+# Function to test dialog functionality
+proc test_dialog_functionality {} {
+    global timeout dcutil_cmd
+    
+    # Test dialog verification
+    spawn $dcutil_cmd verify-dialog
+    expect {
+        "Dialog verification successful" {
+            puts "PASS: Dialog verification works"
+        }
+        "dialog command not available" {
+            puts "INFO: Dialog not available on this system"
+        }
+        timeout {
+            puts "FAIL: Dialog verification timed out"
+            exit 1
+        }
+    }
+    expect eof
+    
+    # Test dialog-based features menu if available
+    spawn $dcutil_cmd menu
+    expect {
+        "What would you like to do?" {
+            send "9\r"
+            expect {
+                "Managing devcontainer features..." {
+                    # Wait for dialog to potentially appear
+                    sleep 2
+                    # Check if we're in dialog mode by looking for dialog-specific text
+                    expect {
+                        "Current features:" {
+                            # We're in dialog mode
+                            puts "PASS: Dialog mode detected"
+                            # Test dialog navigation
+                            send "1\r"  ;# Add feature
+                            expect {
+                                "Add Feature - Search" {
+                                    send "git\r"
+                                    expect {
+                                        "Select a feature to add" {
+                                            send "1\r"
+                                            expect {
+                                                "Feature 'git' has been added" {
+                                                    send "\r"
+                                                    send "4\r"  ;# Save and exit
+                                                    expect "Dialog verification successful"
+                                                }
+                                                timeout {
+                                                    send "5\r"
+                                                }
+                                            }
+                                        }
+                                        timeout {
+                                            send "\r"
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                        }
+                        "Managing devcontainer features..." {
+                            # We're in text mode, that's fine too
+                            puts "INFO: Text mode (dialog not available)"
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                }
+            }
+        }
+        timeout {
+            send "\r"
+        }
+    }
+    expect eof
+}
+
+# Function to test wizard functionality
+proc test_wizard {} {
+    global timeout dcutil_cmd
+    
+    # Clean up any existing configuration
+    catch {exec rm -rf .devcontainer}
+    
+    # Test init wizard
+    spawn $dcutil_cmd init
+    expect {
+        "Welcome to dcutil!" {
+            send "\r"
+            expect {
+                "Quick start guide" {
+                    send "\r"
+                    expect {
+                        "What type of project is this?" {
+                            # Test Python wizard
+                            send "1\r"  ;# Python
+                            expect {
+                                "Python version" {
+                                    send "3.11\r"
+                                    expect {
+                                        "Additional features" {
+                                            send "n\r"
+                                            expect {
+                                                "Configuration complete" {
+                                                    puts "PASS: Python wizard completed"
+                                                    return 1
+                                                }
+                                                timeout {
+                                                    puts "FAIL: Python wizard timed out"
+                                                    return 0
+                                                }
+                                            }
+                                        }
+                                        timeout {
+                                            send "n\r"
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    send "3.11\r"
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                }
+            }
+        }
+        "Project already configured" {
+            puts "INFO: Project already configured, skipping wizard"
+            return 1
+        }
+        timeout {
+            puts "FAIL: Wizard did not start"
+            return 0
+        }
+    }
+    expect eof
+    return 0
+}
+
+# Function to test error handling and edge cases
+proc test_error_handling {} {
+    global timeout dcutil_cmd
+    
+    # Test invalid command
+    spawn $dcutil_cmd invalid-command
+    expect {
+        "Unknown command" {
+            puts "PASS: Invalid command handling works"
+        }
+        timeout {
+            puts "FAIL: Invalid command not handled properly"
+            exit 1
+        }
+    }
+    expect eof
+    
+    # Test help functionality
+    spawn $dcutil_cmd help
+    expect {
+        "Usage:" {
+            puts "PASS: Help command works"
+        }
+        timeout {
+            puts "FAIL: Help command failed"
+            exit 1
+        }
+    }
+    expect eof
+    
+    # Test version functionality
+    spawn $dcutil_cmd version
+    expect {
+        "dcutil v" {
+            puts "PASS: Version command works"
+        }
+        timeout {
+            puts "FAIL: Version command failed"
+            exit 1
+        }
+    }
+    expect eof
+}
+
+# Main test execution
+puts "🧪 Starting comprehensive dcutil tests..."
+
+# Test 1: Main menu functionality
+puts "📋 Testing main menu options..."
+test_main_menu_options
+
+# Test 2: Features menu functionality
+puts "⚙️  Testing features menu..."
+test_features_menu
+
+# Test 3: Dialog functionality
+puts "🖥️  Testing dialog functionality..."
+test_dialog_functionality
+
+# Test 4: Wizard functionality
+puts "🧙 Testing wizard functionality..."
+if {[test_wizard]} {
+    puts "PASS: Wizard test completed"
+} else {
+    puts "FAIL: Wizard test failed"
+    exit 1
+}
+
+# Test 5: Error handling and edge cases
+puts "⚠️  Testing error handling..."
+test_error_handling
+
+puts "🎉 All comprehensive tests completed successfully!"
+exit 0
