@@ -290,7 +290,7 @@ validate_user_input() {
 
 validate_init_mode() {
     local mode="${1:-}"
-    local valid_modes="fast wizard --fast --wizard --help -h --non-interactive -n"
+    local valid_modes="fast wizard clean --fast --wizard --clean --help -h --non-interactive -n"
 
     if [ -n "$mode" ] && [[ ! " $valid_modes " =~ $mode ]]; then
         error_exit "Unknown init mode: '$mode'. Use 'dcutil init --help' for usage information." "$EXIT_INVALID_ARGS"
@@ -420,7 +420,7 @@ check_user_in_image() {
 # 3. Use script's directory as fallback
 determine_project_dir() {
     local potential_path="${1:-}"
-    
+
     if [ -n "$potential_path" ]; then
         validate_project_path "$potential_path"
     elif [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
@@ -433,7 +433,7 @@ determine_project_dir() {
     if [ ! -d "$PROJECT_DIR" ]; then
         error_exit "Determined project directory '$PROJECT_DIR' is not valid." "$EXIT_CONFIG_ERROR"
     fi
-    
+
     # Initialize DEVCONTAINER_CONFIG_FILE for all modules
     initialize_devcontainer_config
 }
@@ -513,7 +513,6 @@ print_volumes_usage() {
     echo "  - Use 'dcutil volumes status' to see current mount information"
 }
 
-
 # Generic unknown subcommand handler
 handle_unknown_subcommand() {
     local command_name="$1"
@@ -525,13 +524,13 @@ handle_unknown_subcommand() {
 validate_min_args() {
     local min_args="$1"
     local usage_msg="$2"
-    
+
     if [ $# -lt 2 ]; then
         error_exit "validate_min_args requires min_args and usage_msg" "$EXIT_INVALID_ARGS"
     fi
-    
+
     shift 2  # Remove min_args and usage_msg from arguments
-    
+
     if [ $# -lt "$min_args" ]; then
         error_exit "$usage_msg" "$EXIT_INVALID_ARGS"
     fi
@@ -540,8 +539,51 @@ validate_min_args() {
 validate_has_args() {
     local usage_msg="$1"
     shift
-    
+
     if [ $# -eq 0 ]; then
         error_exit "$usage_msg" "$EXIT_INVALID_ARGS"
     fi
+}
+
+print_usage() {
+    echo "Usage: dcutil <command> [project_path] [options]"
+    echo ""
+    echo "Commands:"
+    echo "  up [options]  Start the devcontainer (with optional --project-home)"
+    echo "  down        Stop the devcontainer"
+    echo "  restart     Restart the devcontainer"
+    echo "  enter       Enter the container shell"
+    echo "  build       Build the devcontainer image"
+    echo "  clean       Remove the devcontainer and clean up"
+    echo "  status      Show container status"
+    echo "  logs        Show container logs"
+    echo "  list        List running devcontainers"
+    echo "  run <cmd>   Run a command in the container"
+    echo "  init        Initialize a devcontainer (fast or wizard)"
+    echo "  install-agent <agent> Install AI agent inside the devcontainer"
+    echo "  volumes <cmd> Volume management (list, add, mount, backup, etc.)"
+    echo "  compose <cmd> Docker Compose support (up, down, status, etc.)"
+    echo "  build <cmd> Custom Dockerfile build support (info, validate, clean)"
+    echo "  rebuild [options]  Rebuild devcontainer with preservation options"
+    echo "  features <cmd> Devcontainer Features management"
+    echo "  advanced <cmd> Advanced devcontainer features"
+    echo "  integration <cmd> Tool integration features"
+    echo "  merging <cmd> Image metadata merging"
+    echo "  userprobe <cmd> User environment probing"
+    echo "  hostrequirements <cmd> Host system requirements validation"
+    echo "  shutdown <cmd> Container shutdown actions"
+    echo "  schema <cmd> Devcontainer configuration schema validation"
+    echo "  podman <cmd> Podman backend configuration and status"
+    echo "  completion  Generate completion script for bash/zsh"
+    echo "  test        Test dcutil improvements and functionality"
+    echo "  help        Show this help message"
+    echo ""
+    echo "Project path detection:"
+    echo "  - If provided as second argument, uses that directory"
+    echo "  - If current directory has .devcontainer/, uses current directory"
+    echo "  - Otherwise uses script's directory"
+    echo ""
+    echo "Special options:"
+    echo "  up command supports --project-home to set container home directory to project directory"
+    echo "  Usage: dcutil up --project-home [project_path]"
 }

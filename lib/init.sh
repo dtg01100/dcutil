@@ -16,11 +16,11 @@ init_mode() {
     case "$INIT_MODE" in
         "--fast"|"fast"|"--non-interactive"|"-n")
             info "Setting up your development environment..."
-            
+
             # Auto-detect language and use appropriate template
             local template_id
             template_id=$(detect_project_template)
-            
+
             # Set template arguments based on template
             local template_args='{}'
             case "$template_id" in
@@ -46,35 +46,35 @@ init_mode() {
                     template_args='{"imageVariant": "noble"}'
                     ;;
             esac
-            
+
             # Suggest features based on project type
             local features_json
             features_json=$(suggest_features_for_project "$template_id")
-            
+
             # Apply the official template using the devcontainer CLI
             if command -v devcontainer >/dev/null 2>&1; then
                 info "Using official template: $template_id"
-                
+
                 # Apply the template with suggested features
                 if apply_official_template "$template_id" "$features_json" "$template_args"; then
-                    
+
                     # Verify the configuration was created
                     if [ ! -f ".devcontainer/devcontainer.json" ]; then
                         error_exit "⚠️  Failed to create configuration. Please try again or check your setup." "$EXIT_CONFIG_ERROR"
                     fi
-                    
+
                     # Enhance the generated configuration with dcutil-specific additions
                     enhance_with_dcutil_additions
-                    
+
                     # Skip JSON validation since official templates are already validated
                     # validate_json_if_available ".devcontainer/devcontainer.json"
                     success "✅ Development environment configured successfully!"
-                    
+
                     # Show what to do next
                     if command -v show_contextual_tips >/dev/null 2>&1; then
                         show_contextual_tips "not-running"
                     fi
-                    
+
                     # Offer to start the environment immediately
                     if [ -t 0 ] && [ -t 1 ]; then
                         echo ""
@@ -88,7 +88,7 @@ init_mode() {
                             fi
                         fi
                     fi
-                    
+
                     info "💡 Run 'dcutil up' to start your environment"
                 else
                     error_exit "⚠️  Setup failed. This might be a temporary issue - please try again.\n    If the problem persists, ensure you have the latest version: brew upgrade dcutil" "$EXIT_DEVCONTAINER_ERROR"
@@ -103,9 +103,34 @@ init_mode() {
             #     warning "Non-interactive environment detected. Use 'dcutil init fast' for automated setup."
             #     exit "$EXIT_INVALID_ARGS"
             # fi
-            
+
             # Use enhanced wizard with official template integration
             wizard_with_official_integration
+            ;;
+        "--clean"|"clean")
+            info "Cleaning up existing devcontainer configuration..."
+            # Set PROJECT_DIR to current directory for consistent behavior
+            PROJECT_DIR="$(pwd)"
+            export PROJECT_DIR
+            # Call the main clean function to remove containers and configuration
+            if command -v devcontainer_clean >/dev/null 2>&1; then
+                devcontainer_clean
+            else
+                # Fallback: just remove config directory
+                if [ -d ".devcontainer" ]; then
+                    rm -rf ".devcontainer"
+                    success "Removed .devcontainer directory"
+                fi
+                if [ -f "devcontainer.json" ]; then
+                    rm -f "devcontainer.json"
+                    success "Removed devcontainer.json file"
+                fi
+                if [ -f ".devcontainer.json" ]; then
+                    rm -f ".devcontainer.json"
+                    success "Removed .devcontainer.json file"
+                fi
+                info "Configuration files removed. Run 'dcutil init' to set up again."
+            fi
             ;;
         "--help"|"-h")
             echo "Usage: dcutil init [mode]"
@@ -113,6 +138,7 @@ init_mode() {
             echo "Modes:"
             echo "  fast     Create configuration using official templates (default)"
             echo "  wizard   Interactive setup (deprecated - fast mode is auto-detecting now)"
+            echo "  clean    Remove existing devcontainer configuration"
             echo "  help     Show this help message"
             echo ""
             echo "Features:"
@@ -121,10 +147,12 @@ init_mode() {
             echo "  • Leverages official devcontainer CLI for template application"
             echo "  • Includes Git and Common Utils features automatically"
             echo "  • Enhanced with VS Code extensions and dcutil improvements"
+            echo "  • Clean existing configurations with 'dcutil init clean'"
             echo ""
             echo "Examples:"
             echo "  dcutil init          # Auto-detect project type and create configuration"
             echo "  dcutil init fast     # Quick setup using official templates"
+            echo "  dcutil init clean    # Remove existing configuration"
             echo "  dcutil init wizard   # Interactive setup (deprecated)"
             echo "  dcutil init --help   # Show this help message"
             ;;

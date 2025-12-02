@@ -115,7 +115,7 @@ fi
 # Test function to verify improvements
 test_dcutil_improvements() {
     echo "Testing dcutil improvements..."
-    
+
     # Test 1: Verify set -euo pipefail is active
 
     if [[ $- == *e* ]] && [[ $- == *u* ]]; then
@@ -123,8 +123,16 @@ test_dcutil_improvements() {
         set +e  # Temporarily disable exit "on error
         false | true
         local pipefail_result=$?
+<<<<<<< ours
         set -e  # Re-enable exit "on error
         
+||||||| base
+        set -e  # Re-enable exit on error
+        
+=======
+        set -e  # Re-enable exit on error
+
+>>>>>>> theirs
         if [ $pipefail_result -ne 0 ]; then
             echo "✅ Error handling enabled (set -euo pipefail)"
         else
@@ -133,7 +141,7 @@ test_dcutil_improvements() {
     else
         echo "❌ Error handling not properly configured"
     fi
-    
+
     # Test 2: Test safe_path function
     local test_path
     test_path=$(safe_path "$HOME/test")
@@ -142,28 +150,28 @@ test_dcutil_improvements() {
     else
         echo "❌ safe_path function not expanding paths"
     fi
-    
+
     # Test 3: Test volume JSON handling
     if command -v jq &> /dev/null; then
         echo "✅ jq available for JSON operations"
     else
         echo "⚠️  jq not available, falling back to sed"
     fi
-    
+
     # Test 4: Check for atomic operations
     if grep -q "mktemp" "$LIB_DIR/volumes.sh"; then
         echo "✅ Atomic operations implemented"
     else
         echo "❌ Atomic operations not found"
     fi
-    
+
     # Test 5: Check for rate limiting
     if grep -q "sleep.*seconds" "$LIB_DIR/security.sh"; then
         echo "✅ Rate limiting implemented"
     else
         echo "❌ Rate limiting not found"
     fi
-    
+
     echo "Testing complete!"
 }
 
@@ -179,7 +187,7 @@ if [ -t 0 ] && [ -z "${CI:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
     fi
 fi
 
-# Parse and validate arguments  
+# Parse and validate arguments
 COMMAND="${1:-menu}"  # Default to menu instead of help for better UX
 # Allow a special verify-dialog command for debugging dialog UI without running full wizard
 if [ "${1:-}" = "verify-dialog" ]; then
@@ -355,7 +363,7 @@ if [ "$COMMAND" = "menu" ]; then
         while true; do
             show_interactive_menu
             choice=$?
-            
+
             case $choice in
                 1) COMMAND="up"; break ;;
                 2) COMMAND="enter"; break ;;
@@ -446,7 +454,7 @@ Advanced:
   integration      Tool integrations
   hostrequirements Check system requirements
   rebuild          Rebuild with specific options
-  
+
 Utility:
   version     Show version information
   completion  Setup command auto-completion
@@ -500,11 +508,11 @@ elif [ "$COMMAND" = "build" ]; then
     # Build command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for build modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for build subcommands
     case "${1:-}" in
         "info")
@@ -545,7 +553,7 @@ elif [ "$COMMAND" = "build" ]; then
             # Assume it's a project path or invalid
             ;;
     esac
-    
+
     # Standard build command
     docker_build "$@"
     exit "$EXIT_SUCCESS"
@@ -553,11 +561,11 @@ elif [ "$COMMAND" = "stats" ]; then
     # Stats command for resource monitoring
     determine_project_dir
     shift 1
-    
+
     # Set up environment
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Handle stats command
     if command -v handle_stats_command >/dev/null 2>&1; then
         handle_stats_command "$PROJECT_DIR" "$@"
@@ -646,11 +654,11 @@ elif [ "$COMMAND" = "advanced" ]; then
     # Advanced features command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for advanced features modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for advanced features subcommands
     case "${1:-}" in
         "info")
@@ -718,11 +726,11 @@ elif [ "$COMMAND" = "integration" ]; then
     # Tool integration command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for integration modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for integration subcommands
     case "${1:-}" in
         "info")
@@ -790,11 +798,11 @@ elif [ "$COMMAND" = "merging" ]; then
     # Metadata merging command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for merging modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for merging subcommands
     case "${1:-}" in
         "show")
@@ -861,11 +869,11 @@ elif [ "$COMMAND" = "userprobe" ]; then
     # User environment probing command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for userprobe modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for userprobe subcommands
     case "${1:-}" in
         "probe")
@@ -1037,14 +1045,16 @@ elif [ "$COMMAND" = "environment" ]; then
      determine_project_dir
      shift 1
  elif [ "$COMMAND" = "clean" ]; then
-     # Clean command doesn't need project directory
+     # Clean command operates in current directory
+     PROJECT_DIR="$(pwd)"
+     export PROJECT_DIR
      devcontainer_clean
      exit "$EXIT_SUCCESS"
 
 elif [ "$COMMAND" = "init" ]; then
     # For init, use current directory (we want to initialize here)
     if [ -f ".devcontainer/devcontainer.json" ] || [ -f ".devcontainer.json" ]; then
-        error_exit "Devcontainer configuration already exists in current directory. Use 'dcutil clean' first to remove existing configuration" "$EXIT_CONFIG_ERROR"
+        error_exit "Devcontainer configuration already exists in current directory. Use 'dcutil clean' or 'dcutil init clean' first to remove existing configuration" "$EXIT_CONFIG_ERROR"
     fi
     PROJECT_DIR="$(pwd)"
     shift 1
@@ -1054,11 +1064,11 @@ elif [ "$COMMAND" = "schema" ]; then
     # Schema validation command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for schema validation modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for schema subcommands
     case "${1:-}" in
         "validate")
@@ -1117,11 +1127,11 @@ elif [ "$COMMAND" = "podman" ]; then
     # Podman backend command doesn't need project directory
     determine_project_dir
     shift 1
-    
+
     # Set up environment for Podman backend modules
     export PROJECT_DIR
     cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-    
+
     # Check for Podman subcommands
     case "${1:-}" in
         "status")
@@ -1219,7 +1229,7 @@ Validates JSON structure, property types, required fields, and specification com
 Provides detailed error and warning messages for configuration issues.
 EOF
     }
-    
+
     # For up command, check for --project-home flag before determining project directory
 # Add edit command handling in top-level command routing
 
@@ -1878,7 +1888,7 @@ case "$COMMAND" in
                 if [ -z "$container_name" ]; then
                     error_exit "No container name determined. Use 'dcutil shutdown help' for usage." "$EXIT_CONFIG_ERROR"
                 fi
-                
+
                 if command -v execute_shutdown_action >/dev/null 2>&1; then
                     execute_shutdown_action "$container_name"
                 else
@@ -1973,11 +1983,11 @@ case "$COMMAND" in
 "rebuild")
         # Rebuild command doesn't need project directory
         determine_project_dir ""
-        
+
         # Set up environment for rebuild
         export PROJECT_DIR
         cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
-        
+
 # Execute rebuild with options (pass all remaining args)
         if command -v devcontainer_rebuild >/dev/null 2>&1; then
             devcontainer_rebuild "$@"
@@ -2000,4 +2010,10 @@ case "$COMMAND" in
     esac
 
 # Print main usage help
+<<<<<<< ours
 exit "$EXIT_SUCCESS"
+||||||| base
+exit $EXIT_SUCCESS
+=======
+exit $EXIT_SUCCESS
+>>>>>>> theirs

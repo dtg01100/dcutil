@@ -35,7 +35,7 @@ FEATURES_VERSION_NORMALIZATION["docker-in-docker-in-docker"]="latest"
 
 # Load inputs values interactively if not already set
 load_input_values() {
-    
+
     if [ ${#INPUTS_NAMES[@]} -eq 0 ]; then
         return 0
     fi
@@ -93,33 +93,49 @@ parse_features_config() {
     else
         error_exit "⚠️  Unable to read configuration. This is unexpected - please report this issue." "$EXIT_CONFIG_ERROR"
     fi
-    
+
     if [ -z "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
         error_exit "⚠️  No development environment found.\n    Run 'dcutil init' to set one up first." "$EXIT_CONFIG_ERROR"
     fi
-    
+
     info "Parsing Features configuration..."
-    
+
     if command -v jq &> /dev/null; then
         # Initialize features directory
         FEATURES_DIR="$PROJECT_DIR/.devcontainer-features"
         FEATURES_CACHE_DIR="$HOME/.cache/dcutil/features"
         FEATURES_INSTALL_LOG="$FEATURES_DIR/install.log"
-        
+
         # Create directories
         mkdir -p "$FEATURES_DIR"
         mkdir -p "$FEATURES_CACHE_DIR"
-        
+
         # Reset arrays/maps
         FEATURES_IDS=()
         FEATURES_CONFIG_MAP=()
 
-        # Optionally fetch available official features list for numeric mapping
+        # Fetch available official features list for numeric mapping - this is our source of truth
         local available_features_json
+        info "Fetching available features list to use as source of truth..."
         if command -v fetch_available_features_official >/dev/null 2>&1; then
-            available_features_json=$(fetch_available_features_official || echo "[]")
+            available_features_json=$(fetch_available_features_official 2>/dev/null || echo "[]")
         else
             available_features_json="[]"
+        fi
+
+        # Validate that the fetched data is valid JSON
+        if [ "$available_features_json" != "[]" ] && command -v jq >/dev/null 2>&1; then
+            if ! echo "$available_features_json" | jq empty 2>/dev/null; then
+                warning "Downloaded features list is invalid JSON, using empty list"
+                available_features_json="[]"
+            fi
+        fi
+
+        # Report the number of available features found
+        if command -v jq >/dev/null 2>&1; then
+            local available_count
+            available_count=$(echo "$available_features_json" | jq 'length' 2>/dev/null || echo "0")
+            info "Found $available_count available features in the downloaded list (source of truth)"
         fi
 
         # Helper: map numeric or numeric-id keys to canonical feature id
@@ -129,14 +145,23 @@ parse_features_config() {
                 echo ""
                 return 1
             fi
+
+            # Only proceed if we have the downloaded features list available
+            if [ "$available_features_json" = "[]" ] || [ -z "$available_features_json" ]; then
+                # If no available features list, return the key as-is
+                echo "$key"
+                return 0
+            fi
+
             # If key is purely numeric
             if [[ "$key" =~ ^[0-9]+$ ]]; then
                 local idx=$((key - 1))
                 local mapped_id
-                mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null || echo "")
+                mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null | head -n 1)
                 local mapped_registry
-                mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null || echo "")
-                if [ -n "$mapped_id" ]; then
+                mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null | head -n 1)
+
+                if [ -n "$mapped_id" ] && [ "$mapped_id" != "null" ]; then
                     if [[ "$mapped_id" == ghcr.io/* ]]; then
                         echo "$mapped_id"
                         return 0
@@ -149,35 +174,50 @@ parse_features_config() {
                     fi
                 fi
             fi
+
             # If key contains container registry and numeric like ghcr.io/devcontainers/features/2
             if [[ "$key" =~ ^ghcr.io/devcontainers/features/[0-9]+(:.*)?$ ]]; then
-                # Extract numeric ID from feature path
+                # Extract the numeric part
                 local id_match
-                if [[ "$key" =~ /([0-9]+)(:|$) ]]; then
-                    id_match="${BASH_REMATCH[1]}"
+                if [[ "$key" =~ : ]]; then
+                    # Has version suffix, extract just the numeric before the colon
+                    id_match=$(echo "$key" | sed -n 's/^ghcr.io\/devcontainers\/features\/\([0-9]\+\):.*$/\1/p')
                 else
-                    id_match=""
+                    # No version suffix
+                    id_match=$(echo "$key" | sed -n 's/^ghcr.io\/devcontainers\/features\/\([0-9]\+\)$/\1/p')
                 fi
+
                 if [[ "$id_match" =~ ^[0-9]+$ ]]; then
                     local idx=$((id_match - 1))
                     local mapped_id
-                    mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null || echo "")
+                    mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null | head -n 1)
                     local mapped_registry
-                    mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null || echo "")
-                    if [ -n "$mapped_id" ]; then
+                    mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null | head -n 1)
+
+                    if [ -n "$mapped_id" ] && [ "$mapped_id" != "null" ]; then
+                        local result
                         if [[ "$mapped_id" == ghcr.io/* ]]; then
-                            echo "$mapped_id"
-                            return 0
+                            result="$mapped_id"
                         elif [ -n "$mapped_registry" ]; then
-                            echo "$mapped_registry/$mapped_id"
-                            return 0
+                            result="$mapped_registry/$mapped_id"
                         else
-                            echo "ghcr.io/devcontainers/features/$mapped_id"
-                            return 0
+                            result="ghcr.io/devcontainers/features/$mapped_id"
                         fi
+
+                        # If the original key had a version, preserve it
+                        if [[ "$key" =~ : ]]; then
+                            local version_suffix
+                            version_suffix=$(echo "$key" | sed -n 's/.*:\(.*\)$/\1/p')
+                            result="$result:$version_suffix"
+                        fi
+
+                        echo "$result"
+                        return 0
                     fi
                 fi
             fi
+
+            # If we couldn't resolve it, return the original key
             echo "$key"
             return 0
         }
@@ -218,6 +258,11 @@ parse_features_config() {
                         # Normalize to canonical spec (ghcr.io/.../name:version)
                         local canonical_spec
                         canonical_spec=$(parse_feature_spec "$resolved_key")
+
+                        # Log the mapping for debugging
+                        if [ "$resolved_key" != "$feature_key" ]; then
+                            info "Mapped feature key '$feature_key' -> '$resolved_key' (canonical: $canonical_spec)"
+                        fi
 
                         FEATURES_IDS+=("$canonical_spec")
                         FEATURES_CONFIG_MAP["$canonical_spec"]="$feature_config"
@@ -341,18 +386,52 @@ parse_features_config() {
             return 0
         fi
     fi
-    
+
+    return 1
+}
+
+# Validate if a feature exists in the downloaded features list
+feature_exists_in_downloaded_list() {
+    local feature_name="$1"
+    local available_features_json="${2:-[]}"
+
+    if [ "$available_features_json" = "[]" ] || [ -z "$available_features_json" ]; then
+        # If no available features list, assume feature might exist
+        return 0
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        # Check if feature name exists as id in the list (case-insensitive partial match)
+        local found
+        found=$(echo "$available_features_json" | jq -r --arg name "$feature_name" \
+            '.[] | select(.id | test($name; "i")) | .id' 2>/dev/null | head -n 1)
+
+        if [ -n "$found" ] && [ "$found" != "" ]; then
+            return 0
+        fi
+
+        # Also check the last part of the feature ID (after the final slash)
+        local feature_basename
+        feature_basename="${feature_name##*/}"
+        found=$(echo "$available_features_json" | jq -r --arg basename "$feature_basename" \
+            '.[] | select(.id | endswith($basename)) | .id' 2>/dev/null | head -n 1)
+
+        if [ -n "$found" ] && [ "$found" != "" ]; then
+            return 0
+        fi
+    fi
+
     return 1
 }
 
 # Extract feature information from feature spec
 parse_feature_spec() {
     local feature_spec="$1"
-    
+
     # Parse feature ID and version
     local feature_id=""
     local feature_version="$FEATURES_DEFAULT_VERSION"
-    
+
     if [[ "$feature_spec" == *":"* ]]; then
         feature_id="${feature_spec%:*}"
         feature_version="${feature_spec#*:}"
@@ -364,7 +443,7 @@ parse_feature_spec() {
     # - Short: node -> ghcr.io/devcontainers/features/node
     # - Medium: devcontainers/features/node -> ghcr.io/devcontainers/features/node
     # - Full: ghcr.io/devcontainers/features/node -> keep as-is
-    
+
     # If no slash -> short format
     if [[ "$feature_id" != *"/"* ]]; then
         feature_id="$FEATURES_REGISTRY/$FEATURES_NAMESPACE/$feature_id"
@@ -684,7 +763,7 @@ env_clear_inputs_for_feature() {
 # Helper: find running container for project
 get_running_container_for_project() {
     local project_dir="${1:-$PROJECT_DIR}"
-    
+
     # Prefer official devcontainer CLI to get container name
     if command -v get_current_devcontainer_name >/dev/null 2>&1; then
         local container_name
@@ -844,7 +923,7 @@ install_feature() {
 
     local feature_dir
     feature_dir=$(download_feature "$effective_spec" "$feature_config") || return 1
-    
+
     # Extract feature metadata
     local feature_id
     feature_id=$(parse_feature_spec "$effective_spec" | cut -d: -f1)
@@ -854,17 +933,17 @@ install_feature() {
     feature_safe_name="${feature_safe_name^^}"
     local feature_version
     feature_version=$(parse_feature_spec "$effective_spec" | cut -d: -f2)
-    
+
     # Create installation log entry
     echo "$(date): Installing $effective_spec" >> "$FEATURES_INSTALL_LOG"
 
     # Prepare input environment variables
     env_prepare_inputs_for_feature "$effective_spec" "$feature_config"
 
-    
+
     # For now, we'll create a basic installation
     # In a full implementation, this would execute the feature's install.sh script
-    
+
     local install_script="$feature_dir/src/install.sh"
     if [ -f "$install_script" ]; then
         info "Running feature installation script..."
@@ -1164,7 +1243,7 @@ install_features() {
     fi
 
     info "Installing ${#FEATURES_IDS[@]} feature(s) with dependency resolution..."
-    
+
     # Show initial progress message
     if command -v show_progress >/dev/null 2>&1; then
         echo "⏳ This may take a few minutes depending on the features being installed..."
@@ -1249,28 +1328,28 @@ show_features_info() {
         # so that status/info commands are non-failing in CI or when no features are configured.
         return 0
     fi
-    
+
     echo "Devcontainer Features Configuration:"
     echo "  Cache Directory: $FEATURES_CACHE_DIR"
     echo "  Install Directory: $FEATURES_DIR"
     echo "  Features:"
-    
+
     for feature_key in "${FEATURES_IDS[@]}"; do
         local feature_spec="$feature_key"
         local feature_config
         feature_config="${FEATURES_CONFIG_MAP[$feature_key]}"
-        
+
         local parsed_spec
         parsed_spec=$(parse_feature_spec "$feature_spec")
         local feature_id="${parsed_spec%:*}"
         local feature_version="${parsed_spec#*:}"
-        
+
         # Extract just the feature name from the ID
         local feature_name="${feature_id##*/}"
-        
+
         echo "    - $feature_name"
         echo "      ID: $feature_id"
-        
+
         # Show version if available in config or parsed spec
         if command -v jq &> /dev/null; then
             local version
@@ -1279,7 +1358,7 @@ show_features_info() {
         else
             echo "      Version: $feature_version"
         fi
-        
+
         # Check cache status
         local cache_key="${feature_id//\//_}_$feature_version"
         local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
@@ -1290,7 +1369,7 @@ show_features_info() {
         fi
         echo ""
     done
-    
+
     # Show installation log if it exists
     if [ -f "$FEATURES_INSTALL_LOG" ]; then
         echo "Installation Log:"
@@ -1305,10 +1384,10 @@ validate_features_config() {
         echo "No features configured."
         return 0
     fi
-    
+
     local errors=()
     local warnings=()
-    
+
     # Validate each feature specification
     for feature_key in "${FEATURES_IDS[@]}"; do
         local feature_spec="$feature_key"
@@ -1393,7 +1472,7 @@ validate_features_config() {
             fi
         fi
     done
-    
+
     # Report validation results
     if [ ${#errors[@]} -gt 0 ]; then
         echo "Features configuration validation errors:"
@@ -1402,18 +1481,18 @@ validate_features_config() {
         done
         return 1
     fi
-    
+
     if [ ${#warnings[@]} -gt 0 ]; then
         echo "Features configuration warnings:"
         for warning in "${warnings[@]}"; do
             echo "  - $warning"
         done
     fi
-    
+
     if [ ${#errors[@]} -eq 0 ]; then
         success "Features configuration is valid"
     fi
-    
+
     return 0
 }
 
@@ -1450,7 +1529,7 @@ clean_features_cache() {
     else
         info "Features cache directory does not exist"
     fi
-    
+
     # Clean installation directory
     if [ -d "$FEATURES_DIR" ]; then
         rm -rf "$FEATURES_DIR"
@@ -1462,10 +1541,10 @@ clean_features_cache() {
 # Update features (re-download and reinstall)
 update_features() {
     info "Updating features..."
-    
+
     # Clean cache first
     clean_features_cache
-    
+
     # Reinstall all features
     install_features
 }
@@ -1808,6 +1887,7 @@ features_generate_docs() {
         fi
     done
 }
+<<<<<<< Updated upstream
 
 # Function to add a feature to devcontainer.json
 add_feature_to_config() {
@@ -2024,3 +2104,61 @@ features_remove() {
 }
 
 # Generate documentation for features (similar to devcontainer CLI)
+features_generate_docs() {
+    info "Generating feature documentation..."
+
+    if ! parse_features_config; then
+        info "No features configured to generate documentation for"
+        return 0
+    fi
+
+    echo "# Devcontainer Features Documentation"
+    echo ""
+    echo "This document describes the features configured in this development environment."
+    echo ""
+
+    for feature_key in "${FEATURES_IDS[@]}"; do
+        local parsed_spec
+        parsed_spec=$(parse_feature_spec "$feature_key")
+        local feature_id="${parsed_spec%:*}"
+        local feature_version="${parsed_spec#*:}"
+        local feature_name="${feature_id##*/}"
+
+        echo "## $feature_name ($feature_id:$feature_version)"
+        echo ""
+
+        # Try to get more detailed info from the cached feature metadata
+        local cache_key="${feature_id//\//_}_$feature_version"
+        local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
+        if [ -f "$cache_dir/devcontainer-feature.json" ] && command -v jq &> /dev/null; then
+            local description
+            description=$(jq -r '.description // empty' "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
+            if [ -n "$description" ] && [ "$description" != "null" ]; then
+                echo "$description"
+                echo ""
+            fi
+
+            # Show options if available
+            if jq -e '.options' "$cache_dir/devcontainer-feature.json" >/dev/null 2>&1; then
+                echo "### Options:"
+                echo ""
+                while IFS= read -r option_name; do
+                    if [ -n "$option_name" ] && [ "$option_name" != "null" ]; then
+                        local opt_desc
+                        opt_desc=$(jq -r ".options[\"$option_name\"].description // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
+                        local opt_default
+                        opt_default=$(jq -r ".options[\"$option_name\"].default // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
+                        echo "- **$option_name**"
+                        if [ -n "$opt_desc" ] && [ "$opt_desc" != "null" ]; then
+                            echo "  - Description: $opt_desc"
+                        fi
+                        if [ -n "$opt_default" ] && [ "$opt_default" != "null" ]; then
+                            echo "  - Default: $opt_default"
+                        fi
+                        echo ""
+                    fi
+                done < <(jq -r '.options | keys[]' "$cache_dir/devcontainer-feature.json" 2>/dev/null)
+            fi
+        fi
+    done
+}
