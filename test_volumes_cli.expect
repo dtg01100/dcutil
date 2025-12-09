@@ -1,0 +1,57 @@
+#!/usr/bin/env expect
+
+# Test dcutil volumes CLI: add/list/remove/status
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Use a temporary test directory under repo
+set TEST_DIR "test-volumes"
+spawn sh -c "rm -rf $TEST_DIR && mkdir -p $TEST_DIR && mkdir -p $TEST_DIR/.devcontainer && printf '{\"name\": \"Test\", \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\"}' > $TEST_DIR/.devcontainer/devcontainer.json"
+expect eof
+
+proc run_cmd {cmd expect_text} {
+    global timeout
+    spawn {*}$cmd
+    expect {
+        -re $expect_text {
+            puts "PASS: $cmd matched: $expect_text"
+        }
+        timeout {
+            puts "FAIL: $cmd timed out waiting for: $expect_text"
+            exit 1
+        }
+    }
+    expect eof
+}
+
+# Verify volumes list usage doesn't fail
+run_cmd [list $dcutil_cmd volumes list $TEST_DIR] "Shared storage|Volum"
+
+# Invalid add usage should show usage
+run_cmd [list $dcutil_cmd volumes add] "Usage: dcutil volumes add"
+
+# Add a volume
+set HOST_DIR "/tmp/dcutil_test_host"
+spawn sh -c "mkdir -p $HOST_DIR"
+expect eof
+run_cmd [list $dcutil_cmd "volumes add myvol $HOST_DIR /workspace $TEST_DIR"] "Added volume 'myvol'|Added volume"
+
+# List volumes and ensure the volume appears
+run_cmd [list $dcutil_cmd "volumes list $TEST_DIR"] "myvol|myvol"
+
+# Remove the volume
+run_cmd [list $dcutil_cmd "volumes remove myvol $TEST_DIR"] "Removed volume 'myvol'|Removed volume"
+
+# Ensure removal reflected in list
+run_cmd [list $dcutil_cmd "volumes list $TEST_DIR"] "\(No volumes\|No features configured\|No features\)"
+
+# Clean up host dir
+spawn sh -c "rm -rf $HOST_DIR"
+expect eof
+
+puts "🎉 Volumes CLI tests completed successfully!"
+exit 0

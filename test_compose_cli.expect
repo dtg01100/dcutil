@@ -1,0 +1,36 @@
+#!/usr/bin/env expect
+
+# Tests for dcutil compose CLI usage and error handling
+
+set timeout 60
+set cmd [lindex $argv 0]
+if {$cmd eq ""} { set cmd "./dcutil" }
+
+proc run_cmd {cmd expect_re} {
+    spawn sh -c $cmd
+    expect {
+        -re $expect_re {
+            puts "PASS: $cmd matched: $expect_re"
+        }
+        timeout {
+            puts "FAIL: $cmd timed out waiting for: $expect_re"
+            exit 1
+        }
+    }
+    expect eof
+}
+
+# Help
+run_cmd "$cmd compose --help" "Usage: dcutil compose"
+
+# Exec without args should show usage
+run_cmd "$cmd compose exec" "Usage: dcutil compose exec|Usage: dcutil compose exec <command>"
+
+# Scale missing args should show usage
+run_cmd "$cmd compose scale" "Usage: dcutil compose scale <service> <replicas>"
+
+# Down without compose config should error or show help
+run_cmd "$cmd compose down" "(Docker Compose config|Compose config not available|No compose file found|Usage: dcutil compose)"
+
+puts "🎉 Compose CLI tests completed successfully!"
+exit 0
