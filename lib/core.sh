@@ -169,21 +169,32 @@ error_exit() {
     exit "${2:-$EXIT_INVALID_ARGS}"
 }
 
-warning() {
-    echo -e "${YELLOW}⚠️  Warning: $1${NC}" >&2
-}
-
 error() {
     echo -e "${RED}❌ Error: $1${NC}" >&2
 }
 
 success() {
+    if [ "${DCUTIL_QUIET:-0}" = "1" ]; then
+        return 0
+    fi
     echo -e "${GREEN}✅ $1${NC}" >&2
 }
 
 info() {
-    echo -e "${BLUE}ℹ️  $1${NC}" >&2
+    if [ "${DCUTIL_QUIET:-0}" = "1" ]; then
+        return 0
+    fi
+    echo -e "${BLUE}INFO: $1${NC}" >&2
 }
+
+warning() {
+    if [ "${DCUTIL_QUIET:-0}" = "1" ]; then
+        return 0
+    fi
+    echo -e "${YELLOW}Warning: $1${NC}" >&2
+}
+
+
 
 confirm_prompt() {
     local prompt_text="${1:-}"

@@ -9,9 +9,17 @@ JSON
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$tmpdir"
+# shellcheck disable=SC1091
+# shellcheck source=../dcutil-files/lib/core.sh
 source "$script_dir/../dcutil-files/lib/core.sh"
+# shellcheck disable=SC1091
+# shellcheck source=../dcutil-files/lib/docker.sh
 source "$script_dir/../dcutil-files/lib/docker.sh"
+# shellcheck disable=SC1091
+# shellcheck source=../dcutil-files/lib/features.sh
 source "$script_dir/../dcutil-files/lib/features.sh"
+# shellcheck disable=SC1091
+# shellcheck source=../dcutil-files/lib/template_integration.sh
 source "$script_dir/../dcutil-files/lib/template_integration.sh"
 
 # Ensure PROJECT_DIR is set to the temporary project so parse_devcontainer_config

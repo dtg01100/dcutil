@@ -7,6 +7,11 @@
 
 # Check if dialog is available for enhanced UI
 has_dialog() {
+    # Allow tests/CI to force text-only mode
+    if [ "${DCUTIL_DISABLE_DIALOG:-0}" = "1" ]; then
+        return 1
+    fi
+
     # Allow forcing dialog usage for debugging
     if [ "${DCUTIL_FORCE_DIALOG:-0}" = "1" ]; then
         if command -v dialog >/dev/null 2>&1; then
@@ -91,23 +96,23 @@ levenshtein_distance() {
     local s2="$2"
     local len1=${#s1}
     local len2=${#s2}
-    
+
     # Simple distance calculation for small strings
     if [ "$s1" = "$s2" ]; then
         echo 0
         return
     fi
-    
+
         if [ "$len1" -eq 0 ]; then
         echo "$len2"
         return
     fi
-    
+
         if [ "$len2" -eq 0 ]; then
         echo "$len1"
         return
     fi
-    
+
     # For very short strings, use a simple approach
     local distance=0
     local i=0
@@ -119,7 +124,7 @@ levenshtein_distance() {
         fi
         i=$((i + 1))
     done
-    
+
     # Add remaining characters
     distance=$((distance + len1 - i + len2 - i))
     echo $distance
@@ -134,11 +139,11 @@ suggest_command() {
         volumes features ssh compose advanced integration
         hostrequirements rebuild schema version completion help
     )
-    
+
     local best_match=""
     local best_distance=999
     local threshold=3  # Maximum distance to suggest
-    
+
     for cmd in "${valid_commands[@]}"; do
         local dist
         dist=$(levenshtein_distance "$invalid_cmd" "$cmd")
@@ -147,7 +152,7 @@ suggest_command() {
             best_match="$cmd"
         fi
     done
-    
+
     if [ -n "$best_match" ]; then
         echo ""
         echo "💡 Did you mean: dcutil $best_match"
@@ -237,9 +242,19 @@ show_interactive_menu() {
                 return 0  # Show menu again
             fi
             ;;
-        10)
-            return 9  # Signal to show help (reuse the return code)
-            ;;
+         10)
+             echo ""
+             if command -v print_usage >/dev/null 2>&1; then
+                 print_usage
+             else
+                 echo "Usage: dcutil <command> [options]"
+                 echo ""
+                 echo "Available commands: up, down, enter, status, stats, init, logs, volumes, features, help"
+             fi
+             echo ""
+             read -r -p "Press Enter to continue: "
+             return 0  # Show menu again
+             ;;
         0)
             echo ""
             echo "👋 Goodbye!"
@@ -267,7 +282,6 @@ execute_menu_choice() {
         6) return 6 ;;  # init
         7) return 7 ;;  # logs
         8) return 8 ;;  # volumes list
-        9) return 9 ;;  # help (originally for menu option 10, reused here)
         *) return 0 ;;  # show menu again
     esac
 }
@@ -275,7 +289,7 @@ execute_menu_choice() {
 # Show contextual tips based on environment state
 show_contextual_tips() {
     local context="$1"  # "no-config", "not-running", "running", etc.
-    
+
     case "$context" in
         "no-config")
             echo ""
@@ -317,38 +331,38 @@ show_progress() {
     shift
     # Capture the full command string to execute (join args safely)
     local cmd_str="$*"
-    
+
     local spinners=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
-    
+
     # Execute command in background and capture its PID
     eval "$cmd_str" &
     local pid=$!
-    
+
     # Hide cursor
     tput civis 2>/dev/null || true
-    
+
     while kill -0 $pid 2>/dev/null; do
         printf "\r%s %s" "${spinners[$i]}" "$message"
         i=$(( (i + 1) % 10 ))
         sleep 0.1
     done
-    
+
     # Wait for command to complete and get exit code
     wait $pid
     local exit_code=$?
-    
+
     # Show cursor
     tput cnorm 2>/dev/null || true
     printf "\r"
-    
+
     return $exit_code
 }
 
 # Check if this is first run
 is_first_run() {
     local marker_file="${HOME}/.dcutil_first_run"
-    
+
     if [ ! -f "$marker_file" ]; then
         # Create marker file
         mkdir -p "$(dirname "$marker_file")"
@@ -392,7 +406,7 @@ show_first_time_welcome() {
         echo ""
         echo "────────────────────────────────────────────────────────────────"
         echo ""
-        
+
         read -r -p "Press Enter to continue or type 'menu' for interactive mode: " response
         if [[ "$response" =~ ^[Mm][Ee][Nn][Uu]$ ]]; then
             return 1  # Signal to show menu
@@ -406,7 +420,7 @@ show_first_time_welcome() {
 show_smart_suggestions() {
     local command="$1"
     local context="$2"
-    
+
     case "$command" in
         "up")
             if [ "$context" = "already-running" ]; then
@@ -443,7 +457,7 @@ show_error_with_help() {
     shift
     # Join any remaining args into a single string for display
     local error_details="$*"
-    
+
     echo ""
     case "$error_type" in
         "no-docker")
@@ -481,7 +495,7 @@ show_error_with_help() {
 show_completion_hints() {
     local partial="$1"
     local commands="up down restart enter build clean status stats logs list run init check volumes features"
-    
+
     echo ""
     echo "Available commands starting with '$partial':"
     echo ""
@@ -888,7 +902,7 @@ add_feature_dialog() {
         esac
 
         # Prepare feature list based on search
-        local feature_list=""
+        local -a feature_list=()
         local i=1
 
         if [ -n "$search_term" ]; then
@@ -899,7 +913,7 @@ add_feature_dialog() {
                     id=$(echo "$feature" | jq -r '.id')
                     name=$(echo "$feature" | jq -r '.name')
                     desc=$(echo "$feature" | jq -r '.description')
-                    feature_list="$feature_list $i \"$id - $name ($desc)\""
+                    feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
             done <<< "$(echo "$features_json" | jq -r --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
@@ -911,13 +925,13 @@ add_feature_dialog() {
                     id=$(echo "$feature" | jq -r '.id')
                     name=$(echo "$feature" | jq -r '.name')
                     desc=$(echo "$feature" | jq -r '.description')
-                    feature_list="$feature_list $i \"$id - $name ($desc)\""
+                    feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
             done <<< "$(echo "$features_json" | jq -r '.[]')"
         fi
 
-        if [ -z "$feature_list" ]; then
+        if [ "${#feature_list[@]}" -eq 0 ]; then
             dialog --msgbox "No features match your search: $search_term" 8 40
             continue
         fi
@@ -925,7 +939,7 @@ add_feature_dialog() {
         # Show feature selection menu
         local selection
         selection=$(dialog --clear --title "Add Feature - Select" \
-            --menu "Select a feature to add:" 18 70 10 $feature_list \
+            --menu "Select a feature to add:" 18 70 10 "${feature_list[@]}" \
             2>&1 >/dev/tty)
 
         case $? in
@@ -988,17 +1002,17 @@ remove_feature_dialog() {
     fi
 
     # Create list of current features
-    local feature_list=""
+    local -a feature_list=()
     local i=1
 
     while IFS= read -r key; do
         if [ -n "$key" ]; then
-            feature_list="$feature_list $i \"$key\""
+            feature_list+=("$i" "$key")
             i=$((i + 1))
         fi
     done <<< "$(echo "$current_features_json" | jq -r 'keys[]' 2>/dev/null)"
 
-    if [ -z "$feature_list" ]; then
+    if [ "${#feature_list[@]}" -eq 0 ]; then
         dialog --msgbox "No features available to remove" 7 40
         return 0
     fi
@@ -1006,7 +1020,7 @@ remove_feature_dialog() {
     # Show feature removal menu
     local selection
     selection=$(dialog --clear --title "Remove Feature - Select" \
-        --menu "Select a feature to remove:" 15 60 8 $feature_list \
+        --menu "Select a feature to remove:" 15 60 8 "${feature_list[@]}" \
         2>&1 >/dev/tty)
 
     case $? in
@@ -1065,7 +1079,7 @@ view_features_dialog() {
         esac
 
         # Prepare feature list based on search
-        local feature_list=""
+        local -a feature_list=()
         local i=1
 
         if [ -n "$search_term" ]; then
@@ -1076,7 +1090,7 @@ view_features_dialog() {
                     id=$(echo "$feature" | jq -r '.id')
                     name=$(echo "$feature" | jq -r '.name')
                     desc=$(echo "$feature" | jq -r '.description')
-                    feature_list="$feature_list $i \"$id - $name ($desc)\""
+                    feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
             done <<< "$(echo "$features_json" | jq -r --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
@@ -1088,31 +1102,32 @@ view_features_dialog() {
                     id=$(echo "$feature" | jq -r '.id')
                     name=$(echo "$feature" | jq -r '.name')
                     desc=$(echo "$feature" | jq -r '.description')
-                    feature_list="$feature_list $i \"$id - $name ($desc)\""
+                    feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
             done <<< "$(echo "$features_json" | jq -r '.[]')"
         fi
 
-        if [ -z "$feature_list" ]; then
+        if [ "${#feature_list[@]}" -eq 0 ]; then
             dialog --msgbox "No features match your search: $search_term" 8 40
             continue
         fi
 
         # Calculate required height based on number of features (max 15)
         local list_height
-        list_height=$(echo "$feature_list" | wc -w)
+        list_height=${#feature_list[@]}
         list_height=$((list_height / 2))  # Each item takes 2 elements (index and content)
         if [ $list_height -gt 15 ]; then list_height=15; fi
         if [ $list_height -lt 8 ]; then list_height=8; fi
 
         # Create safe feature display list
         local display_text="Available features:"
-        local temp_list="$feature_list"
+        local temp_list="${feature_list[*]}"
         # Extract just the feature names (skip numbers and quotes)
         while read -r line; do
             # Extract feature text from quoted strings
-            local feature_desc=$(echo "$line" | sed -n 's/.* "\([^"]*\)".*/- \1/p')
+            local feature_desc
+            feature_desc=$(echo "$line" | sed -n 's/.* "\([^"]*\)".*/- \1/p')
             if [ -n "$feature_desc" ]; then
                 display_text="$display_text
 $feature_desc"

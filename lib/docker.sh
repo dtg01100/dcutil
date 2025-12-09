@@ -68,9 +68,8 @@ rename_conflicting_container() {
         # If rename failed (maybe due to removal race), attempt to force remove
         info "Failed to rename $name; attempting to remove it"
         docker rm -f "$name" 2>/dev/null || true
-        return 0
+        return 1
     fi
-    return 1
 }
 
 # Check container daemon availability (Docker or Podman)
@@ -82,13 +81,13 @@ check_container_daemon() {
             return 0
         fi
     fi
-    
+
     # Fallback to Docker
     if command -v docker >/dev/null 2>&1 && docker info &> /dev/null; then
         info "Using Docker container engine"
         return 0
     fi
-    
+
     error_exit "No container engine found or accessible. Please install Docker or Podman." "$EXIT_DOCKER_ERROR"
 }
 
@@ -124,7 +123,7 @@ apply_vscode_customizations_if_available() {
 # Parse devcontainer.json configuration
 parse_devcontainer_config() {
     local config_file=""
-    
+
     if [ -f ".devcontainer/devcontainer.json" ]; then
         config_file=".devcontainer/devcontainer.json"
     elif [ -f ".devcontainer.json" ]; then
@@ -142,18 +141,18 @@ parse_devcontainer_config() {
         echo ""
         error_exit "Configuration required" "$EXIT_CONFIG_ERROR"
     fi
-    
+
     DEVCONTAINER_CONFIG_FILE=$(python3 -c "import os; print(os.path.abspath('$config_file'))" 2>/dev/null || echo "$config_file")
-    
+
     # Validate devcontainer JSON specially since it may contain comments
     validate_devcontainer_json "$DEVCONTAINER_CONFIG_FILE"
-    
+
     # Check if this is a Docker Compose configuration
     if command -v jq &> /dev/null && parse_compose_config 2>/dev/null; then
         info "Using Docker Compose configuration"
         return 0
     fi
-    
+
     # Fall back to standard configuration
     # Defaults
     IMAGE_NAME="mcr.microsoft.com/devcontainers/base:ubuntu"
@@ -169,7 +168,7 @@ parse_devcontainer_config() {
     WAIT_FOR=()
     APP_PORTS=()
     SHUTDOWN_ACTION="stopContainer"
-    
+
     # Check if custom build is configured and generate image name
     if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
         # Generate image name from project directory
@@ -290,12 +289,12 @@ docker_down() {
     info "Using official devcontainer CLI to stop container with dcutil enhancements..."
     devcontainer_cli_down "$PROJECT_DIR"
     local result=$?
-    
+
     # Show what to do next
     if [ $result -eq 0 ] && command -v show_contextual_tips >/dev/null 2>&1; then
         show_contextual_tips "not-running"
     fi
-    
+
     return $result
 }
 
@@ -351,7 +350,7 @@ docker_restart() {
     apply_vscode_customizations_if_available
 
     success "Devcontainer restarted successfully"
-    
+
     # Show what to do next
     if command -v show_contextual_tips >/dev/null 2>&1; then
         show_contextual_tips "running"
@@ -488,7 +487,7 @@ docker_enter() {
         # Skip postAttachCommand and VS Code customizations during enter
         # These will be handled by VS Code when it connects
         # Running them here blocks the interactive shell from starting properly
-        
+
         if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
             if [ -t 0 ]; then
                 execute_command_in_devcontainer "$PROJECT_DIR" /bin/bash
@@ -535,25 +534,26 @@ docker_status() {
             fi
             return 0
         fi
-        
+
         # Check if container is running
         if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
             echo "Container is running"
-            
+
             # Show contextual tip
             if command -v show_contextual_tips >/dev/null 2>&1; then
                 show_contextual_tips "running"
             fi
-            
+
             # Show container details
             local container_ip
             container_ip=$(execute_container_command inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
             if [ -n "$container_ip" ]; then
                 echo "Container IP: $container_ip"
             fi
-            
+
             # Show exposed ports
             local port_info
+            # shellcheck disable=SC2016
             port_info=$(execute_container_command inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
             if [ -n "$port_info" ] && [ "$port_info" != "<no value>" ]; then
                 echo "Port mappings: $port_info"
@@ -570,25 +570,26 @@ docker_status() {
             fi
             return 0
         fi
-        
+
         # Check if container is running
         if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
             echo "Container is running"
-            
+
             # Show contextual tip
             if command -v show_contextual_tips >/dev/null 2>&1; then
                 show_contextual_tips "running"
             fi
-            
+
             # Show container details
             local container_ip
             container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
             if [ -n "$container_ip" ]; then
                 echo "Container IP: $container_ip"
             fi
-            
+
             # Show exposed ports
             local port_info
+            # shellcheck disable=SC2016
             port_info=$(docker inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{$p}} -> {{(index $conf 0).HostPort}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
             if [ -n "$port_info" ] && [ "$port_info" != "<no value>" ]; then
                 echo "Port mappings: $port_info"
@@ -601,18 +602,18 @@ docker_status() {
             fi
         fi
     fi
-    
+
     # Check if container is running
     if docker container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
         echo "Container is running"
-        
+
         # Show container details
         local container_ip
         container_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$CONTAINER_NAME" 2>/dev/null)
         if [ -n "$container_ip" ]; then
             echo "Container IP: $container_ip"
         fi
-        
+
         # Show exposed ports
         local port_info
         port_info=$(docker port "$CONTAINER_NAME" 2>/dev/null)
@@ -645,20 +646,20 @@ docker_logs() {
         docker_compose_logs
         return 0
     fi
-    
+
     # Check if container exists
     if command -v execute_container_command >/dev/null 2>&1; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
-        
+
         # Show logs
         execute_container_command logs -f "$CONTAINER_NAME"
     else
         if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
             error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
-        
+
         # Show logs
         docker logs -f "$CONTAINER_NAME"
     fi
@@ -769,7 +770,7 @@ docker_clean() {
         docker_compose_clean
         return 0
     fi
-    
+
     # Determine container name(s) for this project if not set
     local container_ids
     if [ -z "${CONTAINER_NAME:-}" ]; then
@@ -795,7 +796,7 @@ docker_clean() {
             fi
         done
     fi
-    
+
     # Remove volumes if requested
     if [ "${2:-}" = "--remove-volumes" ] || [ "${1:-}" = "--remove-volumes" ]; then
         # Find volumes associated with project containers
@@ -823,7 +824,7 @@ docker_clean() {
         info "Removing .devcontainer.json file..."
         rm -f "$PROJECT_DIR/.devcontainer.json" 2>/dev/null || true
     fi
-    
+
     # Remove orphan containers matching the naming scheme to keep CI clean
     if [ -n "${CONTAINER_NAME:-}" ]; then
         docker ps -a --filter "name=${CONTAINER_NAME}-orphan-" --format "{{.ID}} {{.Names}} {{.Status}}" | while read -r id name _; do
@@ -831,9 +832,9 @@ docker_clean() {
             docker rm -f "$id" 2>/dev/null || true
         done || true
     fi
-    
+
     success "Devcontainer cleaned up"
-    
+
     # Show what to do next
     if command -v show_contextual_tips >/dev/null 2>&1; then
         show_contextual_tips "not-running"
@@ -853,7 +854,7 @@ devcontainer_rebuild() {
     local preserve_ssh=false
     local preserve_agents=false
     local preserve_all=false
-    
+
     # Parse arguments
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -894,16 +895,16 @@ devcontainer_rebuild() {
                 ;;
         esac
     done
-    
+
     info "Rebuilding devcontainer..."
-    
+
     # Check preservation options
     if [ "$preserve_all" = true ]; then
         preserve_volumes=true
         preserve_ssh=true
         preserve_agents=true
     fi
-    
+
     # Show what will be preserved
     info "Preservation options:"
     if [ "$preserve_volumes" = true ]; then
@@ -911,19 +912,19 @@ devcontainer_rebuild() {
     else
         info "  ✗ Volumes will be cleaned"
     fi
-    
+
     if [ "$preserve_ssh" = true ]; then
         info "  ✓ SSH keys will be preserved"
     else
         info "  ✗ SSH keys will be cleaned"
     fi
-    
+
     if [ "$preserve_agents" = true ]; then
         info "  ✓ AI agents will be preserved"
     else
         info "  ✗ AI agents will be cleaned"
     fi
-    
+
     # Confirmation unless forced
     if [ "$force" != true ]; then
         echo ""
@@ -933,11 +934,11 @@ devcontainer_rebuild() {
             return 0
         fi
     fi
-    
+
     # Stop existing container
     info "Stopping existing devcontainer..."
     devcontainer_down
-    
+
     # Clean up based on preservation options
     if [ "$preserve_volumes" != true ]; then
         info "Cleaning volumes..."
@@ -945,25 +946,25 @@ devcontainer_rebuild() {
             cleanup_volumes
         fi
     fi
-    
+
     if [ "$preserve_ssh" != true ]; then
         info "Cleaning SSH configuration..."
         if command -v cleanup_ssh >/dev/null 2>&1; then
             cleanup_ssh
         fi
     fi
-    
+
     if [ "$preserve_agents" != true ]; then
         info "Cleaning AI agents..."
         if command -v cleanup_agents >/dev/null 2>&1; then
             cleanup_agents
         fi
     fi
-    
+
     # Start new container
     info "Starting new devcontainer..."
     devcontainer_up
-    
+
     success "Devcontainer rebuilt successfully"
 }
 

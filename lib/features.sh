@@ -102,6 +102,7 @@ parse_features_config() {
 
     if command -v jq &> /dev/null; then
         # Initialize features directory
+        # shellcheck disable=SC2153
         FEATURES_DIR="$PROJECT_DIR/.devcontainer-features"
         FEATURES_CACHE_DIR="$HOME/.cache/dcutil/features"
         FEATURES_INSTALL_LOG="$FEATURES_DIR/install.log"
@@ -1603,7 +1604,40 @@ check_features_updates() {
 # CLI function for features command routing
 features_cli() {
     if [ $# -eq 0 ]; then
-        print_features_usage
+        # Use the print_features_usage function defined in main script
+        if command -v print_features_usage >/dev/null 2>&1; then
+            print_features_usage
+        else
+            # Fallback help text if function not available
+            cat << 'EOF'
+Usage: dcutil features <command> [options]
+
+Devcontainer Features commands for adding tools and runtimes:
+
+Commands:
+  add                  Add a feature to devcontainer configuration
+  remove               Remove a feature from devcontainer configuration
+  install              Install all configured features
+  info                 Show features configuration and status
+  validate             Validate features configuration
+  clean                Clean features cache and installation
+  update               Update all features (re-download and install)
+  check-updates        Check for available feature updates
+  test [target]        Test Features (similar to devcontainer CLI)
+  package <target>     Package Features (similar to devcontainer CLI)
+  publish <target>     Package and publish Features (similar to devcontainer CLI)
+  resolve-dependencies Resolve dependency graph from configuration (similar to devcontainer CLI)
+  generate-docs        Generate documentation for configured features (similar to devcontainer CLI)
+
+Examples:
+  dcutil features add node
+  dcutil features remove node
+  dcutil features add python --rebuild
+  dcutil features remove git --rebuild
+
+Run 'dcutil features <command> --help' for more information on a specific command.
+EOF
+        fi
         exit "$EXIT_INVALID_ARGS"
     fi
 
@@ -1887,7 +1921,6 @@ features_generate_docs() {
         fi
     done
 }
-<<<<<<< Updated upstream
 
 # Function to add a feature to devcontainer.json
 add_feature_to_config() {

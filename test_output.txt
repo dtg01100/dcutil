@@ -1,0 +1,4 @@
+[0;34mRunning[0m: Help command
+[0;34mℹ️  Using official devcontainer CLI with dcutil enhancements[0m
+[0;34mℹ️  Docker backend validated successfully[0m
+[0;32m✅ PASS[0m: Help command

@@ -25,10 +25,65 @@ elif [ -d "$SCRIPT_DIR/../lib" ]; then
 elif [ -L "$SCRIPT_DIR/core.sh" ]; then
     # Homebrew installation - libraries are symlinked in bin directory
     LIB_DIR="$SCRIPT_DIR/../libexec"
+elif [ -f "$SCRIPT_DIR/core.sh" ]; then
+    # Libraries in same directory as script
+    LIB_DIR="$SCRIPT_DIR"
+elif [ -f "./lib/core.sh" ]; then
+    # Libraries in lib subdirectory of current directory
+    LIB_DIR="./lib"
+elif [ -f "./core.sh" ]; then
+    # Libraries in current directory
+    LIB_DIR="."
 else
     echo "Error: Could not find dcutil library files" >&2
+    echo "Searched locations:" >&2
+    echo "  - $SCRIPT_DIR/lib" >&2
+    echo "  - $SCRIPT_DIR/../lib" >&2
+    echo "  - $SCRIPT_DIR/../libexec" >&2
+    echo "  - $SCRIPT_DIR" >&2
+    echo "  - ./lib" >&2
+    echo "  - ." >&2
     exit 1
 fi
+
+# Verify core.sh exists before sourcing
+if [ ! -f "$LIB_DIR/core.sh" ]; then
+    echo "Error: core.sh not found at $LIB_DIR/core.sh" >&2
+    echo "LIB_DIR resolved to: $LIB_DIR" >&2
+    echo "SCRIPT_DIR is: $SCRIPT_DIR" >&2
+    echo "Contents of LIB_DIR:" >&2
+    ls -la "$LIB_DIR" 2>&1 || echo "  (directory does not exist)" >&2
+    exit 1
+fi
+
+# shellcheck disable=SC1091
+# shellcheck source=lib/core.sh
+
+# Parse --quiet/-q flags from the entire argument list early so quiet mode is respected
+DCUTIL_QUIET="${DCUTIL_QUIET:-0}"
+filtered_args=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quiet|-q)
+            DCUTIL_QUIET=1
+            export DCUTIL_QUIET
+            shift
+            ;;
+        --)
+            shift
+            filtered_args+=("--")
+            while [ $# -gt 0 ]; do
+                filtered_args+=("$1")
+                shift
+            done
+            ;;
+        *)
+            filtered_args+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${filtered_args[@]:-}"
 
 # Source core functionality first
 source "$LIB_DIR/core.sh"
@@ -41,69 +96,118 @@ require_devcontainer_cli
 
 # Always use official devcontainer CLI as primary engine with dcutil enhancements
 info "Using official devcontainer CLI with dcutil enhancements"
+# shellcheck disable=SC1091
+# shellcheck source=lib/api_official_cli.sh
 source "$LIB_DIR/api_official_cli.sh"
 
+# shellcheck disable=SC1091
+# shellcheck source=lib/docker.sh
 source "$LIB_DIR/docker.sh"
 if [ -f "$LIB_DIR/volumes.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/volumes.sh
     source "$LIB_DIR/volumes.sh"
 fi
 if [ -f "$LIB_DIR/security.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/security.sh
     source "$LIB_DIR/security.sh"
 fi
 if [ -f "$LIB_DIR/init.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/init.sh
     source "$LIB_DIR/init.sh"
 fi
 
 # Load optional modules for enhanced functionality
 if [ -f "$LIB_DIR/features.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/features.sh
     source "$LIB_DIR/features.sh"
 fi
 
 if [ -f "$LIB_DIR/lockfile.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/lockfile.sh
     source "$LIB_DIR/lockfile.sh"
 fi
 
 if [ -f "$LIB_DIR/lifecycle.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/lifecycle.sh
     source "$LIB_DIR/lifecycle.sh"
 fi
 # environment module is optional
 if [ -f "$LIB_DIR/environment.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/environment.sh
     source "$LIB_DIR/environment.sh"
 fi
 # userprobe module is optional
 if [ -f "$LIB_DIR/userprobe.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/userprobe.sh
     source "$LIB_DIR/userprobe.sh"
 fi
 # hostrequirements module is optional
 if [ -f "$LIB_DIR/hostrequirements.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/hostrequirements.sh
     source "$LIB_DIR/hostrequirements.sh"
 fi
 # shutdown module is optional
 if [ -f "$LIB_DIR/shutdown.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/shutdown.sh
     source "$LIB_DIR/shutdown.sh"
+fi
+# advanced module is optional
+if [ -f "$LIB_DIR/advanced.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/advanced.sh
+    source "$LIB_DIR/advanced.sh"
+    # echo "DEBUG: advanced.sh sourced" >&2
+fi
+# integration module is optional
+if [ -f "$LIB_DIR/integration.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/integration.sh
+    source "$LIB_DIR/integration.sh"
 fi
 # schema validation module is optional
 if [ -f "$LIB_DIR/schema-validation.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/schema-validation.sh
     source "$LIB_DIR/schema-validation.sh"
 fi
 # podman backend module is optional
 if [ -f "$LIB_DIR/podman.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/podman.sh
     source "$LIB_DIR/podman.sh"
 fi
 # monitoring module is optional
 if [ -f "$LIB_DIR/monitoring.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/monitoring.sh
     source "$LIB_DIR/monitoring.sh"
 fi
 # Template integration module is optional (needed by UX features)
 if [ -f "$LIB_DIR/template_integration.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/template_integration.sh
     source "$LIB_DIR/template_integration.sh"
 fi
 # UX enhancements module is optional
 if [ -f "$LIB_DIR/ux.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/ux.sh
     source "$LIB_DIR/ux.sh"
 fi
 # merging module is optional
 if [ -f "$LIB_DIR/merging.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=lib/merging.sh
     source "$LIB_DIR/merging.sh"
 fi
 
@@ -123,16 +227,8 @@ test_dcutil_improvements() {
         set +e  # Temporarily disable exit "on error
         false | true
         local pipefail_result=$?
-<<<<<<< ours
-        set -e  # Re-enable exit "on error
-        
-||||||| base
-        set -e  # Re-enable exit on error
-        
-=======
         set -e  # Re-enable exit on error
 
->>>>>>> theirs
         if [ $pipefail_result -ne 0 ]; then
             echo "✅ Error handling enabled (set -euo pipefail)"
         else
@@ -189,6 +285,7 @@ fi
 
 # Parse and validate arguments
 COMMAND="${1:-menu}"  # Default to menu instead of help for better UX
+# echo "DEBUG: COMMAND set to '$COMMAND'" >&2
 # Allow a special verify-dialog command for debugging dialog UI without running full wizard
 if [ "${1:-}" = "verify-dialog" ]; then
     export PROJECT_DIR
@@ -373,7 +470,6 @@ if [ "$COMMAND" = "menu" ]; then
                 6) COMMAND="init"; break ;;
                 7) COMMAND="logs"; break ;;
                 8) COMMAND="volumes"; set -- "list"; break ;;
-                9) COMMAND="help"; break ;;
                 0) continue ;;  # Show menu again
             esac
         done
@@ -651,6 +747,7 @@ EOF
         esac
 
 elif [ "$COMMAND" = "advanced" ]; then
+    # echo "DEBUG: Advanced command reached" >&2
     # Advanced features command doesn't need project directory
     determine_project_dir
     shift 1
@@ -712,9 +809,15 @@ EOF
         "")
             # Default: show info
             if command -v show_advanced_features_info >/dev/null 2>&1; then
+                # echo "DEBUG: show_advanced_features_info exists" >&2
                 show_advanced_features_info
+                # echo "DEBUG: show_advanced_features_info returned $?" >&2
+                if [ $? -ne 0 ]; then
+                    error_exit "No advanced features configured." "$EXIT_CONFIG_ERROR"
+                fi
             else
-                error_exit "No advanced features configured or advanced features module not available." "$EXIT_CONFIG_ERROR"
+                # echo "DEBUG: show_advanced_features_info not found" >&2
+                error_exit "Advanced features module not available." "$EXIT_CONFIG_ERROR"
             fi
             exit "$EXIT_SUCCESS"
             ;;
@@ -784,9 +887,11 @@ EOF
         "")
             # Default: show info
             if command -v show_tool_integration_info >/dev/null 2>&1; then
-                show_tool_integration_info
+                if ! show_tool_integration_info; then
+                    error_exit "No integration features configured." "$EXIT_CONFIG_ERROR"
+                fi
             else
-                error_exit "No integration features configured or integration module not available." "$EXIT_CONFIG_ERROR"
+                error_exit "Integration module not available." "$EXIT_CONFIG_ERROR"
             fi
             exit "$EXIT_SUCCESS"
             ;;
@@ -1934,6 +2039,8 @@ case "$COMMAND" in
 
         # Load SSH functions from template_integration module if available
         if [ -f "$LIB_DIR/template_integration.sh" ]; then
+            # shellcheck disable=SC1091
+            # shellcheck source=lib/template_integration.sh
             source "$LIB_DIR/template_integration.sh"
         fi
 
@@ -2010,10 +2117,4 @@ case "$COMMAND" in
     esac
 
 # Print main usage help
-<<<<<<< ours
 exit "$EXIT_SUCCESS"
-||||||| base
-exit $EXIT_SUCCESS
-=======
-exit $EXIT_SUCCESS
->>>>>>> theirs

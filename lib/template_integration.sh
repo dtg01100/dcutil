@@ -277,7 +277,7 @@ select_template_interactive() {
     # If auto-select is provided and valid, just return that without interaction
     if [ -n "$auto_select" ]; then
         local i=0
-        while [ $i -lt $template_count ]; do
+        while [ $i -lt """$template_count" ]; do
             local id
             id=$(echo "$templates_json" | jq -r ".[$i].id" 2>/dev/null)
             if [ "$id" = "$auto_select" ]; then
@@ -295,7 +295,7 @@ select_template_interactive() {
 
     # Display templates with numbers
     local i=1
-    while [ $i -le $template_count ]; do
+    while [ $i -le "$template_count" ]; do
         local idx=$((i - 1))
         local id name description
         id=$(echo "$templates_json" | jq -r ".[$idx].id" 2>/dev/null)
@@ -356,7 +356,7 @@ select_features_interactive() {
             feature_name=$(echo "$feature_name" | xargs)  # trim whitespace
             local found=false
             local i=0
-            while [ $i -lt $features_count ]; do
+            while [ $i -lt "$features_count" ]; do
                 local id
                 id=$(echo "$features_json" | jq -r ".[$i].id" 2>/dev/null)
                 if [ "$id" = "$feature_name" ]; then
@@ -391,17 +391,17 @@ select_features_interactive() {
     local start_idx=0
     local end_idx=$((start_idx + page_size))
 
-    while [ $start_idx -lt $features_count ]; do
+    while [ $start_idx -lt "$features_count" ]; do
         echo "Page $page of $(((features_count + page_size - 1) / page_size)):"
         echo "----------------------------------------"
 
         local display_end_idx=$end_idx
-        if [ $display_end_idx -gt $features_count ]; then
+        if [ $display_end_idx -gt "$features_count" ]; then
             display_end_idx=$features_count
         fi
 
         local display_idx=$start_idx
-        while [ $display_idx -lt $display_end_idx ]; do
+        while [ $display_idx -lt "$display_end_idx" ]; do
             local id name description
             id=$(echo "$features_json" | jq -r ".[$display_idx].id" 2>/dev/null)
             name=$(echo "$features_json" | jq -r ".[$display_idx].name" 2>/dev/null)
@@ -417,7 +417,7 @@ select_features_interactive() {
 
         case "$choice" in
             "n"|"next")
-                if [ $end_idx -lt $features_count ]; then
+                if [ $end_idx -lt "$features_count" ]; then
                     start_idx=$end_idx
                     end_idx=$((start_idx + page_size))
                     page=$((page + 1))
@@ -616,16 +616,8 @@ sanitize_features_json() {
         return 0
     fi
 
-<<<<<<< Updated upstream
-    # Set up cleanup trap for temp file
-    local temp_file="$dev_file.tmp"
-    trap 'rm -f "${temp_file:-}"' RETURN EXIT INT TERM
-
-    # Run jq transformation: detect numeric suffix in feature key and map to pref array
-=======
     # Run jq transformation: detect numeric keys and map to pref array
     # Handle both pure numeric keys (like "1") and registry+numeric keys (like "ghcr.io/devcontainers/features/2")
->>>>>>> Stashed changes
     jq --argjson pref "$features_json" '
         def mapkey(k):
             # First, check if k is purely numeric (like "1", "2", etc.)
@@ -794,11 +786,6 @@ get_template_metadata() {
 list_available_templates() {
     local templates_json
     templates_json=$(fetch_available_templates_official)
-<<<<<<< Updated upstream
-
-    echo "Available templates:"
-    echo "$templates_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"'
-=======
 
     if command -v jq >/dev/null 2>&1; then
         echo "Available templates:"
@@ -807,18 +794,12 @@ list_available_templates() {
         echo "Available templates (install jq for better formatting):"
         echo "$templates_json" | grep -o '"id": "[^"]*"' | sed 's/"id": "//; s/"//'
     fi
->>>>>>> Stashed changes
 }
 
 # List available features with descriptions
 list_available_features() {
     local features_json
     features_json=$(fetch_available_features_official)
-<<<<<<< Updated upstream
-
-    echo "Available features:"
-    echo "$features_json" | jq -r '.[] | "  \(.id): \(.name) - \(.description)"'
-=======
 
     if command -v jq >/dev/null 2>&1; then
         echo "Available features:"
@@ -827,7 +808,6 @@ list_available_features() {
         echo "Available features (install jq for better formatting):"
         echo "$features_json" | grep -o '"id": "[^"]*"' | sed 's/"id": "//; s/"//'
     fi
->>>>>>> Stashed changes
 }
 
 # Enhanced wizard mode with official devcontainer integration
@@ -876,8 +856,7 @@ wizard_with_official_integration() {
         2)
             echo ""
             # Interactive template selection with numbered menu
-            select_template_interactive "$templates_json"
-            if [ $? -eq 0 ]; then
+            if select_template_interactive "$templates_json"; then
                 selected_template_id="ghcr.io/devcontainers/templates/$user_selected_template"
             else
                 # Fallback if user cancels or there's an error
@@ -898,21 +877,9 @@ wizard_with_official_integration() {
     echo ""
     echo "🛠️  Step 2: Feature Selection"
     echo "----------------------------------------"
-<<<<<<< Updated upstream
-
-    echo "Available features:"
-    echo "$features_json" | jq -r '.[] | "  \(.id) (\(.registry)): \(.name) - \(.description)"'
-    echo ""
-    echo "Enter comma-separated feature IDs to include [git,common-utils]: "
-    read -r features_input
-    features_input=${features_input:-"git,common-utils"}
-
-    # Build features array (simplified)
-=======
 
     # Interactive feature selection with categorized menu
-    select_features_interactive "$features_json"
-    if [ $? -eq 0 ]; then
+    if select_features_interactive "$features_json"; then
         # Use the selected features from the interactive selection
         features_input="$user_selected_features"
     else
@@ -926,7 +893,6 @@ wizard_with_official_integration() {
     fi
 
     # Build features array (normalize IDs to canonical registry paths)
->>>>>>> Stashed changes
     local features_array="[]"
     if [ -n "$features_input" ]; then
         IFS=',' read -ra feature_ids <<< "$features_input"
@@ -970,13 +936,8 @@ wizard_with_official_integration() {
         container_user="vscode"
         remote_user="vscode"
     fi
-<<<<<<< Updated upstream
-
-    # Step 4: SSH Configuration
-=======
 
     # Step 4: VS Code customizations
->>>>>>> Stashed changes
     echo ""
     echo "🔐 Step 4: SSH Configuration"
     echo "----------------------------------------"
@@ -1065,13 +1026,8 @@ wizard_with_official_integration() {
     else
         info "Skipping VS Code customizations"
     fi
-<<<<<<< Updated upstream
-
-    # Step 6: Apply configuration
-=======
 
     # Step 5: Apply configuration
->>>>>>> Stashed changes
     echo ""
     echo "🚀 Step 6: Creating Configuration"
     echo "----------------------------------------"
@@ -1088,24 +1044,6 @@ wizard_with_official_integration() {
         if [[ "$enable_ssh_propagation" =~ ^[Yy] ]]; then
             base_config=$(echo "$base_config" | jq '. + {"runArgs": ["--volume", "${SSH_AUTH_SOCK:-/tmp/ssh-agent.sock}:/ssh-agent.sock", "--env", "SSH_AUTH_SOCK=/ssh-agent.sock"]}')
         fi
-<<<<<<< Updated upstream
-
-        # Add VS Code customizations if user requested them
-        if [[ "$add_vscode_customizations" =~ ^[Yy] ]] && ([ "$(echo "$all_extensions_array" | jq length)" -gt 0 ] || [ "$vscode_settings_json" != "{}" ]); then
-            base_config=$(echo "$base_config" | jq '. + {"customizations": {"vscode": {"extensions": '"$all_extensions_array"', "settings": '"$vscode_settings_json"'}}}')
-        fi
-
-        # Write the configuration
-        local temp_file=".devcontainer/devcontainer.json.tmp"
-        if ! echo "$base_config" | jq '.' > "$temp_file"; then
-            rm -f "$temp_file"
-            error_exit "Failed to create devcontainer.json file" "$EXIT_PERMISSION_ERROR"
-        fi
-        mv "$temp_file" .devcontainer/devcontainer.json
-
-=======
-
->>>>>>> Stashed changes
     else
         # Use official template with devcontainer CLI
         if command -v devcontainer >/dev/null 2>&1; then
@@ -1120,18 +1058,9 @@ wizard_with_official_integration() {
 
                 error_exit "Failed to apply official template" "$EXIT_DEVCONTAINER_ERROR"
             fi
-<<<<<<< Updated upstream
-
-            # SSH helper functions are defined at top-level so they are available
-            # when this library is sourced by the main dcutil script.
-
-# Enhance with SSH and VS Code customizations using devcontainer CLI metadata
-            if [ -f ".devcontainer/devcontainer.json" ]; then
-=======
 
             # Enhance with our customizations using devcontainer CLI metadata (if user requested)
             if [[ "$add_vscode_customizations" =~ ^[Yy] ]] && [ -f ".devcontainer/devcontainer.json" ]; then
->>>>>>> Stashed changes
                 # Use devcontainer CLI to enhance the configuration
                 if command -v jq >/dev/null 2>&1; then
                     # Get current configuration

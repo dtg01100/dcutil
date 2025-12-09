@@ -32,6 +32,8 @@ else
     exit 1
 fi
 
+# shellcheck disable=SC1091
+# shellcheck source=../lib/core.sh
 # Source core functionality first
 source "$LIB_DIR/core.sh"
 
@@ -40,24 +42,38 @@ check_root_user
 
 # Always use official devcontainer CLI as primary engine with dcutil enhancements
 info "Using official devcontainer CLI with dcutil enhancements"
+# shellcheck disable=SC1091
+# shellcheck source=../lib/api_official_cli.sh
 source "$LIB_DIR/api_official_cli.sh"
 
+# shellcheck disable=SC1091
+# shellcheck source=../lib/docker.sh
 source "$LIB_DIR/docker.sh"
 if [ -f "$LIB_DIR/volumes.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=../lib/volumes.sh
     source "$LIB_DIR/volumes.sh"
 fi
 if [ -f "$LIB_DIR/security.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=../lib/security.sh
     source "$LIB_DIR/security.sh"
 fi
 if [ -f "$LIB_DIR/init.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=../lib/init.sh
     source "$LIB_DIR/init.sh"
 fi
 
 # Load optional modules for enhanced functionality
 if [ -f "$LIB_DIR/features.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=../lib/features.sh
     source "$LIB_DIR/features.sh"
 fi
 
 if [ -f "$LIB_DIR/lockfile.sh" ]; then
+    # shellcheck disable=SC1091
+    # shellcheck source=../lib/lockfile.sh
     source "$LIB_DIR/lockfile.sh"
 fi

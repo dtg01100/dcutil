@@ -146,7 +146,7 @@ add_volume() {
 
         if [ ! -e "$host_path" ]; then
             # Consider interactive only when both stdin and stdout are TTYs (avoid prompting when output is piped)
-            if ! ([ -t 0 ] && [ -t 1 ]); then
+            if ! { [ -t 0 ] && [ -t 1 ]; }; then
                 # Non-interactive: attempt to create directory; fail if creation is not possible
                 if ! mkdir -p "$host_path" 2>/dev/null; then
                     error_exit "Failed to create host path '$host_path'" "$EXIT_CONFIG_ERROR"
@@ -427,7 +427,7 @@ mount_volume() {
     info "  Host path: $host_path"
     info "  Container path: $container_path"
     info "  Mount type: $mount_type"
-    
+
     # Add configuration sync documentation
     info "NOTE: For live configuration sync, add to devcontainer.json 'mounts' array:"
     echo ""
