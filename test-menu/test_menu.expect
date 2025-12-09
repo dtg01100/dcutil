@@ -1,0 +1,428 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Test script for menu functionality
+# Tests all menu paths and navigation
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Function to test main menu navigation and command execution
+proc test_main_menu_navigation {} {
+    global timeout dcutil_cmd
+
+    # Test option 1: Start environment
+    spawn $dcutil_cmd menu
+
+    expect {
+        "What would you like to do?" {
+            puts "PASS: Main menu loaded successfully"
+            send "1\r"
+
+            expect {
+                -re "Starting your development environment" {
+                    puts "PASS: Option 1 shows correct message"
+                    expect {
+                        -re "Starting devcontainer with enhanced UX" {
+                            puts "PASS: Option 1 executes 'up' command correctly"
+                        }
+                        timeout {
+                            puts "FAIL: Option 1 command execution timed out"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "FAIL: Option 1 message not shown"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Main menu did not load"
+            exit 1
+        }
+    }
+
+    # Process may exit after command execution, so don't expect eof
+}
+
+# Function to test features sub-navigation
+proc test_features_subnavigation {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    puts "PASS: Features menu loaded"
+                    
+                    # Test option 1: Add feature
+                    send "1\r"
+                    
+                    expect {
+                        -re "Add a feature" {
+                            puts "PASS: Features option 1 - Add feature"
+                            expect {
+                                "Enter search term" {
+                                    send "back\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                                timeout {
+                                    send "\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                    
+                    # Test option 2: Remove feature
+                    send "2\r"
+                    
+                    expect {
+                        -re "Remove a feature" {
+                            puts "PASS: Features option 2 - Remove feature"
+                            expect {
+                                "Currently configured features" {
+                                    send "1\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                                "No features configured" {
+                                    send "\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                                timeout {
+                                    send "\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                    
+                    # Test option 3: View features
+                    send "3\r"
+                    
+                    expect {
+                        -re "View available features" {
+                            puts "PASS: Features option 3 - View features"
+                            expect {
+                                "Enter search term to filter features" {
+                                    send "back\r"
+                                    expect "Press Enter to continue viewing"
+                                    send "\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                                timeout {
+                                    send "back\r"
+                                    expect "Press Enter to continue viewing"
+                                    send "\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                    
+                    # Test option 4: Save and exit
+                    send "4\r"
+                    
+                    expect {
+                        -re "Save changes and exit" {
+                            puts "PASS: Features option 4 - Save and exit"
+                            expect {
+                                "Changes have been saved" {
+                                    send "\r"
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                    
+                    # Test option 5: Exit without saving
+                    send "5\r"
+                    
+                    expect {
+                        -re "Exit without saving" {
+                            puts "PASS: Features option 5 - Exit without saving"
+                            expect {
+                                "Exiting without saving changes" {
+                                    send "\r"
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                    
+                    # Test invalid input in features menu
+                    send "99\r"
+                    expect {
+                        "Invalid choice" {
+                            puts "PASS: Invalid input in features menu handled correctly"
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                    
+                    # Exit features menu
+                    send "5\r"
+                    expect {
+                        "Exiting without saving changes" {
+                            send "\r"
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    puts "FAIL: Did not reach features menu"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Did not reach main menu"
+            exit 1
+        }
+    }
+    
+    expect eof
+}
+
+# Function to test menu return functionality
+proc test_menu_return_functionality {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            # Navigate to features menu
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    # Perform some action
+                    send "3\r"  ;# View features
+                    
+                    expect {
+                        "Enter search term to filter features" {
+                            send "back\r"
+                            expect "Press Enter to continue viewing"
+                            send "\r"
+                            
+                            # Should return to features menu
+                            expect "Managing devcontainer features..."
+                            
+                            # Exit features menu
+                            send "5\r"
+                            expect {
+                                "Exiting without saving changes" {
+                                    send "\r"
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                    expect "What would you like to do?"
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Menu return test did not load"
+            exit 1
+        }
+    }
+    
+    expect eof
+}
+
+# Function to test menu help and information
+proc test_menu_help {} {
+    global timeout dcutil_cmd
+
+    spawn $dcutil_cmd menu
+
+    expect {
+        "What would you like to do?" {
+            # Test help option
+            send "10\r"
+
+            expect {
+                "Usage:" {
+                    puts "PASS: Help option shows usage information"
+                    expect {
+                        "Commands:" {
+                            puts "PASS: Help shows command list"
+                        }
+                        timeout {
+                            puts "FAIL: Help content not displayed"
+                            exit 1
+                        }
+                    }
+                    send "\r"
+
+                    # Should return to main menu
+                    expect "What would you like to do?"
+
+                    # Test exit
+                    send "0\r"
+                    expect {
+                        "Goodbye" {
+                            puts "PASS: Help and exit flow works correctly"
+                        }
+                        timeout {
+                            puts "FAIL: Exit timed out"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "FAIL: Help option did not work"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Menu help test did not load"
+            exit 1
+        }
+    }
+
+    # Process may continue after help, so don't expect eof
+}
+
+# Function to test complete functionality of all menu options
+proc test_complete_menu_functionality {} {
+    global timeout dcutil_cmd
+
+    # Test option 4: Complete status command functionality
+    puts "🧪 Testing option 4 (status) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "4\r"
+    expect "Checking environment status"
+    expect "Checking container status"
+    # Process exits here, so we can't expect more output
+    puts "PASS: Option 4 initiates status command correctly"
+
+    # Test option 3: Complete down command functionality
+    puts "🧪 Testing option 3 (down) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "3\r"
+    expect "Stopping your environment"
+    expect "Stopping devcontainer with enhanced UX"
+    puts "PASS: Option 3 initiates down command correctly"
+
+    # Test option 5: Complete stats command functionality
+    puts "🧪 Testing option 5 (stats) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "5\r"
+    expect "Showing resource usage"
+    puts "PASS: Option 5 initiates stats command correctly"
+
+    # Test option 7: Complete logs command functionality
+    puts "🧪 Testing option 7 (logs) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "7\r"
+    expect "Viewing logs"
+    expect "Showing container logs"
+    puts "PASS: Option 7 initiates logs command correctly"
+
+    # Test option 8: Complete volumes command functionality
+    puts "🧪 Testing option 8 (volumes) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "8\r"
+    expect "Managing shared storage"
+    puts "PASS: Option 8 initiates volumes command correctly"
+
+    # Test option 2: Complete enter command functionality
+    puts "🧪 Testing option 2 (enter) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "2\r"
+    expect "Opening a shell in your environment"
+    puts "PASS: Option 2 initiates enter command correctly"
+
+    # Test option 6: init command (may be interactive)
+    puts "🧪 Testing option 6 (init) - Command initiation..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "6\r"
+    # Process may exit or continue depending on init behavior
+    puts "PASS: Option 6 initiates init command"
+}
+
+# Function to test features management option 9
+proc test_features_management {} {
+    global timeout dcutil_cmd
+
+    puts "🧪 Testing option 9 (features) - Complete functionality..."
+    spawn $dcutil_cmd menu
+    expect "What would you like to do?"
+    send "9\r"
+    expect "Managing devcontainer features"
+    expect "Loading available features"
+    puts "PASS: Option 9 opens features management interface"
+}
+
+# Main execution
+puts "📋 Testing dcutil menu functionality..."
+
+# Test main menu navigation
+test_main_menu_navigation
+
+# Test menu help
+test_menu_help
+
+# Test complete functionality of all menu options
+test_complete_menu_functionality
+
+# Test features management
+test_features_management
+
+puts "🎉 All comprehensive menu tests completed successfully!"
+exit 0

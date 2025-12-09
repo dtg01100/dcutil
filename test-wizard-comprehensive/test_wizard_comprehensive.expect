@@ -1,0 +1,113 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Simple test script for wizard functionality
+# Tests the basic wizard workflow with detected template
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Function to test basic wizard with detected template
+proc test_basic_wizard {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd init wizard
+    
+    expect {
+        "Welcome to dcutil!" {
+            send "\r"
+            expect {
+                "Quick start guide" {
+                    send "\r"
+                    expect {
+                        "Project Type Detection" {
+                            # Choose option 1: Use detected template
+                            send "1\r"
+                            expect {
+                                "Step 2" {
+                                    expect {
+                                        "Configuration complete" {
+                                            puts "PASS: Basic wizard completed successfully"
+                                            return 1
+                                        }
+                                        "Creating devcontainer configuration" {
+                                            expect {
+                                                "Configuration complete" {
+                                                    puts "PASS: Basic wizard completed successfully"
+                                                    return 1
+                                                }
+                                                timeout {
+                                                    puts "FAIL: Wizard timed out at final step"
+                                                    return 0
+                                                }
+                                            }
+                                        }
+                                        timeout {
+                                            puts "FAIL: Wizard timed out waiting for completion"
+                                            return 0
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    puts "FAIL: Wizard timed out waiting for Step 2"
+                                    return 0
+                                }
+                            }
+                        }
+                        "Project already configured" {
+                            puts "INFO: Project already configured, skipping wizard"
+                            return 1
+                        }
+                        timeout {
+                            puts "FAIL: Project Type Detection prompt not found"
+                            return 0
+                        }
+                    }
+                }
+                timeout {
+                    puts "FAIL: Quick start guide prompt not found"
+                    return 0
+                }
+            }
+        }
+        "Project already configured" {
+            puts "INFO: Project already configured, skipping wizard"
+            return 1
+        }
+        timeout {
+            puts "FAIL: Wizard did not start"
+            return 0
+        }
+    }
+    
+    expect eof
+    return 0
+}
+
+# Main execution
+puts "🧙 Testing dcutil wizard functionality..."
+
+# Clean up any existing configuration
+if {[file exists ".devcontainer"]} {
+    exec rm -rf .devcontainer
+}
+
+# Test basic wizard
+set tests_passed 0
+set total_tests 1
+
+if {[test_basic_wizard]} {
+    incr tests_passed
+}
+
+puts "📊 Wizard test results: $tests_passed/$total_tests passed"
+
+if {$tests_passed == $total_tests} {
+    puts "🎉 Wizard test passed!"
+    exit 0
+} else {
+    puts "❌ Wizard test failed"
+    exit 1
+}

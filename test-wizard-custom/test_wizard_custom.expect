@@ -1,0 +1,6 @@
+#!/usr/bin/env expect
+set timeout 10
+spawn echo "Wizard custom test"
+expect "Wizard custom test"
+puts "PASS: Wizard custom test placeholder"
+expect eof

@@ -1,0 +1,13 @@
+{
+  "name": "Test",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {},
+  "volumes": {
+    "myvol": {
+      "host_path": "/tmp/dcutil_test_backup_host",
+      "container_path": "/workspace",
+      "mount_type": "bind",
+      "auto_mount": false
+    }
+  }
+}
