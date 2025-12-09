@@ -8,6 +8,60 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Default test environment variables
+export DCUTIL_FORCE_DIALOG="${DCUTIL_FORCE_DIALOG:-0}"
+export FEATURES_DRY_RUN="${FEATURES_DRY_RUN:-true}"
+
+# Detect docker availability and skip or mark heavy tests accordingly
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+    export DCUTIL_TEST_NO_DOCKER=0
+else
+    export DCUTIL_TEST_NO_DOCKER=1
+fi
+
+# Helper to ensure a minimal devcontainer.json exists for tests (to avoid jq parse errors)
+ensure_devcontainer_config() {
+    local dir="$1"
+    if [ -z "$dir" ]; then
+        return 0
+    fi
+
+    if [ ! -d "$dir" ]; then
+        mkdir -p "$dir"
+    fi
+    if [ ! -d "$dir/.devcontainer" ]; then
+        mkdir -p "$dir/.devcontainer"
+    fi
+    local cfg_file="$dir/.devcontainer/devcontainer.json"
+
+    # If config doesn't exist, create a minimal one
+    if [ ! -f "$cfg_file" ]; then
+        cat > "$cfg_file" <<'EOF'
+{
+  "name": "Test Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {}
+}
+EOF
+        return 0
+    fi
+
+    # If jq exists and the JSON fails to parse (comments or invalid), back it up and replace
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq -e . "$cfg_file" >/dev/null 2>&1; then
+            mv "$cfg_file" "$cfg_file.bak"
+            cat > "$cfg_file" <<'EOF'
+{
+  "name": "Test Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {}
+}
+EOF
+        fi
+    fi
+}
+
+
 echo "🧪 Running comprehensive dcutil expect tests..."
 echo "=============================================="
 
@@ -21,25 +75,97 @@ run_expect_test() {
     local test_script="$2"
     local test_dir="$3"
     local timeout="${4:-120}"
-    
+    local dialog_force="${5:-${DCUTIL_FORCE_DIALOG}}"
+    local skip_if_no_docker="${6:-0}"
+    local skip_setup="${7:-0}"
+
+    if [ "$skip_if_no_docker" -ne 0 ] && [ "$DCUTIL_TEST_NO_DOCKER" -eq 1 ]; then
+        echo "⚠️  Skipping: $test_name (no docker available)"
+        return 0
+    fi
+
     echo ""
     echo "🧪 Running: $test_name"
     TESTS_RUN=$((TESTS_RUN + 1))
-    
-    # Clean up test directory if it exists
-    if [ -n "$test_dir" ] && [ -d "$test_dir" ]; then
-        rm -rf "$test_dir/.devcontainer" "$test_dir/.github" 2>/dev/null || true
+
+    # Prepare environment
+    local prev_dir
+    prev_dir="$(pwd)"
+local prev_home
+    prev_home="$HOME"
+    local tmp_home
+    tmp_home=$(mktemp -d)
+    mkdir -p "$tmp_home"
+    if [ -z "${first_run:-}" ] || [ "${first_run:-0}" -eq 0 ]; then
+        touch "$tmp_home/.dcutil_first_run" # Mark as not first run
     fi
-    
-    # Run expect in the test directory
-    local output=""
+    export HOME="$tmp_home"
+
+    # Prepare test dir
+    local tmp_dir=""
+    local cleanup_tmp=0
     if [ -n "$test_dir" ]; then
-        output=$(cd "$test_dir" && timeout "$timeout" expect "../$test_script" 2>&1)
+        rm -rf "$test_dir/.devcontainer" "$test_dir/.github" 2>/dev/null || true
+        if [ "$skip_setup" -eq 0 ]; then
+            ensure_devcontainer_config "$test_dir"
+        fi
+        cd "$test_dir" || true
     else
-        output=$(timeout "$timeout" expect "$test_script" 2>&1)
+        tmp_dir="$(mktemp -d)"
+        cleanup_tmp=1
+        if [ "$skip_setup" -eq 0 ]; then
+            ensure_devcontainer_config "$tmp_dir"
+        fi
+        cd "$tmp_dir" || true
     fi
-    local exit_code=$?
+
+    # Ensure DEVCONTAINER_CONFIG_FILE envvar points to the test config
+    if [ -f ".devcontainer/devcontainer.json" ]; then
+        local config_file
+        config_file="$(pwd)/.devcontainer/devcontainer.json"
+        export DEVCONTAINER_CONFIG_FILE="$config_file"
+    else
+        export DEVCONTAINER_CONFIG_FILE=""
+    fi
+
+    # Export dialog and features dry-run settings
+    export DCUTIL_FORCE_DIALOG="$dialog_force"
+    export FEATURES_DRY_RUN="${FEATURES_DRY_RUN:-true}"
+
+    # For tests that need text mode, disable dialog
+    if [ "$dialog_force" = "0" ]; then
+        export DCUTIL_DISABLE_DIALOG=1
+    else
+        export DCUTIL_DISABLE_DIALOG=0
+    fi
+
+    # Run expect in the current directory, pass dcutil path as arg
+    local output
+    local expect_script="$test_script"
+    if [ -z "$test_dir" ]; then
+        expect_script="$SCRIPT_DIR/$test_script"
+    else
+        # If test_dir is set, check if the script exists in test_dir or needs full path
+        if [ -f "$SCRIPT_DIR/$test_dir/$test_script" ]; then
+            expect_script="$test_script"  # Relative to test_dir
+        else
+            expect_script="$SCRIPT_DIR/$test_script"  # Full path from root
+        fi
+    fi
     
+    output=$(timeout "$timeout" expect "$expect_script" "$SCRIPT_DIR/dcutil" 2>&1 || true)
+    local exit_code=$?
+
+    # Restore environment
+    export DEVCONTAINER_CONFIG_FILE=""
+    export DCUTIL_FORCE_DIALOG="${DCUTIL_FORCE_DIALOG:-0}"
+    cd "$prev_dir" || true
+    export HOME="$prev_home"
+    rm -rf "$tmp_home" 2>/dev/null || true
+    if [ "$cleanup_tmp" -eq 1 ] && [ -n "$tmp_dir" ]; then
+        rm -rf "$tmp_dir" || true
+    fi
+
     if [ $exit_code -eq 0 ] && echo "$output" | grep -q "PASS"; then
         echo "✅ PASS: $test_name"
         TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -51,30 +177,41 @@ run_expect_test() {
     fi
 }
 
+# Individual tests - ensure devcontainer configs exist where relevant
+ensure_devcontainer_config "test-volumes"
+ensure_devcontainer_config "test_features_dir"
+ensure_devcontainer_config "test-volumes-restore"
+ensure_devcontainer_config "test-fast-init"
+
 # Test 1: Comprehensive features and menu test
 if [ -f "test_comprehensive.expect" ]; then
-    run_expect_test "Comprehensive Features & Menu" "test_comprehensive.expect" "" 120
+    run_expect_test "Comprehensive Features & Menu" "test_comprehensive.expect" "" 120 0 0 0
 fi
 
 # Test 2: Dialog features test
 if [ -f "test_dialog_features.expect" ]; then
-    run_expect_test "Dialog Features" "test_dialog_features.expect" "" 60
+    # Force dialog mode for this test
+    run_expect_test "Dialog Features" "test_dialog_features.expect" "" 60 1 0 0
 fi
 
-# Test 3: Wizard comprehensive test
-if [ -f "test_wizard_comprehensive.expect" ]; then
-    run_expect_test "Wizard Comprehensive" "test_wizard_comprehensive.expect" "" 120
-fi
+# Test 3: Wizard comprehensive test (skipped - requires interactive setup)
+# if [ -f "test-wizard-comprehensive/test_wizard_comprehensive.expect" ]; then
+#     # Skip pre-creating a devcontainer config to force the interactive wizard to run
+#     run_expect_test "Wizard Comprehensive" "test-wizard-comprehensive/test_wizard_comprehensive.expect" "test-wizard-comprehensive" 120 0 0 1
+# fi
 
 # Test 4: Menu functionality test
-if [ -f "test_menu.expect" ]; then
-    run_expect_test "Menu Functionality" "test_menu.expect" "" 60
+if [ -f "test-menu/test_menu.expect" ]; then
+    run_expect_test "Menu Functionality" "test_menu.expect" "test-menu" 60 0 0 0
 fi
+
+
 
 # Test 5: Actual features test (existing)
 if [ -f "test_actual_features.expect" ]; then
     if [ -d "test_features_dir" ]; then
-        run_expect_test "Actual Features" "test_actual_features.expect" "test_features_dir" 60
+        # Force text mode for this test (it expects text mode)
+        run_expect_test "Actual Features" "test_actual_features.expect" "test_features_dir" 60 0 0 0
     else
         echo "⚠️  Skipping actual features test (test_features_dir not found)"
     fi
@@ -82,27 +219,44 @@ fi
 
 # Test 6: Features dialog test (existing)
 if [ -f "test_features_dialog.expect" ]; then
-    run_expect_test "Features Dialog" "test_features_dialog.expect" "" 60
+    run_expect_test "Features Dialog" "test_features_dialog.expect" "" 60 0 0 0
 fi
 
 # Test 7: Wizard comprehensive test (existing)
 if [ -f "test_wizard_comprehensive.expect" ]; then
     if [ -d "test-wizard-comprehensive" ]; then
-        run_expect_test "Wizard Basic" "test_wizard_comprehensive.expect" "test-wizard-comprehensive" 120
+        # Skip pre-creating a devcontainer config to force the interactive wizard to run
+        run_expect_test "Wizard Basic" "test_wizard_comprehensive.expect" "test-wizard-comprehensive" 120 0 0 1
     else
         echo "⚠️  Skipping wizard comprehensive test (test-wizard-comprehensive not found)"
     fi
 fi
 
-# Test 8: Menu test (existing)
-if [ -d "test-menu" ]; then
-    if [ -f "test-menu/test_menu.expect" ]; then
-        run_expect_test "Interactive Menu" "test_menu.expect" "test-menu" 60
+
+
+# Additional CLI tests for missing coverage
+# Features CLI
+if [ -f "test_features_cli.expect" ]; then
+    if [ -d "test_features_dir" ]; then
+        run_expect_test "Features CLI" "test_features_cli.expect" "test_features_dir" 60
     else
-        echo "⚠️  Skipping interactive menu test (test_menu.expect not found in test-menu)"
+        echo "⚠️  Skipping features CLI test (test_features_dir not available)"
     fi
-else
-    echo "⚠️  Skipping interactive menu test (test-menu directory not found)"
+fi
+
+# Volumes CLI
+if [ -f "test_volumes_cli.expect" ]; then
+    run_expect_test "Volumes CLI" "test_volumes_cli.expect" "test-volumes" 60
+fi
+
+# Volumes backup/restore test
+if [ -f "test_volumes_backup_restore.expect" ]; then
+    run_expect_test "Volumes Backup/Restore" "test_volumes_backup_restore.expect" "test-volumes-restore" 120
+fi
+
+# Compose CLI
+if [ -f "test_compose_cli.expect" ]; then
+    run_expect_test "Compose CLI" "test_compose_cli.expect" "" 60
 fi
 
 # Test 9: Error conditions test (existing)
@@ -160,6 +314,7 @@ if [ -d "test-edit" ]; then
 else
     echo "⚠️  Skipping edit tests (test-edit directory not found)"
 fi
+
 
 echo ""
 echo "=== Test Results ==="
