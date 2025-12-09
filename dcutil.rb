@@ -4,7 +4,7 @@
 class Dcutil < Formula
   desc "Enhanced devcontainer utility with advanced features"
   homepage "https://github.com/dtg01100/dcutil"
-  url "https://github.com/dtg01100/dcutil/archive/refs/tags/v1.5.0.tar.gz"
+  url "https://github.com/dtg01100/dcutil/archive/refs/tags/v1.6.0.tar.gz"
   sha256 "PLACEHOLDER_SHA256_UPDATE_AFTER_RELEASE"
   license "MIT"
 

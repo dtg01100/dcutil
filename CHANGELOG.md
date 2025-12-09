@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.6.0] - 2025-12-09
+
+### 🚀 Major Feature: Devcontainer Features Management
+
+- **Interactive Features Wizard**: New `dcutil features` command for managing devcontainer features
+  - `dcutil features` - Launch interactive wizard to add/remove features
+  - `dcutil features list` - Show currently configured features
+  - `dcutil features add <feature>` - Add specific features (supports comma-separated lists)
+  - `dcutil features remove <feature>` - Remove specific features
+- **Feature Discovery**: Automatically fetch available features from official devcontainers registry
+- **Smart Feature Handling**: Supports both object and array feature configurations
+- **Dependency Resolution**: Automatically handles feature installation order based on dependencies
+- **Offline Mode**: Fallback to cached/local features when registry is unavailable
+
+### 🛠️ Technical Infrastructure
+
+- **New Features Library**: `lib/features.sh` (12,942 lines) - Complete features management system
+- **Comprehensive Testing**: Added regression and unit tests for features functionality
+- **Template Integration**: Enhanced template system with feature-aware configurations
+- **Error Handling**: Robust error handling for feature installation and configuration issues
+
+### 📊 Quality Assurance
+
+- **Test Coverage**: Added 50+ new tests covering feature management edge cases
+- **Regression Testing**: Comprehensive test suite for backward compatibility
+- **Syntax Validation**: All new code passes shellcheck validation
+- **Documentation**: Updated help system and command documentation
+
+### 🔧 Dependencies
+
+- **Dependabot Configuration**: Added automated dependency updates for devcontainer ecosystem
+- **Registry Integration**: Seamless integration with official devcontainers features registry
+
 ## [1.5.0] - 2025-11-25
 
 ### 🚀 Features

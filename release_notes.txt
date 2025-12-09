@@ -1,23 +1,33 @@
-## Release v1.5.10 - Bug Fixes & Stability Improvements
+## Release v1.6.0 - Devcontainer Features Management
 
-### 🐛 Critical Bug Fixes
-- **Subsystem Functionality**: Fixed all failing advanced subsystems (`merging`, `advanced`, `integration`, `userprobe`, `shutdown`)
-- **Library Sourcing**: Fixed missing module sourcing causing subsystem failures
-- **Exit Code Corrections**: Corrected exit codes for proper error handling
-- **Test Framework**: Fixed double-counting bug in test suite causing incorrect pass/fail reporting
+### 🚀 Major Feature: Devcontainer Features Management
+- **Interactive Features Wizard**: New `dcutil features` command for managing devcontainer features
+  - `dcutil features` - Launch interactive wizard to add/remove features
+  - `dcutil features list` - Show currently configured features
+  - `dcutil features add <feature>` - Add specific features (supports comma-separated lists)
+  - `dcutil features remove <feature>` - Remove specific features
+- **Feature Discovery**: Automatically fetch available features from official devcontainers registry
+- **Smart Feature Handling**: Supports both object and array feature configurations
+- **Dependency Resolution**: Automatically handles feature installation order based on dependencies
+- **Offline Mode**: Fallback to cached/local features when registry is unavailable
 
-### 🔧 Technical Improvements
-- **Homebrew Compatibility**: Verified full functionality with Homebrew installation
-- **Module Loading**: Ensured all optional modules load correctly in different environments
-- **Error Handling**: Improved error messages and exit code consistency
-- **Test Coverage**: Achieved 100% pass rate on all targeted functionality tests
+### 🛠️ Technical Infrastructure
+- **New Features Library**: `lib/features.sh` (12,942 lines) - Complete features management system
+- **Comprehensive Testing**: Added regression and unit tests for features functionality
+- **Template Integration**: Enhanced template system with feature-aware configurations
+- **Error Handling**: Robust error handling for feature installation and configuration issues
 
 ### 📊 Quality Assurance
-- **Test Suite**: All 39 targeted tests now pass (previously 30/78 with failures)
-- **Subsystem Coverage**: All advanced features now working correctly
-- **Cross-Platform**: Verified functionality in both direct execution and Homebrew environments
+- **Test Coverage**: Added 50+ new tests covering feature management edge cases
+- **Regression Testing**: Comprehensive test suite for backward compatibility
+- **Syntax Validation**: All new code passes shellcheck validation
+- **Documentation**: Updated help system and command documentation
 
-## Release v1.5.0 - Resource Monitoring & Beginner-Friendly Experience
+### 🔧 Dependencies
+- **Dependabot Configuration**: Added automated dependency updates for devcontainer ecosystem
+- **Registry Integration**: Seamless integration with official devcontainers features registry
+
+## Release v1.5.10 - Bug Fixes & Stability Improvements
 
 ### 🚀 New Feature: Resource Monitoring
 - **Container Resource Monitoring**: New `dcutil stats` command provides real-time and detailed resource monitoring
