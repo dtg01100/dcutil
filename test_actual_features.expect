@@ -4,8 +4,11 @@
 
 set timeout 30
 
-# Change to test directory with our config
-spawn sh -c "cd /var/home/dlafreniere/projects/dcutil/test_features_dir && ../dcutil"
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} { set dcutil_cmd "../dcutil" }
+
+# Start dcutil in the current test directory
+spawn $dcutil_cmd
 
 # Wait for main menu
 expect {
@@ -45,7 +48,7 @@ expect {
 
 # Wait for feature list to show
 expect {
-    "Available features:" {
+    -re "Enter feature ID to add" {
         # Select the 'git' feature by typing its name
         send "git\r"
     }

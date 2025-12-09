@@ -340,7 +340,7 @@ proc test_wizard {} {
     catch {exec rm -rf .devcontainer}
     
     # Test init wizard
-    spawn $dcutil_cmd init
+    spawn $dcutil_cmd init wizard
     expect {
         "Welcome to dcutil!" {
             send "\r"

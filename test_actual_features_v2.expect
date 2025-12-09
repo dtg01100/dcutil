@@ -5,7 +5,9 @@
 set timeout 30
 
 # Change to test directory with our config
-spawn sh -c "cd /var/home/dlafreniere/projects/dcutil/test_features_dir && ../dcutil"
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} { set dcutil_cmd "../dcutil" }
+spawn $dcutil_cmd
 
 # Wait for main menu
 expect {
