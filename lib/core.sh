@@ -142,17 +142,23 @@ detect_cli_backend() {
     fi
 
     # Check Docker first
-    if command -v docker >/dev/null 2>&1 && \
-       docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
-        DETECTED_BACKEND="docker"
-        return 0
+    if command -v docker >/dev/null 2>&1; then
+        local docker_match
+        docker_match=$(docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+        if [ -n "$docker_match" ]; then
+            DETECTED_BACKEND="docker"
+            return 0
+        fi
     fi
 
     # Check Podman
-    if command -v podman >/dev/null 2>&1 && \
-       podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
-        DETECTED_BACKEND="podman"
-        return 0
+    if command -v podman >/dev/null 2>&1; then
+        local podman_match
+        podman_match=$(podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
+        if [ -n "$podman_match" ]; then
+            DETECTED_BACKEND="podman"
+            return 0
+        fi
     fi
 
     # Fallback to dcutil's backend setting

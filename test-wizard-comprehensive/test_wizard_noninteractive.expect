@@ -1,0 +1,93 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Deterministic non-interactive wizard test
+# Uses DCUTIL_NONINTERACTIVE=1 to force non-interactive defaults
+
+set timeout 30
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+# Normalize path so spawn works from isolated project dir
+set dcutil_cmd [file normalize $dcutil_cmd]
+
+# Prepare isolated environment
+set temp_home [exec mktemp -d /tmp/dcutil_wizard_nonint.XXXXXX]
+set project_dir "$temp_home/project"
+file mkdir "$project_dir/.devcontainer"
+
+# Seed cached data
+set cache_dir "$temp_home/.cache/dcutil"
+catch {exec mkdir -p $cache_dir}
+catch {exec cp ../../testdata/cached_official_templates.json $cache_dir/official_templates.json}
+catch {exec cp ../../testdata/cached_official_features.json $cache_dir/official_features.json}
+catch {exec touch $cache_dir/official_templates.json $cache_dir/official_features.json}
+
+# Create a devcontainer CLI stub that writes a config file when invoked with templates apply
+set temp_bin "$temp_home/bin"
+file mkdir $temp_bin
+set dev_stub "$temp_bin/devcontainer"
+set fh [open $dev_stub "w"]
+puts $fh {#!/usr/bin/env bash
+# Parse args to find --workspace-folder value
+workspace=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --workspace-folder)
+      workspace="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+if [ -n "$workspace" ]; then
+  mkdir -p "$workspace/.devcontainer" 2>/dev/null || true
+  cat > "$workspace/.devcontainer/devcontainer.json" <<JSON
+{
+  "name": "Test Generated",
+  "features": []
+}
+JSON
+  exit 0
+fi
+exit 0
+}
+close $fh
+exec chmod +x $dev_stub
+
+puts "🧪 Running non-interactive wizard test..."
+
+# Run dcutil init wizard in non-interactive mode from the isolated project directory
+cd $project_dir
+spawn env HOME=$temp_home PATH="$temp_bin:$::env(PATH)" DCUTIL_NONINTERACTIVE=1 CI=1 $dcutil_cmd init wizard
+
+expect {
+    -re "Devcontainer Initialization Wizard" {}
+    timeout {
+        puts "FAIL: Wizard did not start"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+# Wait for apply step to run and then verify file created
+# Give some time for the stub to create the file
+set waited 0
+set max_wait 10
+while {${waited} < ${max_wait}} {
+    if {[file exists "$project_dir/.devcontainer/devcontainer.json"]} {
+        puts "PASS: Non-interactive wizard generated devcontainer.json"
+        set contents [read [open "$project_dir/.devcontainer/devcontainer.json" "r"]]
+        puts "Generated content:\n$contents"
+        file delete -force $temp_home
+        exit 0
+    }
+    after 500
+    incr waited
+}
+
+puts "FAIL: devcontainer.json not created by non-interactive wizard"
+file delete -force $temp_home
+exit 1

@@ -53,3 +53,12 @@ When modifying backend operations, ensure they respect the `DETECTED_BACKEND` va
 For new features, prefer extending the official CLI integration over adding direct runtime calls unless the CLI genuinely lacks support.
 
 Environment variable handling should leverage the devcontainer CLI as the primary validation and configuration source.
+
+### Running tests (development)
+
+We added Python unit tests for utilities in `lib/` and a CI job that runs them on push/PR via GitHub Actions.
+
+- Install dev dependencies: `python3 -m pip install -r requirements-dev.txt`
+- Run Python tests: `pytest -q`
+
+If you don't have Python locally, CI will run the tests automatically on GitHub Actions.

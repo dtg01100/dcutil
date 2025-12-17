@@ -1,0 +1,38 @@
+[
+  {
+    "id": "docker-in-docker",
+    "name": "Docker (Docker-in-Docker)",
+    "description": "Create a Docker-in-Docker environment inside a devcontainer",
+    "registry": "ghcr.io/devcontainers/features"
+  },
+  {
+    "id": "git",
+    "name": "Git",
+    "description": "Git version control tool",
+    "registry": "ghcr.io/devcontainers/features"
+  },
+  {
+    "id": "node",
+    "name": "Node.js",
+    "description": "Node.js runtime and npm package manager",
+    "registry": "ghcr.io/devcontainers/features"
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "description": "Python programming language",
+    "registry": "ghcr.io/devcontainers/features"
+  },
+  {
+    "id": "golang",
+    "name": "Go",
+    "description": "Go programming language",
+    "registry": "ghcr.io/devcontainers/features"
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "description": "Rust programming language",
+    "registry": "ghcr.io/devcontainers/features"
+  }
+]

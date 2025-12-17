@@ -620,6 +620,8 @@ dcutil supports the full Devcontainer Specification, including:
 
 Run the test suite to validate functionality:
 
+Note: For automated CI runs you can force non-interactive wizard behavior by setting the environment variable `DCUTIL_NONINTERACTIVE=1` (or CI=1). This causes the wizard to select sensible defaults and avoids blocking prompts during tests.
+
 ```bash
 # Run all tests
 ./test.sh

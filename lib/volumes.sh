@@ -73,20 +73,15 @@ get_volume_config_file() {
     cfg="${cfg#\"}"
     cfg="${cfg%\"}"
 
+    # If we know the devcontainer config file, place volumes.json next to it
     if [ -n "$cfg" ]; then
-        if [ -f "$cfg" ]; then
-            echo "$cfg"
-            return 0
-        else
-            cfg=$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")
-        fi
-
-        local dir
-        dir=$(dirname "$cfg")
-        realpath -m "$dir/volumes.json" 2>/dev/null || echo "$dir/volumes.json"
+        local cfg_dir
+        cfg_dir=$(dirname "$(realpath -m "$cfg" 2>/dev/null || echo "$cfg")")
+        realpath -m "$cfg_dir/volumes.json" 2>/dev/null || echo "$cfg_dir/volumes.json"
         return 0
     fi
 
+    # Fall back to project directory
     if [ -n "${PROJECT_DIR:-}" ]; then
         realpath -m "$PROJECT_DIR/.devcontainer/volumes.json" 2>/dev/null || echo "$PROJECT_DIR/.devcontainer/volumes.json"
     else
@@ -119,6 +114,12 @@ add_volume() {
 
     local lockfile
     lockfile="${volume_file}.lock"
+
+    # Acquire exclusive lock during add to avoid concurrent edits
+    local fd=""
+    if command -v flock &>/dev/null; then
+        fd=$(open_lock "$lockfile" true)
+    fi
 
     # Check if volume already exists
     local volume_exists=false
@@ -417,8 +418,12 @@ mount_volume() {
         error_exit "Devcontainer is not running. Start it first with: dcutil up" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
-    # Get container ID
-    CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    # Get container ID (support docker/podman)
+    if command -v execute_container_command >/dev/null 2>&1; then
+        CONTAINER_ID=$(execute_container_command ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    else
+        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    fi
     if [ -z "$CONTAINER_ID" ]; then
         error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
     fi
@@ -521,8 +526,12 @@ unmount_volume() {
         error_exit "Devcontainer is not running" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
-    # Get container ID
-    CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    # Get container ID (support docker/podman)
+    if command -v execute_container_command >/dev/null 2>&1; then
+        CONTAINER_ID=$(execute_container_command ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    else
+        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+    fi
     if [ -z "$CONTAINER_ID" ]; then
         error_exit "No running devcontainer found for $PROJECT_DIR" "$EXIT_DEVCONTAINER_ERROR"
     fi
@@ -565,12 +574,20 @@ volume_status() {
     if run_in_container "echo running" 2>/dev/null >/dev/null; then
         success "Container is running"
 
-        # Get container ID
-        CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+        # Get container ID (support docker/podman)
+        if command -v execute_container_command >/dev/null 2>&1; then
+            CONTAINER_ID=$(execute_container_command ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+        else
+            CONTAINER_ID=$(docker ps --filter label=devcontainer.local_folder="$PROJECT_DIR" --format "{{.ID}}" 2>/dev/null | head -1)
+        fi
 
         echo ""
         info "Container mounts:"
-        docker inspect "$CONTAINER_ID" --format '{{ range .Mounts }}{{ if eq .Type "bind" }}{{ .Source }} -> {{ .Destination }} ({{ .Mode }}){{ println }}{{ end }}{{ end }}' 2>/dev/null || echo "  No bind mounts found"
+        if command -v execute_container_command >/dev/null 2>&1; then
+            execute_container_command inspect "$CONTAINER_ID" --format '{{ range .Mounts }}{{ if eq .Type "bind" }}{{ .Source }} -> {{ .Destination }} ({{ .Mode }}){{ println }}{{ end }}{{ end }}' 2>/dev/null || echo "  No bind mounts found"
+        else
+            docker inspect "$CONTAINER_ID" --format '{{ range .Mounts }}{{ if eq .Type "bind" }}{{ .Source }} -> {{ .Destination }} ({{ .Mode }}){{ println }}{{ end }}{{ end }}' 2>/dev/null || echo "  No bind mounts found"
+        fi
 
         echo ""
         info "Configured volumes:"

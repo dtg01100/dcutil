@@ -1976,6 +1976,17 @@ add_feature_to_config() {
             fi
         fi
 
+        # Prefer Python helper for robust JSON mutations if available
+        PY_CLI="$(dirname "${BASH_SOURCE[0]}")/feature_cli.py"
+        if command -v python3 >/dev/null 2>&1 && [ -f "$PY_CLI" ]; then
+            if python3 "$PY_CLI" add_to_config "$DEVCONTAINER_CONFIG_FILE" "$feature_spec" "$feature_options"; then
+                success "Added feature '$feature_spec' to devcontainer.json"
+                return 0
+            else
+                warning "Python feature helper failed, falling back to jq implementation"
+            fi
+        fi
+
         if [ -n "$new_features_json" ]; then
             echo "$new_features_json" > "$DEVCONTAINER_CONFIG_FILE"
             success "Added feature '$feature_spec' to devcontainer.json"
@@ -2015,6 +2026,17 @@ remove_feature_from_config() {
             # No features key to remove from
             warning "No features configured in devcontainer.json"
             return 0
+        fi
+
+        # Prefer Python helper for robust JSON mutations if available
+        PY_CLI="$(dirname "${BASH_SOURCE[0]}")/feature_cli.py"
+        if command -v python3 >/dev/null 2>&1 && [ -f "$PY_CLI" ]; then
+            if python3 "$PY_CLI" remove_from_config "$DEVCONTAINER_CONFIG_FILE" "$feature_name"; then
+                success "Removed feature '$feature_name' from devcontainer.json"
+                return 0
+            else
+                warning "Python feature helper failed, falling back to jq implementation"
+            fi
         fi
 
         if [ -n "$new_features_json" ]; then

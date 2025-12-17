@@ -12,6 +12,50 @@ REMOTE_ENV=()
 CONTAINER_USER=""
 REMOTE_USER=""
 
+# Resolve the devcontainer ID for the current project using the detected backend
+get_project_container_id() {
+    local project_dir="${PROJECT_DIR:-$(pwd)}"
+
+    # Prefer a detected backend if available
+    if [ -z "${DETECTED_BACKEND:-}" ]; then
+        detect_cli_backend "$project_dir"
+    fi
+
+    # Use backend-aware helper when available
+    if command -v execute_container_command >/dev/null 2>&1; then
+        execute_container_command ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1
+        return 0
+    fi
+
+    # Direct backend lookups
+    if [ "${DETECTED_BACKEND:-}" = "podman" ] && command -v podman >/dev/null 2>&1; then
+        podman ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1
+    else
+        docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.ID}}" 2>/dev/null | head -1
+    fi
+}
+
+# Execute a shell command in the project container respecting backend selection
+exec_in_project_container() {
+    local container_id="$1"
+    shift || true
+    local cmd="$*"
+
+    if [ -z "$container_id" ]; then
+        error_exit "Container ID is required for container execution" "$EXIT_INVALID_ARGS"
+    fi
+
+    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd"
+    elif command -v execute_container_command >/dev/null 2>&1; then
+        execute_container_command exec "$container_id" /bin/sh -c "$cmd"
+    elif [ "${DETECTED_BACKEND:-}" = "podman" ] && command -v podman >/dev/null 2>&1; then
+        podman exec "$container_id" /bin/sh -c "$cmd"
+    else
+        docker exec "$container_id" /bin/sh -c "$cmd"
+    fi
+}
+
 # Parse and validate environment variables from devcontainer.json
 parse_environment_config() {
     local config_file=""
@@ -129,11 +173,15 @@ build_container_env_args() {
 # Apply remote environment variables to running container
 apply_remote_environment() {
     local container_id="$1"
-    
+
     if [ -z "$container_id" ]; then
-        error_exit "Container ID is required for applying remote environment" "$EXIT_INVALID_ARGS"
+        container_id=$(get_project_container_id)
     fi
-    
+
+    if [ -z "$container_id" ]; then
+        error_exit "Unable to locate a running devcontainer for this project" "$EXIT_DEVCONTAINER_ERROR"
+    fi
+
     if [ ${#REMOTE_ENV[@]} -eq 0 ]; then
         info "No remote environment variables to apply"
         return 0
@@ -150,23 +198,13 @@ apply_remote_environment() {
             info "Remote environment: $env_var"
             
             # Add to user's bash profile for persistence
-            if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-                execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "
-                    if [ -f /home/vscode/.bashrc ]; then
-                        echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
-                    elif [ -f /home/developer/.bashrc ]; then
-                        echo 'export $key=\"$value\"' >> /home/developer/.bashrc
-                    fi
-                " || true
-            else
-                docker exec "$container_id" /bin/sh -c "
-                    if [ -f /home/vscode/.bashrc ]; then
-                        echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
-                    elif [ -f /home/developer/.bashrc ]; then
-                        echo 'export $key=\"$value\"' >> /home/developer/.bashrc
-                    fi
-                " || true
-            fi
+            exec_in_project_container "$container_id" "
+                if [ -f /home/vscode/.bashrc ]; then
+                    echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
+                elif [ -f /home/developer/.bashrc ]; then
+                    echo 'export $key=\"$value\"' >> /home/developer/.bashrc
+                fi
+            " || true
         fi
     done
     
@@ -201,55 +239,37 @@ validate_environment_variables() {
 # Set up user permissions and home directory
 setup_user_environment() {
     local container_id="$1"
-    
+
     if [ -z "$container_id" ]; then
-        error_exit "Container ID is required for user environment setup" "$EXIT_INVALID_ARGS"
+        container_id=$(get_project_container_id)
     fi
-    
+
+    if [ -z "$container_id" ]; then
+        error_exit "Unable to locate a running devcontainer for this project" "$EXIT_DEVCONTAINER_ERROR"
+    fi
+
     info "Setting up user environment for $CONTAINER_USER..."
     
     # Check if user exists and set up home directory
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
-        execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "
-            # Check if user exists
-            if id -u $CONTAINER_USER >/dev/null 2>&1; then
-                # Set up home directory permissions
-                if [ -d /home/$CONTAINER_USER ]; then
-                    chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
-                fi
-                
-                # Add user to sudo group if needed and possible
-                if command -v usermod >/dev/null 2>&1; then
-                    usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
-                fi
-            else
-                # User doesn't exist, check if we can create it
-                if [ \$(id -u) -eq 0 ]; then
-                    useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
-                fi
+    exec_in_project_container "$container_id" "
+        # Check if user exists
+        if id -u $CONTAINER_USER >/dev/null 2>&1; then
+            # Set up home directory permissions
+            if [ -d /home/$CONTAINER_USER ]; then
+                chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
             fi
-        " || true
-    else
-        docker exec "$container_id" /bin/sh -c "
-            # Check if user exists
-            if id -u $CONTAINER_USER >/dev/null 2>&1; then
-                # Set up home directory permissions
-                if [ -d /home/$CONTAINER_USER ]; then
-                    chown -R $CONTAINER_USER:$CONTAINER_USER /home/$CONTAINER_USER 2>/dev/null || true
-                fi
-                
-                # Add user to sudo group if needed and possible
-                if command -v usermod >/dev/null 2>&1; then
-                    usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
-                fi
-            else
-                # User doesn't exist, check if we can create it
-                if [ \$(id -u) -eq 0 ]; then
-                    useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
-                fi
+            
+            # Add user to sudo group if needed and possible
+            if command -v usermod >/dev/null 2>&1; then
+                usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
             fi
-        " || true
-    fi
+        else
+            # User doesn't exist, check if we can create it
+            if [ \$(id -u) -eq 0 ]; then
+                useradd -m -s /bin/bash $CONTAINER_USER 2>/dev/null || true
+            fi
+        fi
+    " || true
     
     return 0
 }
@@ -302,6 +322,21 @@ export_devcontainer_env() {
 
     info "Exporting devcontainer environment variables..."
 
+    # Detect actual backend in use (Docker vs Podman)
+    local project_dir="${PROJECT_DIR:-$(pwd)}"
+    if [ -z "${DETECTED_BACKEND:-}" ]; then
+        detect_cli_backend "$project_dir"
+    fi
+
+    local container_engine="${DETECTED_BACKEND:-}"
+    if [ -z "$container_engine" ]; then
+        if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+            container_engine="podman"
+        else
+            container_engine="docker"
+        fi
+    fi
+
     # Export the configuration file path
     echo "export DEVCONTAINER_CONFIG=\"$(realpath "$config_file")\""
 
@@ -309,7 +344,7 @@ export_devcontainer_env() {
     echo "export DEVCONTAINER_WORKSPACE_FOLDER=\"$(pwd)\""
 
     # Export container engine settings
-    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
+    if [ "$container_engine" = "podman" ]; then
         echo "export DEVCONTAINER_CONTAINER_ENGINE=\"podman\""
         # Podman typically does not need special DOCKER_HOST setting if using rootless
         if command -v podman >/dev/null 2>&1; then
@@ -320,7 +355,7 @@ export_devcontainer_env() {
                 echo "export CONTAINER_HOST=\"$podman_socket\""
             fi
         fi
-    else
+    elif [ "$container_engine" = "docker" ]; then
         # For Docker, export DOCKER_HOST if using remote Docker
         if [ -n "${DOCKER_HOST:-}" ]; then
             echo "export DOCKER_HOST=\"${DOCKER_HOST}\""
@@ -328,6 +363,10 @@ export_devcontainer_env() {
             # If no custom DOCKER_HOST, use default
             echo "# export DOCKER_HOST=\"unix:///var/run/docker.sock\" # uncomment if needed"
         fi
+        echo "export DEVCONTAINER_CONTAINER_ENGINE=\"docker\""
+    else
+        echo "# Unknown container engine detected; defaulting to docker"
+        container_engine="docker"
         echo "export DEVCONTAINER_CONTAINER_ENGINE=\"docker\""
     fi
 
@@ -369,18 +408,14 @@ export_devcontainer_env() {
     fi
 
     # Export backend information
-    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
-        echo "export CONTAINER_ENGINE=\"podman\""
-    else
-        echo "export CONTAINER_ENGINE=\"docker\""
-    fi
+    echo "export CONTAINER_ENGINE=\"$container_engine\""
 
     # Export the devcontainer CLI location as well
     echo "export DEVCONTAINER_CLI=\"$(command -v devcontainer 2>/dev/null || echo "")\""
 
     # Export project-specific container name that devcontainer CLI would use
     local container_name
-    container_name=$(get_current_devcontainer_name "$(pwd)" 2>/dev/null || echo "")
+    container_name=$(get_current_devcontainer_name "$project_dir" 2>/dev/null || echo "")
     if [ -n "$container_name" ]; then
         echo "export DEVCONTAINER_CONTAINER_NAME=\"$container_name\""
     fi
@@ -402,19 +437,11 @@ environment_cli() {
             ;;
         "apply-remote")
             local container_id="${1:-}"
-            if [ -z "$container_id" ]; then
-                # Find running container by project label
-                container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" | head -1)
-            fi
             parse_environment_config
             apply_remote_environment "$container_id"
             ;;
         "setup-user")
             local container_id="$1"
-            if [ -z "$container_id" ]; then
-                # Find running container by project label
-                container_id=$(docker ps --filter "label=devcontainer.local_folder=$PROJECT_DIR" --format "{{.ID}}" | head -1)
-            fi
             parse_environment_config
             setup_user_environment "$container_id"
             ;;

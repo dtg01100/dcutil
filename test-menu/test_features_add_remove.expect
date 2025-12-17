@@ -1,0 +1,171 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# High-risk coverage for features add/remove flows (text mode)
+# Uses isolated HOME/cache and temporary project to avoid network and side effects
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+# Normalize path so we can change directories safely
+set dcutil_cmd [file normalize $dcutil_cmd]
+
+# Prepare isolated environment
+set temp_home [exec mktemp -d /tmp/dcutil_menu.XXXXXX]
+set project_dir "$temp_home/project"
+file mkdir "$project_dir/.devcontainer"
+
+# Seed devcontainer config with empty features
+set devcontainer_file "$project_dir/.devcontainer/devcontainer.json"
+set fh [open $devcontainer_file "w"]
+puts $fh "{\n  \"name\": \"Test Project\",\n  \"features\": {}\n}\n"
+close $fh
+
+# Seed features cache to avoid network
+file mkdir "$temp_home/.cache/dcutil"
+set cache_file "$temp_home/.cache/dcutil/official_features.json"
+set cf [open $cache_file "w"]
+puts $cf {[ 
+  {"id":"node","name":"Node.js","description":"Node runtime"},
+  {"id":"python","name":"Python","description":"Python runtime"}
+]}
+close $cf
+
+# Skip first-run welcome prompt
+set marker_file "$temp_home/.dcutil_first_run"
+set marker_fh [open $marker_file "w"]
+close $marker_fh
+
+proc expect_features_menu {} {
+    expect {
+        -re "Managing devcontainer features" {}
+        timeout {
+            puts "FAIL: Did not reach features menu"
+            exit 1
+        }
+    }
+    expect {
+        -re "Loading available features" {}
+        timeout {}
+    }
+}
+
+puts "🧪 Testing features add/remove high-risk flows..."
+
+# Enter features menu from the temporary project directory to avoid touching repo config
+cd $project_dir
+spawn env HOME=$temp_home DCUTIL_DISABLE_DIALOG=1 $dcutil_cmd menu
+
+expect {
+    "What would you like to do?" {}
+    timeout {
+        puts "FAIL: Main menu did not load"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+send "9\r"
+expect_features_menu
+
+# Add feature flow
+expect {
+    -re "What would you like to do?" {}
+    -re "Current features" {}
+    timeout {
+        puts "FAIL: Features main loop not shown"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+send "1\r"
+expect {
+    -re "Enter search term" {}
+    timeout {
+        puts "FAIL: Add feature search prompt missing"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+# Blank search to list all
+send "\r"
+expect {
+    -re "Enter feature ID to add" {}
+    timeout {
+        puts "FAIL: Feature ID prompt missing"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+send "node\r"
+expect {
+    -re "Adding feature: node" {
+        puts "PASS: Feature add initiated"
+    }
+    timeout {
+        puts "FAIL: Feature add not initiated"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+# Back at features menu
+expect {
+    -re "Current features" {}
+    timeout {}
+}
+
+# Remove feature flow
+send "2\r"
+expect {
+    -re "Currently configured features" {}
+    timeout {
+        puts "FAIL: Remove feature list missing"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+send "1\r"
+expect {
+    -re "Removing feature: node" {
+        puts "PASS: Feature removal initiated"
+    }
+    timeout {
+        puts "FAIL: Feature removal not initiated"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+# Save changes and exit
+send "4\r"
+expect {
+    -re "Changes have been saved" {
+        puts "PASS: Save and exit works"
+    }
+    timeout {
+        puts "FAIL: Save and exit message missing"
+        file delete -force $temp_home
+        exit 1
+    }
+}
+
+# Return to main menu then exit
+expect {
+    "What would you like to do?" {}
+    timeout {}
+}
+send "0\r"
+expect {
+    -re "Goodbye" {}
+    timeout {}
+}
+
+puts "🎉 Features add/remove high-risk flows completed"
+file delete -force $temp_home
+exit 0

@@ -12,6 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 # Constants
 TEMPLATE_CACHE_TTL=3600  # 1 hour in seconds
 FEATURE_CACHE_TTL=3600   # 1 hour in seconds
+DEFAULT_CURL_OPTS=(--fail --silent --show-error --location --max-time 10 --connect-timeout 5)
 
 # Global variables for interactive selection
 user_selected_template=""
@@ -28,7 +29,15 @@ fetch_available_templates_official() {
         local file_time
         local cache_delta
         current_time=$(date +%s)
-        file_time=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+        # Use python for portable mtime (stat -c not on macOS)
+        file_time=$(python3 - "$cache_file" 2>/dev/null <<'PY'
+import os, sys
+try:
+    print(int(os.path.getmtime(sys.argv[1])))
+except Exception:
+    print(0)
+PY
+        )
         cache_delta=$((current_time - file_time))
 
         if [ "$cache_delta" -lt "$cache_age" ]; then
@@ -57,7 +66,7 @@ fetch_available_templates_official() {
         local templates_json="[]"
         local api_url="https://api.github.com/repos/devcontainers/templates/contents/src"
         local template_dirs=""
-        template_dirs=$(curl -s "$api_url" | jq -r '.[] | select(.type == "dir") | .name' 2>/dev/null || echo "")
+        template_dirs=$(curl "${DEFAULT_CURL_OPTS[@]}" "$api_url" | jq -r '.[] | select(.type == "dir") | .name' 2>/dev/null || echo "")
 
         if [ -n "$template_dirs" ]; then
             templates_json="["
@@ -65,7 +74,7 @@ fetch_available_templates_official() {
             for template in $template_dirs; do
                 local template_url="https://raw.githubusercontent.com/devcontainers/templates/main/src/${template}/devcontainer-template.json"
                 local template_info=""
-                template_info=$(curl -s "$template_url" 2>/dev/null || true)
+                template_info=$(curl "${DEFAULT_CURL_OPTS[@]}" "$template_url" 2>/dev/null || true)
                 if [ -n "$template_info" ]; then
                     local id name description
                     id=$(echo "$template_info" | jq -r '.id' 2>/dev/null || echo "$template")
@@ -122,7 +131,14 @@ fetch_available_features_official() {
         local file_time
         local cache_delta
         current_time=$(date +%s)
-        file_time=$(stat -c %Y "$cache_file" 2>/dev/null || echo 0)
+        file_time=$(python3 - "$cache_file" 2>/dev/null <<'PY'
+import os, sys
+try:
+    print(int(os.path.getmtime(sys.argv[1])))
+except Exception:
+    print(0)
+PY
+        )
         cache_delta=$((current_time - file_time))
 
         if [ "$cache_delta" -lt "$cache_age" ]; then
@@ -147,7 +163,7 @@ fetch_available_features_official() {
         local features_json="[]"
         local api_url="https://api.github.com/repos/devcontainers/features/contents/src"
         local feature_dirs=""
-        feature_dirs=$(curl -s "$api_url" | jq -r '.[] | select(.type == "dir") | .name' 2>/dev/null || echo "")
+        feature_dirs=$(curl "${DEFAULT_CURL_OPTS[@]}" "$api_url" | jq -r '.[] | select(.type == "dir") | .name' 2>/dev/null || echo "")
 
         if [ -n "$feature_dirs" ]; then
             features_json="["
@@ -155,7 +171,7 @@ fetch_available_features_official() {
             for feature in $feature_dirs; do
                 local feature_url="https://raw.githubusercontent.com/devcontainers/features/main/src/${feature}/devcontainer-feature.json"
                 local feature_info=""
-                feature_info=$(curl -s "$feature_url" 2>/dev/null || true)
+                feature_info=$(curl "${DEFAULT_CURL_OPTS[@]}" "$feature_url" 2>/dev/null || true)
                 if [ -n "$feature_info" ]; then
                     local id name description
                     id=$(echo "$feature_info" | jq -r '.id // empty' 2>/dev/null || echo "$feature")
@@ -213,7 +229,7 @@ detect_project_template() {
         echo "ghcr.io/devcontainers/templates/rust"
     elif find . -maxdepth 1 -type f \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" \) -print -quit | grep -q .; then
         echo "ghcr.io/devcontainers/templates/dotnet"
-    elif [ -f "pom.xml" ] || [ -f "*.gradle" ] || [ -f "build.gradle" ]; then
+    elif [ -f "pom.xml" ] || find . -maxdepth 2 -type f -name "*.gradle" -print -quit | grep -q . || [ -f "build.gradle" ]; then
         echo "ghcr.io/devcontainers/templates/java"
     elif [ -f "composer.json" ]; then
         echo "ghcr.io/devcontainers/templates/php"
@@ -277,7 +293,7 @@ select_template_interactive() {
     # If auto-select is provided and valid, just return that without interaction
     if [ -n "$auto_select" ]; then
         local i=0
-        while [ $i -lt """$template_count" ]; do
+        while [ $i -lt "$template_count" ]; do
             local id
             id=$(echo "$templates_json" | jq -r ".[$i].id" 2>/dev/null)
             if [ "$id" = "$auto_select" ]; then
@@ -342,6 +358,8 @@ select_features_interactive() {
     # Count the number of features
     local features_count
     features_count=$(echo "$features_json" | jq 'length')
+    # Ensure features_count is a valid integer to avoid arithmetic errors when features_json is empty
+    features_count=${features_count:-0}
 
     if [ "$features_count" -eq 0 ]; then
         echo "No features available."
@@ -838,7 +856,8 @@ wizard_with_official_integration() {
     echo "Automatically detected: $detected_name (${detected_template#ghcr.io/devcontainers/templates/})"
     echo ""
 
-    if [ -t 0 ] && [ -t 1 ]; then
+    # In CI or when DCUTIL_NONINTERACTIVE (or the legacy DCUTIL_DISABLE_DIALOG) is set, auto-accept detected template to avoid blocking
+    if [ -t 0 ] && [ -t 1 ] && [ -z "${CI:-}" ] && [ -z "${DCUTIL_NONINTERACTIVE:-}" ] && [ -z "${DCUTIL_DISABLE_DIALOG:-}" ]; then
         echo "Would you like to use the detected template or choose a different one?"
         echo "1) Use detected template: $detected_name"
         echo "2) Choose from available templates"
@@ -879,17 +898,26 @@ wizard_with_official_integration() {
     echo "----------------------------------------"
 
     # Interactive feature selection with categorized menu
-    if select_features_interactive "$features_json"; then
-        # Use the selected features from the interactive selection
-        features_input="$user_selected_features"
+    if [ -n "${CI:-}" ] || [ -n "${DCUTIL_NONINTERACTIVE:-}" ] || [ -n "${DCUTIL_DISABLE_DIALOG:-}" ]; then
+        # In CI/non-interactive mode, auto-select sensible defaults
+        if select_features_interactive "$features_json" "git,common-utils"; then
+            features_input="$user_selected_features"
+        else
+            features_input="git,common-utils"
+        fi
     else
-        # Fallback to original comma-separated input
-        echo "Available features:"
-        echo "$features_json" | jq -r '.[] | "  \(.id) (\(.registry)): \(.name) - \(.description)"'
-        echo ""
-        echo "Enter comma-separated feature IDs to include [git,common-utils]: "
-        read -r features_input
-        features_input=${features_input:-"git,common-utils"}
+        if select_features_interactive "$features_json"; then
+            # Use the selected features from the interactive selection
+            features_input="$user_selected_features"
+        else
+            # Fallback to original comma-separated input
+            echo "Available features:"
+            echo "$features_json" | jq -r '.[] | "  \(.id) (\(.registry)): \(.name) - \(.description)"'
+            echo ""
+            echo "Enter comma-separated feature IDs to include [git,common-utils]: "
+            read -r features_input
+            features_input=${features_input:-"git,common-utils"}
+        fi
     fi
 
     # Build features array (normalize IDs to canonical registry paths)
@@ -918,7 +946,8 @@ wizard_with_official_integration() {
     echo "⚙️  Step 3: Advanced Configuration"
     echo "----------------------------------------"
 
-    if [ -t 0 ] && [ -t 1 ]; then
+    # Use interactive reads only when both stdin/stdout are TTY and not running in CI/non-interactive mode
+    if [ -t 0 ] && [ -t 1 ] && [ -z "${CI:-}" ] && [ -z "${DCUTIL_NONINTERACTIVE:-}" ]; then
         read -r -p "Container name [$(basename "$PROJECT_DIR")]: " container_name
         container_name=${container_name:-$(basename "$PROJECT_DIR")}
 
@@ -947,10 +976,13 @@ wizard_with_official_integration() {
         echo "SSH propagation allows your host SSH keys and agent to be accessible inside the container."
         echo "This is convenient but has security implications."
         echo ""
-        read -r -p "Enable SSH propagation? (y/N): " enable_ssh_propagation
-        enable_ssh_propagation=${enable_ssh_propagation:-N}
-    else
-        enable_ssh_propagation="n"
+        # Prompt only in fully interactive sessions
+        if [ -t 0 ] && [ -t 1 ] && [ -z "${CI:-}" ] && [ -z "${DCUTIL_NONINTERACTIVE:-}" ]; then
+            read -r -p "Enable SSH propagation? (y/N): " enable_ssh_propagation
+            enable_ssh_propagation=${enable_ssh_propagation:-N}
+        else
+            enable_ssh_propagation="n"
+        fi
     fi
 
     # Step 5: VS Code customizations
@@ -958,8 +990,8 @@ wizard_with_official_integration() {
     echo "📦 Step 5: VS Code Customizations"
     echo "----------------------------------------"
 
-    # Ask if user wants to add VS Code customizations
-    if [ -t 0 ] && [ -t 1 ]; then
+    # Ask if user wants to add VS Code customizations (only in fully interactive non-CI sessions)
+    if [ -t 0 ] && [ -t 1 ] && [ -z "${CI:-}" ] && [ -z "${DCUTIL_NONINTERACTIVE:-}" ]; then
         read -r -p "Would you like to add VS Code customizations (extensions, settings)? (Y/n): " add_vscode_customizations
         add_vscode_customizations=${add_vscode_customizations:-Y}
     else

@@ -300,16 +300,26 @@ EOF
     # Ensure features is an object (convert arrays to object map keys)
     features_ensure_object "$tmp" || true
 
+    PY_CLI="$(dirname "${BASH_SOURCE[0]}")/feature_cli.py"
     for id in "${to_add[@]}"; do
-        local key
-        key="ghcr.io/devcontainers/features/$id"
-        jq --arg k "$key" '.features |= (. + {($k): {}})' "$tmp" > "$tmp.jq" && mv "$tmp.jq" "$tmp"
+        if command -v python3 >/dev/null 2>&1 && [ -f "$PY_CLI" ]; then
+            # add short id (e.g., 'git') — Python will canonicalize
+            python3 "$PY_CLI" add_to_config "$tmp" "$id" "{}" || true
+        else
+            local key
+            key="ghcr.io/devcontainers/features/$id"
+            jq --arg k "$key" '.features |= (. + {($k): {}})' "$tmp" > "$tmp.jq" && mv "$tmp.jq" "$tmp"
+        fi
     done
 
     for id in "${to_remove[@]}"; do
-        local key
-        key="ghcr.io/devcontainers/features/$id"
-        jq --arg k "$key" 'del(.features[$k])' "$tmp" > "$tmp.jq" && mv "$tmp.jq" "$tmp"
+        if command -v python3 >/dev/null 2>&1 && [ -f "$PY_CLI" ]; then
+            python3 "$PY_CLI" remove_from_config "$tmp" "$id" || true
+        else
+            local key
+            key="ghcr.io/devcontainers/features/$id"
+            jq --arg k "$key" 'del(.features[$k])' "$tmp" > "$tmp.jq" && mv "$tmp.jq" "$tmp"
+        fi
     done
 
     # Remove duplicate keys that may have been introduced by earlier array conversion

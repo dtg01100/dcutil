@@ -1,0 +1,8 @@
+🧙 Testing dcutil wizard functionality...
+spawn env HOME=/tmp/dcutil_wizard.81D4NP PATH="/tmp/dcutil_wizard.81D4NP/bin:/home/linuxbrew/.linuxbrew/opt/uutils-findutils/libexec/uubin:/home/linuxbrew/.linuxbrew/opt/uutils-diffutils/libexec/uubin:/home/linuxbrew/.linuxbrew/opt/uutils-coreutils/libexec/uubin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/var/home/dlafreniere/.config/Code/User/globalStorage/github.copilot-chat/debugCommand:/var/home/dlafreniere/.config/Code/User/globalStorage/github.copilot-chat/copilotCli:/home/linuxbrew/.linuxbrew/opt/uutils-findutils/libexec/uubin:/home/linuxbrew/.linuxbrew/opt/uutils-diffutils/libexec/uubin:/home/linuxbrew/.linuxbrew/opt/uutils-coreutils/libexec/uubin:/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/var/home/dlafreniere/.local/bin:/var/home/dlafreniere/bin:/usr/lib64/ccache:/usr/local/sbin:/usr/local/bin:/usr/bin:/var/home/dlafreniere/.local/share/JetBrains/Toolbox/scripts:/var/home/dlafreniere/.local/share/JetBrains/Toolbox/scripts" CI=1 DCUTIL_DISABLE_DIALOG=1 ./dcutil init wizard
+[0;34mINFO: Using official devcontainer CLI with dcutil enhancements[0m
+[0;34mINFO: Docker backend validated successfully[0m
+[0;34mINFO: Devcontainer Initialization Wizard (Powered by Official Templates)[0m
+PASS: Wizard launched and header displayed
+📊 Wizard test results: 1/1 passed
+🎉 Wizard test passed!

@@ -9,6 +9,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      DCUTIL_NONINTERACTIVE: "1"
+
+    env:
+      DCUTIL_NONINTERACTIVE: '1'
 
     steps:
     - uses: actions/checkout@v4
@@ -46,10 +51,23 @@ jobs:
         ./minimal_test.sh
         ./targeted_functionality_test.sh
 
-    - name: Test interactive features
+    - name: Test interactive features (expect)
+      continue-on-error: true
       run: |
-        # Skip expect tests in CI as they require test directories
-        echo "Skipping expect tests in CI environment"
+        echo "Running expect-based interactive tests (non-interactive mode enabled)"
+        ./run_expect_tests.sh
+
+    - name: Run deterministic non-interactive wizard test
+      continue-on-error: true
+      run: |
+        echo "Running deterministic non-interactive wizard expect test"
+        expect ./test-wizard-comprehensive/test_wizard_noninteractive.expect
+
+    - name: Run deterministic features add/remove test
+      continue-on-error: true
+      run: |
+        echo "Running deterministic features add/remove expect test"
+        expect ./test-menu/test_features_add_remove.expect
 
     - name: Test project initialization
       run: |
