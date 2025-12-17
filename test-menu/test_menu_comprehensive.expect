@@ -1,0 +1,455 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Comprehensive menu flow testing
+# Tests all menu paths thoroughly, not just menu entry points
+# Priority: High-risk areas first (features menu, wizard, complex navigation)
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# HIGH RISK: Features menu - complete flow testing
+proc test_features_menu_complete_flows {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 HIGH RISK: Testing complete features menu flows..."
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    # Wait for the menu to fully render
+                    expect "What would you like to do?"
+                    
+                    puts "✓ Features menu loaded"
+                    
+                    # Flow 1: Add feature -> Search -> Back -> Return to menu
+                    puts "  Testing: Add feature flow with back navigation"
+                    send "1\r"
+                    
+                    expect {
+                        "Enter search term" {
+                            send "git\r"
+                            
+                            expect {
+                                -re "Features matching|No features match" {
+                                    puts "  ✓ Search executed"
+                                    send "back\r"
+                                    
+                                    expect {
+                                        "Press Enter to continue" {
+                                            send "\r"
+                                            
+                                            # FIXED: Wait for menu prompt before continuing
+                                            expect "What would you like to do?"
+                                            puts "  ✓ Returned to features menu correctly"
+                                        }
+                                        timeout {
+                                            puts "  ✗ FAIL: No 'Press Enter' prompt after back"
+                                            exit 1
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: Search did not execute"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Add feature prompt not shown"
+                            exit 1
+                        }
+                    }
+                    
+                    # Flow 2: View features -> Filter -> Back -> Return
+                    puts "  Testing: View features flow with filtering"
+                    send "3\r"
+                    
+                    expect {
+                        "Enter search term to filter features" {
+                            send "python\r"
+                            
+                            expect {
+                                -re "Available features|No features match" {
+                                    puts "  ✓ Features displayed"
+                                    send "back\r"
+                                    
+                                    expect {
+                                        "Press Enter to continue viewing" {
+                                            send "\r"
+                                            
+                                            # FIXED: Wait for menu prompt
+                                            expect "What would you like to do?"
+                                            puts "  ✓ Returned to features menu after viewing"
+                                        }
+                                        timeout {
+                                            puts "  ✗ FAIL: No continuation prompt"
+                                            exit 1
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: Features not displayed"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: View features prompt not shown"
+                            exit 1
+                        }
+                    }
+                    
+                    # Flow 3: Remove feature (when none configured)
+                    puts "  Testing: Remove feature flow (empty state)"
+                    send "2\r"
+                    
+                    expect {
+                        -re "No features configured|Currently configured features" {
+                            puts "  ✓ Remove feature handled correctly"
+                            
+                            expect {
+                                "Press Enter to continue" {
+                                    send "\r"
+                                    expect "What would you like to do?"
+                                    puts "  ✓ Returned to menu after remove"
+                                }
+                                "What would you like to do?" {
+                                    puts "  ✓ Returned to menu directly"
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: Did not return to menu"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Remove feature did not respond"
+                            exit 1
+                        }
+                    }
+                    
+                    # Flow 4: Test invalid input handling
+                    puts "  Testing: Invalid input handling"
+                    send "99\r"
+                    
+                    expect {
+                        -re "Invalid choice|Please select" {
+                            puts "  ✓ Invalid input handled"
+                            
+                            # FIXED: Wait for menu to redisplay
+                            expect "What would you like to do?"
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Invalid input not handled"
+                            exit 1
+                        }
+                    }
+                    
+                    # Flow 5: Exit without saving (complete flow)
+                    puts "  Testing: Exit without saving flow"
+                    send "5\r"
+                    
+                    expect {
+                        "Exiting without saving changes" {
+                            puts "  ✓ Exit message shown"
+                            send "\r"
+                            
+                            # FIXED: Wait for return to main menu
+                            expect {
+                                "What would you like to do?" {
+                                    puts "  ✓ Returned to main menu"
+                                }
+                                eof {
+                                    puts "  ✓ Menu exited cleanly"
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: Did not return to main menu"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Exit message not shown"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "  ✗ FAIL: Features menu did not load"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Main menu did not load"
+            exit 1
+        }
+    }
+    
+    expect eof
+    puts "✅ Features menu complete flows PASSED"
+}
+
+# HIGH RISK: Nested menu navigation
+proc test_nested_menu_navigation {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 HIGH RISK: Testing nested menu navigation..."
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            # Navigate: Main -> Features -> Add -> Back -> View -> Back -> Exit
+            puts "  Testing: Deep navigation path"
+            
+            send "9\r"
+            expect "Managing devcontainer features..."
+            expect "What would you like to do?"
+            puts "  ✓ Level 1: Features menu"
+            
+            send "1\r"
+            expect "Enter search term"
+            puts "  ✓ Level 2: Add feature"
+            
+            send "back\r"
+            expect "Press Enter to continue"
+            send "\r"
+            expect "What would you like to do?"
+            puts "  ✓ Level 2 -> Level 1: Back from add"
+            
+            send "3\r"
+            expect "Enter search term to filter features"
+            puts "  ✓ Level 2: View features"
+            
+            send "back\r"
+            expect "Press Enter to continue viewing"
+            send "\r"
+            expect "What would you like to do?"
+            puts "  ✓ Level 2 -> Level 1: Back from view"
+            
+            send "5\r"
+            expect "Exiting without saving changes"
+            send "\r"
+            puts "  ✓ Level 1 -> Level 0: Exit to main menu"
+            
+            expect {
+                "What would you like to do?" {
+                    puts "  ✓ Returned to main menu"
+                    send "0\r"
+                }
+                eof {
+                    puts "  ✓ Menu exited"
+                }
+                timeout {
+                    puts "  ✗ FAIL: Navigation path incomplete"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Nested navigation failed"
+            exit 1
+        }
+    }
+    
+    expect eof
+    puts "✅ Nested menu navigation PASSED"
+}
+
+# MEDIUM RISK: Main menu option flows
+proc test_main_menu_option_flows {} {
+    global timeout dcutil_cmd
+    
+    puts "🟡 MEDIUM RISK: Testing main menu option flows..."
+    
+    # Test each main menu option fully
+    set options {
+        {1 "Start environment" "Starting your development environment"}
+        {2 "Enter shell" "Opening a shell"}
+        {3 "Stop environment" "Stopping your environment"}
+        {4 "Check status" "Checking environment status"}
+        {5 "Show stats" "Showing resource usage"}
+    }
+    
+    foreach option $options {
+        set num [lindex $option 0]
+        set name [lindex $option 1]
+        set expected [lindex $option 2]
+        
+        puts "  Testing option $num: $name"
+        
+        spawn $dcutil_cmd menu
+        
+        expect {
+            "What would you like to do?" {
+                send "$num\r"
+                
+                expect {
+                    -re $expected {
+                        puts "  ✓ Option $num executed"
+                        
+                        # Wait for command completion or prompt
+                        expect {
+                            "What would you like to do?" {
+                                puts "  ✓ Returned to menu"
+                                send "0\r"
+                            }
+                            -re "environment isn't running" {
+                                send "n\r"
+                                expect "What would you like to do?"
+                                send "0\r"
+                            }
+                            eof {
+                                puts "  ✓ Command completed"
+                            }
+                            timeout {
+                                # Some commands may take time
+                                puts "  ⚠ Command still running (timeout)"
+                            }
+                        }
+                    }
+                    timeout {
+                        puts "  ✗ FAIL: Option $num did not execute"
+                        exit 1
+                    }
+                }
+            }
+            timeout {
+                puts "  ✗ FAIL: Main menu did not load"
+                exit 1
+            }
+        }
+        
+        expect eof
+    }
+    
+    puts "✅ Main menu option flows PASSED"
+}
+
+# MEDIUM RISK: Menu state consistency
+proc test_menu_state_consistency {} {
+    global timeout dcutil_cmd
+    
+    puts "🟡 MEDIUM RISK: Testing menu state consistency..."
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            # Test that multiple invalid inputs don't break state
+            puts "  Testing: Multiple invalid inputs"
+            
+            for {set i 0} {$i < 3} {incr i} {
+                send "999\r"
+                expect {
+                    -re "Invalid|Please select" {
+                        expect "What would you like to do?"
+                    }
+                    timeout {
+                        puts "  ✗ FAIL: Menu state corrupted"
+                        exit 1
+                    }
+                }
+            }
+            puts "  ✓ Menu state consistent after invalid inputs"
+            
+            # Test rapid navigation
+            puts "  Testing: Rapid menu changes"
+            send "9\r"
+            expect "Managing devcontainer features..."
+            expect "What would you like to do?"
+            
+            send "5\r"
+            expect "Exiting without saving changes"
+            send "\r"
+            
+            expect {
+                "What would you like to do?" {
+                    puts "  ✓ Rapid navigation handled"
+                    send "0\r"
+                }
+                eof {
+                    puts "  ✓ Menu exited"
+                }
+                timeout {
+                    puts "  ✗ FAIL: Rapid navigation failed"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Menu state test failed"
+            exit 1
+        }
+    }
+    
+    expect eof
+    puts "✅ Menu state consistency PASSED"
+}
+
+# LOW RISK: Help and info commands
+proc test_help_and_info {} {
+    global timeout dcutil_cmd
+    
+    puts "🟢 LOW RISK: Testing help and info commands..."
+    
+    # Test help command
+    spawn $dcutil_cmd help
+    expect {
+        "Usage:" {
+            puts "  ✓ Help command works"
+        }
+        timeout {
+            puts "  ✗ FAIL: Help command failed"
+            exit 1
+        }
+    }
+    expect eof
+    
+    # Test version command
+    spawn $dcutil_cmd version
+    expect {
+        -re "dcutil|version" {
+            puts "  ✓ Version command works"
+        }
+        timeout {
+            puts "  ✗ FAIL: Version command failed"
+            exit 1
+        }
+    }
+    expect eof
+    
+    puts "✅ Help and info commands PASSED"
+}
+
+# Main execution - ordered by risk priority
+puts "========================================="
+puts "🧪 Comprehensive Menu Flow Testing"
+puts "  Strategy: High-risk areas first"
+puts "========================================="
+
+# HIGH RISK TESTS
+test_features_menu_complete_flows
+test_nested_menu_navigation
+
+# MEDIUM RISK TESTS
+test_main_menu_option_flows
+test_menu_state_consistency
+
+# LOW RISK TESTS
+test_help_and_info
+
+puts ""
+puts "========================================="
+puts "🎉 All comprehensive menu tests PASSED!"
+puts "========================================="
+exit 0

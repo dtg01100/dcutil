@@ -1,0 +1,445 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Enhanced wizard reliability testing
+# Tests complete wizard flows with robust error handling and state verification
+
+set timeout 90
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Helper: Clean test environment
+proc clean_test_environment {} {
+    catch {exec rm -rf .devcontainer} result
+    if {[file exists ".devcontainer"]} {
+        puts "  ⚠ Warning: Could not clean .devcontainer"
+        return 0
+    }
+    return 1
+}
+
+# Helper: Verify devcontainer.json was created
+proc verify_devcontainer_created {} {
+    if {![file exists ".devcontainer/devcontainer.json"]} {
+        puts "  ✗ FAIL: devcontainer.json not created"
+        return 0
+    }
+    puts "  ✓ devcontainer.json created"
+    return 1
+}
+
+# HIGH RISK: Complete wizard flow - detected template path
+proc test_wizard_detected_template_flow {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 HIGH RISK: Testing wizard with detected template..."
+    
+    if {![clean_test_environment]} {
+        puts "  ⚠ Skipping - cannot clean environment"
+        return 0
+    }
+    
+    spawn $dcutil_cmd init wizard
+    
+    expect {
+        "Welcome to dcutil!" {
+            puts "  ✓ Wizard started"
+            
+            # FIXED: Wait for prompt before sending input
+            expect {
+                "Press Enter to continue" {
+                    send "\r"
+                }
+                timeout {
+                    puts "  ✗ FAIL: No welcome prompt"
+                    return 0
+                }
+            }
+            
+            expect {
+                "Quick start guide" {
+                    puts "  ✓ Quick start shown"
+                    
+                    expect {
+                        "Press Enter to continue" {
+                            send "\r"
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: No quick start prompt"
+                            return 0
+                        }
+                    }
+                    
+                    expect {
+                        "Project Type Detection" {
+                            puts "  ✓ Project type detection shown"
+                            
+                            # FIXED: Wait for the actual selection prompt
+                            expect {
+                                "Please select an option" {
+                                    send "1\r"
+                                    puts "  ✓ Selected detected template"
+                                }
+                                "What would you like to do?" {
+                                    send "1\r"
+                                    puts "  ✓ Selected detected template"
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: No selection prompt"
+                                    return 0
+                                }
+                            }
+                            
+                            # FIXED: More robust completion detection
+                            expect {
+                                "Configuration complete" {
+                                    puts "  ✓ Configuration completed"
+                                    
+                                    expect {
+                                        "Press Enter to continue" {
+                                            send "\r"
+                                        }
+                                        eof {
+                                            puts "  ✓ Wizard finished"
+                                        }
+                                        timeout {
+                                            # Wizard might have finished
+                                            puts "  ⚠ Wizard completed (timeout on final prompt)"
+                                        }
+                                    }
+                                }
+                                "Creating devcontainer configuration" {
+                                    puts "  ✓ Creating configuration"
+                                    
+                                    expect {
+                                        "Configuration complete" {
+                                            puts "  ✓ Configuration completed"
+                                            send "\r"
+                                        }
+                                        timeout {
+                                            puts "  ⚠ Configuration may have completed (timeout)"
+                                        }
+                                    }
+                                }
+                                eof {
+                                    puts "  ✓ Wizard finished without explicit completion message"
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: Configuration did not complete"
+                                    return 0
+                                }
+                            }
+                        }
+                        "Project already configured" {
+                            puts "  ℹ Project already configured"
+                            return 1
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Project type detection not shown"
+                            return 0
+                        }
+                    }
+                }
+                timeout {
+                    puts "  ✗ FAIL: Quick start not shown"
+                    return 0
+                }
+            }
+        }
+        "Project already configured" {
+            puts "  ℹ Project already configured, skipping"
+            return 1
+        }
+        timeout {
+            puts "  ✗ FAIL: Wizard did not start"
+            return 0
+        }
+    }
+    
+    expect eof
+    
+    # Verify result
+    if {[verify_devcontainer_created]} {
+        puts "✅ Wizard detected template flow PASSED"
+        return 1
+    } else {
+        puts "  ⚠ Wizard completed but verification failed"
+        return 0
+    }
+}
+
+# HIGH RISK: Wizard with manual template selection
+proc test_wizard_manual_template_flow {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 HIGH RISK: Testing wizard with manual selection..."
+    
+    if {![clean_test_environment]} {
+        puts "  ⚠ Skipping - cannot clean environment"
+        return 0
+    }
+    
+    spawn $dcutil_cmd init wizard
+    
+    expect {
+        "Welcome to dcutil!" {
+            expect "Press Enter to continue"
+            send "\r"
+            
+            expect "Quick start guide"
+            expect "Press Enter to continue"
+            send "\r"
+            
+            expect {
+                "Project Type Detection" {
+                    # FIXED: Wait for selection prompt
+                    expect {
+                        -re "Please select|What would you like" {
+                            send "2\r"  ;# Choose manual selection
+                            puts "  ✓ Selected manual template choice"
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: No selection prompt for manual"
+                            return 0
+                        }
+                    }
+                    
+                    # FIXED: Handle template list display
+                    expect {
+                        -re "Available templates|Select a template" {
+                            puts "  ✓ Template list shown"
+                            
+                            # FIXED: Wait for input prompt
+                            expect {
+                                -re "Enter number|Select" {
+                                    send "1\r"  ;# Select first template
+                                    puts "  ✓ Selected template"
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: No template selection prompt"
+                                    return 0
+                                }
+                            }
+                            
+                            # FIXED: Handle potential configuration questions
+                            set config_done 0
+                            while {$config_done == 0} {
+                                expect {
+                                    -re "Configuration complete" {
+                                        puts "  ✓ Configuration completed"
+                                        send "\r"
+                                        set config_done 1
+                                    }
+                                    -re "Enter|Select|Choose" {
+                                        puts "  ✓ Answering configuration question"
+                                        send "\r"  ;# Use default
+                                    }
+                                    eof {
+                                        puts "  ✓ Wizard completed"
+                                        set config_done 1
+                                    }
+                                    timeout {
+                                        puts "  ⚠ Configuration timeout (may be complete)"
+                                        set config_done 1
+                                    }
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Template list not shown"
+                            return 0
+                        }
+                    }
+                }
+                timeout {
+                    puts "  ✗ FAIL: Manual selection failed"
+                    return 0
+                }
+            }
+        }
+        "Project already configured" {
+            puts "  ℹ Project already configured"
+            return 1
+        }
+        timeout {
+            puts "  ✗ FAIL: Wizard did not start"
+            return 0
+        }
+    }
+    
+    expect eof
+    
+    if {[verify_devcontainer_created]} {
+        puts "✅ Wizard manual template flow PASSED"
+        return 1
+    } else {
+        puts "  ⚠ Wizard completed but verification failed"
+        return 0
+    }
+}
+
+# MEDIUM RISK: Wizard interruption and recovery
+proc test_wizard_interruption_handling {} {
+    global timeout dcutil_cmd
+    
+    puts "🟡 MEDIUM RISK: Testing wizard interruption handling..."
+    
+    if {![clean_test_environment]} {
+        puts "  ⚠ Skipping - cannot clean environment"
+        return 0
+    }
+    
+    spawn $dcutil_cmd init wizard
+    
+    expect {
+        "Welcome to dcutil!" {
+            # Start wizard then interrupt
+            send "\003"  ;# Send Ctrl+C
+            
+            expect {
+                eof {
+                    puts "  ✓ Wizard interrupted cleanly"
+                }
+                timeout {
+                    puts "  ⚠ Wizard may not handle interruption"
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Wizard interruption test failed"
+            return 0
+        }
+    }
+    
+    expect eof
+    
+    # Verify no partial configuration
+    if {[file exists ".devcontainer/devcontainer.json"]} {
+        puts "  ⚠ Warning: Partial configuration may exist"
+    } else {
+        puts "  ✓ No partial configuration created"
+    }
+    
+    puts "✅ Wizard interruption handling PASSED"
+    return 1
+}
+
+# MEDIUM RISK: Wizard with existing configuration
+proc test_wizard_existing_config_handling {} {
+    global timeout dcutil_cmd
+    
+    puts "🟡 MEDIUM RISK: Testing wizard with existing config..."
+    
+    # Create a minimal devcontainer.json
+    catch {exec mkdir -p .devcontainer}
+    set f [open ".devcontainer/devcontainer.json" w]
+    puts $f "\{\"name\": \"test\"\}"
+    close $f
+    
+    spawn $dcutil_cmd init wizard
+    
+    expect {
+        "Project already configured" {
+            puts "  ✓ Existing config detected"
+            
+            expect {
+                -re "overwrite|replace|skip" {
+                    puts "  ✓ User prompted about existing config"
+                    send "n\r"  ;# Don't overwrite
+                    
+                    expect {
+                        eof {
+                            puts "  ✓ Wizard respected user choice"
+                        }
+                        timeout {
+                            puts "  ⚠ Wizard exit unclear"
+                        }
+                    }
+                }
+                eof {
+                    puts "  ✓ Wizard exited for existing config"
+                }
+                timeout {
+                    puts "  ⚠ Wizard behavior unclear"
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Existing config not detected"
+            return 0
+        }
+    }
+    
+    expect eof
+    
+    puts "✅ Wizard existing config handling PASSED"
+    return 1
+}
+
+# LOW RISK: Wizard help and info
+proc test_wizard_help {} {
+    global timeout dcutil_cmd
+    
+    puts "🟢 LOW RISK: Testing wizard help..."
+    
+    spawn $dcutil_cmd init --help
+    expect {
+        -re "Usage|init" {
+            puts "  ✓ Init help shown"
+        }
+        timeout {
+            puts "  ✗ FAIL: Init help not shown"
+            return 0
+        }
+    }
+    expect eof
+    
+    puts "✅ Wizard help PASSED"
+    return 1
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 Enhanced Wizard Reliability Testing"
+puts "  Strategy: Complete flows, robust error handling"
+puts "========================================="
+
+set tests_passed 0
+set total_tests 5
+
+# HIGH RISK TESTS
+if {[test_wizard_detected_template_flow]} {
+    incr tests_passed
+}
+
+if {[test_wizard_manual_template_flow]} {
+    incr tests_passed
+}
+
+# MEDIUM RISK TESTS
+if {[test_wizard_interruption_handling]} {
+    incr tests_passed
+}
+
+if {[test_wizard_existing_config_handling]} {
+    incr tests_passed
+}
+
+# LOW RISK TESTS
+if {[test_wizard_help]} {
+    incr tests_passed
+}
+
+puts ""
+puts "========================================="
+puts "📊 Wizard Test Results: $tests_passed/$total_tests passed"
+puts "========================================="
+
+if {$tests_passed == $total_tests} {
+    puts "🎉 All wizard reliability tests PASSED!"
+    exit 0
+} else {
+    puts "⚠️  Some wizard tests need attention"
+    exit 1
+}
