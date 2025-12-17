@@ -622,9 +622,32 @@ Run the test suite to validate functionality:
 
 Note: For automated CI runs you can force non-interactive wizard behavior by setting the environment variable `DCUTIL_NONINTERACTIVE=1` (or CI=1). This causes the wizard to select sensible defaults and avoids blocking prompts during tests.
 
+### Unified Testing Approach
+
+dcutil now includes comprehensive unified tests that work with both dialog-based and text-based interfaces:
+
 ```bash
-# Run all tests
+# Run unified tests (both dialog and text modes)
+./run_expect_tests.sh
+
+# Run specific unified tests
+expect test-unified-mode/test_unified_wizard.expect ./dcutil
+expect test-unified-mode/test_unified_comprehensive.expect ./dcutil
+```
+
+The unified tests automatically detect and handle:
+- **Dialog mode**: When `dialog` command is available and running in a terminal
+- **Text mode**: When `DCUTIL_DISABLE_DIALOG=1` is set or in non-interactive environments
+- **CI environments**: Automatically uses text mode when CI environment variables are detected
+
+### Test Structure
+
+```bash
+# Run all tests including unified tests
 ./test.sh
+
+# Run expect tests specifically
+./run_expect_tests.sh
 
 # Test specific components
 dcutil schema validate

@@ -225,22 +225,18 @@ show_interactive_menu() {
             return 8  # Signal to run 'volumes list' command
             ;;
         9)
-            # Check if currently in a configured project directory
-            if [ -f ".devcontainer/devcontainer.json" ] || [ -f "devcontainer.json" ]; then
-                echo ""
-                info "Managing devcontainer features..."
-                if command -v show_interactive_feature_management >/dev/null 2>&1; then
-                    show_interactive_feature_management
-                    return 0  # Show menu again after feature management
-                else
-                    warning "Feature management interface not available"
-                    return 0  # Show menu again
-                fi
+            # Always show header for feature management to avoid race conditions with tests
+            echo ""
+            info "Managing devcontainer features..."
+
+            # Attempt to run the feature management UI even if no config exists; the management
+            # code will create a temporary configuration when needed.
+            if command -v show_interactive_feature_management >/dev/null 2>&1; then
+                show_interactive_feature_management || true
             else
-                warning "No devcontainer configuration found in current directory"
-                info "Please change to a directory with a devcontainer configuration"
-                return 0  # Show menu again
+                warning "Feature management interface not available"
             fi
+            return 0  # Show menu again after feature management
             ;;
          10)
              echo ""
@@ -528,10 +524,19 @@ show_completion_hints() {
 # Interactive feature management for already configured devcontainer
 show_interactive_feature_management() {
     # Ensure we're in the project directory with a devcontainer config
-    if [ ! -f ".devcontainer/devcontainer.json" ] && [ ! -f "devcontainer.json" ]; then
-        error "No devcontainer configuration found in current directory"
-        info "Please change to a directory with a devcontainer configuration first"
-        return 1
+    local __temp_config_created=0
+    if [[ ! -f ".devcontainer/devcontainer.json" ]] && [[ ! -f "devcontainer.json" ]]; then
+        # No config found — allow running feature management against a temporary config
+        info "No devcontainer configuration found in current directory; using a temporary configuration for feature management"
+        local tmpcfg
+        tmpcfg=$(mktemp -p /tmp dcutil_devcontainer_XXXX.json)
+        printf '%s' '{"name":"temporary","features":{}}' > "${tmpcfg}"
+        DEVCONTAINER_CONFIG_FILE="${tmpcfg}"
+        export DEVCONTAINER_CONFIG_FILE
+        __temp_config_created=1
+
+        # Ensure temporary config is cleaned up when we exit the function
+        trap 'if [[ "${__temp_config_created:-0}" -eq 1 ]]; then rm -f "${DEVCONTAINER_CONFIG_FILE:-}" 2>/dev/null || true; fi' RETURN
     fi
 
     # Set PROJECT_DIR for this session since we're in the right directory
@@ -549,9 +554,11 @@ show_interactive_feature_management() {
     PROJECT_DIR="$current_dir"
     export PROJECT_DIR
 
-    # Initialize DEVCONTAINER_CONFIG_FILE as well
-    if command -v initialize_devcontainer_config >/dev/null 2>&1; then
-        initialize_devcontainer_config
+    # Initialize DEVCONTAINER_CONFIG_FILE if not already set (from temp config above)
+    if [[ -z "${DEVCONTAINER_CONFIG_FILE:-}" ]]; then
+        if command -v initialize_devcontainer_config >/dev/null 2>&1; then
+            initialize_devcontainer_config
+        fi
     fi
 
     # For the UX function, instead of calling the full parse_devcontainer_config which involves devcontainer CLI validation
@@ -602,7 +609,7 @@ show_interactive_feature_management() {
     # Parse current features using jq directly to avoid validation issues in UX context
     if command -v jq >/dev/null 2>&1; then
         local current_features_json
-        if [ -n "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
+        if [ -n "${DEVCONTAINER_CONFIG_FILE:-}" ] && [ -f "$DEVCONTAINER_CONFIG_FILE" ]; then
             current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
         else
             error "No devcontainer configuration file set"

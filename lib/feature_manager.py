@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import subprocess
-from pathlib import Path
 
 
 def get_devcontainer_config_path(project_dir):
@@ -64,8 +63,6 @@ def feature_exists_in_devcontainer(config_path, feature_id):
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 try:
     from json_utils import (
-        read_devcontainer_config,
-        write_devcontainer_config,
         has_feature as json_has_feature,
         add_feature as json_add_feature
     )
@@ -171,7 +168,7 @@ def suggest_feature_for_agent(agent, project_dir):
     print()
     
     try:
-        response = input(f"Add feature to devcontainer? (Recommended) [Y/n]: ").strip().lower()
+        response = input("Add feature to devcontainer? (Recommended) [Y/n]: ").strip().lower()
     except EOFError:
         # Default to 'n' if no input (for non-interactive environments)
         response = 'n'

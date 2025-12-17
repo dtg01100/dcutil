@@ -6,7 +6,6 @@ JSON utilities for dcutil - centralizing complex JSON operations that are error-
 import json
 import sys
 import os
-from pathlib import Path
 
 
 def read_devcontainer_config(config_path):

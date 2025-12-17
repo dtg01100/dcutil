@@ -3,7 +3,7 @@
 # Devcontainer CLI Interface for dcutil
 # Provides a bridge to the official devcontainer CLI while adding enhanced UX
 
-# shellcheck disable=SC1091
+# shellcheck disable=SC1091,SC2154
 source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Global variable to cache detected backend for the current project
@@ -14,12 +14,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 # Verify devcontainer CLI version compatibility
 verify_devcontainer_cli() {
     if ! command -v devcontainer >/dev/null 2>&1; then
-        error_exit "devcontainer CLI not found. dcutil requires devcontainer CLI as a hard dependency. Please install it with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
+        error_exit "devcontainer CLI not found. dcutil requires devcontainer CLI as a hard dependency. Please install it with: brew install devcontainer" "${EXIT_DEVCONTAINER_ERROR}"
     fi
 
     local version
     version=$(devcontainer --version 2>/dev/null)
-    info "Using official devcontainer CLI version: $version"
+    info "Using official devcontainer CLI version: ${version}"
 
     # Check minimum version requirement if needed
     return 0
@@ -33,16 +33,16 @@ execute_devcontainer_cli() {
     # Verify CLI is available before executing
     verify_devcontainer_cli
 
-    info "Executing: devcontainer $subcommand $*"
-    devcontainer "$subcommand" "$@"
+    info "Executing: devcontainer ${subcommand} $*"
+    devcontainer "${subcommand}" "$@"
 }
 
 # Wrapper for devcontainer up
 devcontainer_cli_up() {
-    local project_dir="${1:-$PROJECT_DIR}"
+    local project_dir="${1:-${PROJECT_DIR}}"
     shift 1  # Remove project_dir from arguments
     
-    if [ -z "$project_dir" ]; then
+    if [[ -z "${project_dir}" ]]; then
         project_dir="$(pwd)"
     fi
     
@@ -50,12 +50,12 @@ devcontainer_cli_up() {
     
     # Find devcontainer.json
     local config_path=""
-    local workspace_folder="$project_dir"
+    local workspace_folder="${project_dir}"
     
-    if [ -f "$project_dir/.devcontainer/devcontainer.json" ]; then
-        config_path="$project_dir/.devcontainer/devcontainer.json"
-    elif [ -f "$project_dir/.devcontainer.json" ]; then
-        config_path="$project_dir/.devcontainer.json"
+    if [[ -f "${project_dir}/.devcontainer/devcontainer.json" ]]; then
+        config_path="${project_dir}/.devcontainer/devcontainer.json"
+    elif [[ -f "${project_dir}/.devcontainer.json" ]]; then
+        config_path="${project_dir}/.devcontainer.json"
     else
         # If no config exists, we can create a basic one or use default behavior
         config_path=""
@@ -66,11 +66,11 @@ devcontainer_cli_up() {
     local args=()
     
     # Add workspace folder
-    args+=("--workspace-folder" "$workspace_folder")
+    args+=("--workspace-folder" "${workspace_folder}")
     
     # Add config if found
-    if [ -n "$config_path" ] && [ -f "$config_path" ]; then
-        args+=("--config" "$config_path")
+    if [[ -n "${config_path}" ]] && [[ -f "${config_path}" ]]; then
+        args+=("--config" "${config_path}")
     fi
     
     # Add any additional arguments passed
@@ -88,7 +88,7 @@ devcontainer_cli_up() {
 devcontainer_cli_down() {
     local project_dir="${1:-$PROJECT_DIR}"
     
-    if [ -z "$project_dir" ]; then
+    if [[ -z "${project_dir}" ]]; then
         project_dir="$(pwd)"
     fi
     
@@ -103,22 +103,26 @@ devcontainer_cli_down() {
     
     # Use detected backend to stop the specific container
     # The devcontainer CLI may not have a direct down command
-    if [ -n "$container_name" ]; then
+    if [[ -n "${container_name}" ]]; then
         local backend_cmd="docker"
-        if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+        if [[ "${DETECTED_BACKEND:-}" == "podman" ]] && command -v podman >/dev/null 2>&1; then
             backend_cmd="podman"
         fi
-        if $backend_cmd ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
-            if $backend_cmd stop "$container_name" && $backend_cmd rm "$container_name"; then
-                success "Container stopped and removed: $container_name"
+        if "${backend_cmd}" ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
+            if "${backend_cmd}" stop "${container_name}"; then
+                if "${backend_cmd}" rm "${container_name}"; then
+                    success "Container stopped and removed: ${container_name}"
+                else
+                    error_exit "Failed to remove container: ${container_name}" "${EXIT_DEVCONTAINER_ERROR}"
+                fi
             else
-                error_exit "Failed to stop container: $container_name" "$EXIT_DEVCONTAINER_ERROR"
+                error_exit "Failed to stop container: ${container_name}" "${EXIT_DEVCONTAINER_ERROR}"
             fi
         else
-            info "Container $container_name not running"
+            info "Container ${container_name} not running"
         fi
     else
-        info "No container found for project $project_dir"
+        info "No container found for project ${project_dir}"
     fi
 }
 
@@ -129,18 +133,18 @@ devcontainer_cli_build() {
     
     verify_devcontainer_cli
     
-    if [ ! -d "$project_dir" ]; then
-        error_exit "Project directory does not exist: $project_dir" "$EXIT_CONFIG_ERROR"
+    if [[ ! -d "${project_dir}" ]]; then
+        error_exit "Project directory does not exist: ${project_dir}" "${EXIT_CONFIG_ERROR}"
     fi
     
     # Find devcontainer.json
     local config_path=""
-    if [ -f "$project_dir/.devcontainer/devcontainer.json" ]; then
-        config_path="$project_dir/.devcontainer/devcontainer.json"
-    elif [ -f "$project_dir/.devcontainer.json" ]; then
-        config_path="$project_dir/.devcontainer.json"
+    if [[ -f "${project_dir}/.devcontainer/devcontainer.json" ]]; then
+        config_path="${project_dir}/.devcontainer/devcontainer.json"
+    elif [[ -f "${project_dir}/.devcontainer.json" ]]; then
+        config_path="${project_dir}/.devcontainer.json"
     else
-        error_exit "No devcontainer.json found in project directory $project_dir" "$EXIT_CONFIG_ERROR"
+        error_exit "No devcontainer.json found in project directory ${project_dir}" "${EXIT_CONFIG_ERROR}"
     fi
     
     # Build arguments
@@ -252,16 +256,16 @@ execute_command_in_container_via_cli() {
 ## Allow positional arg use when callers provide it
 # shellcheck disable=SC2120
 get_current_devcontainer_name() {
-    local project_dir="${1:-$PROJECT_DIR}"
-    if [ -z "$project_dir" ]; then
+    local project_dir="${1:-${PROJECT_DIR}}"
+    if [[ -z "${project_dir}" ]]; then
         project_dir="$(pwd)"
     fi
 
     # Use project directory to generate container name (matching devcontainer CLI convention)
     # The devcontainer CLI uses a consistent naming scheme based on the workspace path
     local hash
-    hash=$(python3 -c "import hashlib; print(hashlib.md5('$project_dir'.encode()).hexdigest())")
-    echo "devcontainer_$(basename "$project_dir")_${hash:0:8}"
+    hash=$(python3 -c "import hashlib; print(hashlib.md5('${project_dir}'.encode()).hexdigest())")
+    echo "devcontainer_$(basename "${project_dir}")_${hash:0:8}"
 }
 
 # Enhanced dcutil command that wraps official CLI with better UX
@@ -269,23 +273,23 @@ enhanced_dcutil_command() {
     local subcommand="$1"
     shift
 
-    case "$subcommand" in
+    case "${subcommand}" in
         "up")
             info "Starting devcontainer with enhanced UX..."
-            devcontainer_cli_up "$PROJECT_DIR" "$@"
+            devcontainer_cli_up "${PROJECT_DIR}" "$@"
             ;;
         "down")
             info "Stopping devcontainer with enhanced UX..."
-            devcontainer_cli_down "$PROJECT_DIR"
+            devcontainer_cli_down "${PROJECT_DIR}"
             ;;
         "build")
             info "Building devcontainer image with enhanced UX..."
-            devcontainer_cli_build "$PROJECT_DIR" "$@"
+            devcontainer_cli_build "${PROJECT_DIR}" "$@"
             ;;
         "run")
             # Use devcontainer CLI exec for run commands
             info "Executing in container with dcutil's enhanced UX..."
-            execute_command_in_devcontainer "$PROJECT_DIR" "$@"
+            execute_command_in_devcontainer "${PROJECT_DIR}" "$@"
             ;;
         *)
             # For other commands, continue with dcutil implementation

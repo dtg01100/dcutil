@@ -27,7 +27,7 @@ test_pass() {
     ((TESTS_RUN++))
 }
 
-test_fail() { echo "FAILED: $1" >test_fail() {2; 
+test_fail() {
     echo -e "${RED}❌ FAIL${NC}: $1"
     ((TESTS_FAILED++))
     ((TESTS_RUN++))

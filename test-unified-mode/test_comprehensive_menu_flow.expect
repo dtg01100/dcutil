@@ -1,0 +1,59 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Comprehensive menu flow test
+# Tests key menu options and flows for both dialog and text modes
+
+set timeout 30
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+proc test_comprehensive_menu_flow {} {
+    global dcutil_cmd
+    
+    puts "🧪 Comprehensive Menu Flow Test"
+    puts "=================================="
+    puts "Testing key menu options in both modes"
+    puts ""
+    
+    # Test key menu options in both modes
+    foreach {mode_name env_var} {DIALOG "" TEXT "DCUTIL_DISABLE_DIALOG=1"} {
+        puts "\n🎯 Testing $mode_name mode:"
+        puts "=========================="
+        
+        # Test menu navigation
+        if {$env_var eq ""} {
+            spawn $dcutil_cmd menu
+        } else {
+            spawn env $env_var $dcutil_cmd menu
+        }
+        
+        # Test help option
+        expect "What would you like to do?"
+        puts "  Testing help option (10)"
+        send "10\r"
+        
+        expect "Usage:"
+        puts "    ✓ Help displayed"
+        send "\r"
+        
+        expect "Press Enter to continue:"
+        send "\r"
+        
+        # Exit menu
+        expect "What would you like to do?"
+        puts "  Testing exit option (0)"
+        send "0\r"
+        expect "Goodbye!"
+        puts "    ✓ Menu exit works"
+    }
+    
+    puts "\n🎉 Comprehensive menu flow test completed!"
+    puts "✅ PASS: Key menu options tested successfully"
+}
+
+# Main execution
+test_comprehensive_menu_flow
+
+puts "\n🎊 Comprehensive flow test completed successfully!"

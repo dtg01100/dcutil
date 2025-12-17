@@ -1,0 +1,111 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Dialog mode wizard testing
+# Tests wizard functionality with dialog interface
+
+set timeout 120
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test dialog mode wizard functionality
+proc test_wizard_dialog_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing dcutil wizard in DIALOG mode..."
+    
+    # Prepare isolated environment
+    set temp_home [exec mktemp -d /tmp/dcutil_wizard_dialog.XXXXXX]
+    set project_dir "$temp_home/project"
+    file mkdir "$project_dir/.devcontainer"
+    
+    # Create a devcontainer CLI stub that writes a config file when invoked with templates apply
+    set temp_bin "$temp_home/bin"
+    file mkdir $temp_bin
+    set dev_stub "$temp_bin/devcontainer"
+    set fh [open $dev_stub "w"]
+    puts $fh "#!/bin/bash"
+    puts $fh "if [[ \"\$1\" == \"templates\" && \"\$2\" == \"apply\" ]]; then"
+    puts $fh "  echo '{\"name\":\"test\",\"image\":\"ubuntu:22.04\"}' > .devcontainer/devcontainer.json"
+    puts $fh "  echo 'Template applied successfully'"
+    puts $fh "  exit 0"
+    puts $fh "fi"
+    puts $fh "echo 'devcontainer CLI stub'"
+    close $fh
+    exec chmod +x $dev_stub
+    
+    # Run wizard in dialog mode
+    spawn env HOME=$temp_home PATH="$temp_bin:$env(PATH)" CI=1 $dcutil_cmd init wizard
+    
+    expect {
+        "Devcontainer Initialization Wizard" {
+            puts "✓ Wizard launched in dialog mode"
+            
+            # Wait for project type detection
+            expect {
+                "Automatically detected:" {
+                    puts "✓ Project type detected in dialog mode"
+                    
+                    # Use detected template (press Enter for default option 1)
+                    send "\r"
+                    
+                    expect {
+                        "Feature Selection" {
+                            puts "✓ Feature selection reached in dialog mode"
+                            
+                            # Skip features (press Enter for default option 4)
+                            send "\r"
+                            
+                            expect {
+                                "Advanced Configuration" {
+                                    puts "✓ Advanced configuration reached in dialog mode"
+                                    
+                                    # Use defaults (press Enter)
+                                    send "\r"
+                                    
+                                    expect {
+                                        "Template applied successfully" {
+                                            puts "✓ Template applied successfully in dialog mode"
+                                        }
+                                        timeout {
+                                            puts "✗ FAIL: Template application failed in dialog mode"
+                                            exit 1
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    puts "✗ FAIL: Advanced configuration failed in dialog mode"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "✗ FAIL: Feature selection failed in dialog mode"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "✗ FAIL: Project type detection failed in dialog mode"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "✗ FAIL: Wizard failed to launch in dialog mode"
+            exit 1
+        }
+    }
+    
+    puts "✅ Dialog mode wizard tests PASSED"
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 Dialog Mode Wizard Testing"
+puts "========================================="
+
+test_wizard_dialog_mode
+
+puts "🎉 Dialog mode wizard tests completed successfully!"

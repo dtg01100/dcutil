@@ -4,7 +4,7 @@
 # Gracefully handles missing tests and timeouts
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR" || exit
 
 echo "🧪 Running dcutil expect tests..."
 echo "=================================="
@@ -99,6 +99,18 @@ if [ -d "test-wizard-custom" ]; then
     run_expect_test "Wizard Custom Image" "test_wizard_custom.expect" "test-wizard-custom" 60
 else
     echo "Skipping wizard custom test (test-wizard-custom directory not found)"
+fi
+
+# Test unified mode (both dialog and text)
+if [ -d "test-unified-mode" ]; then
+    run_expect_test "Unified Wizard" "test_unified_wizard.expect" "test-unified-mode" 120
+    run_expect_test "Unified Comprehensive" "test_unified_comprehensive.expect" "test-unified-mode" 180
+    run_expect_test "Visual Mode Comparison" "test_visual_mode_comparison.expect" "test-unified-mode" 90
+    run_expect_test "Comprehensive Menu Flow" "test_comprehensive_menu_flow.expect" "test-unified-mode" 180
+    run_expect_test "dcutil Core Functionality" "test_dcutil_core_functionality.expect" "test-unified-mode" 60
+    run_expect_test "dcutil Integration" "test_dcutil_integration.expect" "test-unified-mode" 120
+else
+    echo "Skipping unified mode tests (test-unified-mode directory not found)"
 fi
 
 # Test edit functionality (expect tests present)

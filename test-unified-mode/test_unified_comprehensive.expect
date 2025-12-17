@@ -1,0 +1,173 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Comprehensive unified testing
+# Tests both dialog and text interfaces with more comprehensive scenarios
+
+set timeout 180
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test wizard with different project types
+proc test_wizard_project_types {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing wizard with different project types..."
+    
+    # Test different project types
+    set project_types {
+        {"go.mod" "go"}
+        {"package.json" "node"}
+        {"requirements.txt" "python"}
+        {"Cargo.toml" "rust"}
+    }
+    
+    foreach {file_name project_type} $project_types {
+        puts "\n--- Testing $project_type project type ---"
+        
+        # Prepare isolated environment
+        set temp_home [exec mktemp -d /tmp/dcutil_wizard_$project_type.XXXXXX]
+        set project_dir "$temp_home/project"
+        file mkdir "$project_dir/.devcontainer"
+        
+        # Create project file
+        set fh [open "$project_dir/$file_name" "w"]
+        puts $fh "# $project_type project"
+        close $fh
+        
+    # Create a devcontainer CLI stub
+    set temp_bin "$temp_home/bin"
+    file mkdir $temp_bin
+    set dev_stub "$temp_bin/devcontainer"
+    set fh [open $dev_stub "w"]
+    puts $fh {#!/bin/bash}
+    puts $fh {if [ "$1" = "templates" ] && [ "$2" = "apply" ]; then}
+    puts $fh {"  echo '{"name":"test-$project_type","image":"ubuntu:22.04"}' > .devcontainer/devcontainer.json"}
+    puts $fh {"  echo 'Template applied successfully'"}
+    puts $fh {"  exit 0"}
+    puts $fh {fi}
+    puts $fh {echo 'devcontainer CLI stub'}
+    close $fh
+    exec chmod +x $dev_stub
+        
+        # Test both dialog and text modes
+        foreach {mode_name env_var} {DIALOG "" TEXT "DCUTIL_DISABLE_DIALOG=1"} {
+            puts "  Testing $mode_name mode..."
+            
+        # Run wizard in the specified mode
+        if {$env_var eq ""} {
+            spawn env HOME=$temp_home PATH="$temp_bin:/usr/bin:/bin" CI=1 $dcutil_cmd init wizard
+        } else {
+            spawn env HOME=$temp_home PATH="$temp_bin:/usr/bin:/bin" CI=1 $env_var $dcutil_cmd init wizard
+        }
+            
+            expect {
+                "Devcontainer Initialization Wizard" {
+                    puts "  ✓ Wizard launched in $mode_name mode for $project_type"
+                    
+                    expect {
+                        "Automatically detected:" {
+                            puts "  ✓ Project type detected in $mode_name mode"
+                            
+                            # Handle different input methods based on mode
+                            if {$mode_name eq "DIALOG"} {
+                                send "\r"
+                            } else {
+                                send "1\r"
+                            }
+                            
+                            expect {
+                                "Feature Selection" {
+                                    puts "  ✓ Feature selection reached in $mode_name mode"
+                                    
+                                    if {$mode_name eq "DIALOG"} {
+                                        send "\r"
+                                    } else {
+                                        send "4\r"
+                                    }
+                                    
+                                    expect {
+                                        "Advanced Configuration" {
+                                            puts "  ✓ Advanced configuration reached in $mode_name mode"
+                                            send "\r"
+                                            
+                                            expect {
+                                                "Template applied successfully" {
+                                                    puts "  ✓ Template applied successfully in $mode_name mode"
+                                                }
+                                                timeout {
+                                                    puts "  ✗ FAIL: Template application failed"
+                                                    exit 1
+                                                }
+                                            }
+                                        }
+                                        timeout {
+                                            puts "  ✗ FAIL: Advanced configuration failed"
+                                            exit 1
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    puts "  ✗ FAIL: Feature selection failed"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Project type detection failed"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "  ✗ FAIL: Wizard failed to launch"
+                    exit 1
+                }
+            }
+        }
+        
+        # Clean up
+        catch {exec rm -rf $temp_home}
+    }
+    
+    puts "✅ Project type tests PASSED"
+}
+
+# Test error handling
+proc test_error_handling {} {
+    global timeout dcutil_cmd
+    
+    puts "\n🧪 Testing error handling..."
+    
+    # Test with missing devcontainer CLI
+    set temp_home [exec mktemp -d /tmp/dcutil_error_test.XXXXXX]
+    
+    # Run wizard without devcontainer CLI in PATH
+    spawn env HOME=$temp_home PATH="/usr/bin:/bin" CI=1 DCUTIL_DISABLE_DIALOG=1 $dcutil_cmd init wizard
+    
+    expect {
+        "Required tools not found" {
+            puts "✓ Error handling works correctly"
+        }
+        timeout {
+            puts "✗ FAIL: Error handling test failed"
+            exit 1
+        }
+    }
+    
+    # Clean up
+    catch {exec rm -rf $temp_home}
+    
+    puts "✅ Error handling tests PASSED"
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 Comprehensive Unified Testing"
+puts "========================================="
+
+test_wizard_project_types
+test_error_handling
+
+puts "\n🎉 All comprehensive unified tests completed successfully!"
