@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Devcontainer Lockfile Support for dcutil
 # Implements devcontainer-lock.json functionality for reproducible builds
 
@@ -104,7 +105,7 @@ generate_lockfile() {
     
     info "Generating devcontainer lockfile for reproducible builds..."
     
-    if ! command -v parse_devcontainer_config >/dev/null 2>&1; then
+    if ! has_command parse_devcontainer_config; then
         error_exit "Devcontainer configuration parsing module not available" "$EXIT_CONFIG_ERROR"
     fi
     
@@ -144,7 +145,7 @@ LOCKFILE_BASE
     fi
     
     # Add feature information if features are configured
-    if command -v parse_features_config >/dev/null 2>&1 && parse_features_config >/dev/null 2>&1; then
+    if has_command parse_features_config && parse_features_config >/dev/null 2>&1; then
         if [ ${#FEATURES_IDS[@]} -gt 0 ]; then
             # features_lock intentionally not used in this helper - previously reserved for future collection
             
@@ -216,7 +217,7 @@ validate_against_lockfile() {
             fi
             
             # Check if features match lockfile
-            if command -v parse_features_config >/dev/null 2>&1 && parse_features_config >/dev/null 2>&1 && [ ${#FEATURES_IDS[@]} -gt 0 ]; then
+            if has_command parse_features_config && parse_features_config >/dev/null 2>&1 && [ ${#FEATURES_IDS[@]} -gt 0 ]; then
                 for feature_id in "${FEATURES_IDS[@]}"; do
                     local feature_spec="$feature_id"
                     local parsed_spec
@@ -313,7 +314,7 @@ apply_lockfile() {
 
 # Show lockfile information
 show_lockfile_info() {
-    if ! command -v parse_lockfile_config >/dev/null 2>&1 || ! parse_lockfile_config "$PROJECT_DIR" >/dev/null 2>&1; then
+    if ! has_command parse_lockfile_config || ! parse_lockfile_config "$PROJECT_DIR" >/dev/null 2>&1; then
         echo "No lockfile configuration found."
         return 1
     fi
@@ -336,7 +337,7 @@ show_lockfile_info() {
 
 # Validate lockfile configuration
 validate_lockfile_config() {
-    if ! command -v parse_lockfile_config >/dev/null 2>&1 || ! parse_lockfile_config "$PROJECT_DIR" >/dev/null 2>&1; then
+    if ! has_command parse_lockfile_config || ! parse_lockfile_config "$PROJECT_DIR" >/dev/null 2>&1; then
         echo "No lockfile configuration found."
         return 0
     fi

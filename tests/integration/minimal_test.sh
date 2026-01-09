@@ -4,7 +4,7 @@
 # Tests only the most essential features
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DCUTIL="$SCRIPT_DIR/dcutil-files/dcutil"
+DCUTIL="$SCRIPT_DIR/../../dcutil"
 
 echo "🎯 MINIMAL DCUTIL FUNCTIONALITY TEST"
 echo "==================================="
@@ -86,7 +86,7 @@ run_test "run no args" "\"$DCUTIL\" run 2>&1 | grep -q requires" 1
 
 echo ""
 echo "🧪 LIBRARY TESTS"
-LIB_DIR="$SCRIPT_DIR/dcutil-files/lib"
+LIB_DIR="$SCRIPT_DIR/../../lib"
 for lib_file in "$LIB_DIR"/*.sh; do
     if [ -f "$lib_file" ]; then
         lib_name=$(basename "$lib_file" .sh)

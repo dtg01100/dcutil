@@ -6,7 +6,7 @@ Since your GitHub Action automatically handles the Homebrew tap update, the rele
 
 ### ⚡ Super Fast One-Liner (with gh CLI)
 ```bash
-cd /var/home/dlafreniere/projects/dcutil/dcutil-files && \
+cd /path/to/dcutil && \
 git add -A && \
 git commit -m "Release v1.5.0: Resource Monitoring & Beginner-Friendly UX" && \
 git tag -a v1.5.0 -m "dcutil v1.5.0 - Resource Monitoring & Beginner-Friendly UX" && \
@@ -25,7 +25,7 @@ gh release create v1.5.0 \
 
 ### Step 1: Commit & Tag (2 minutes)
 ```bash
-cd /var/home/dlafreniere/projects/dcutil/dcutil-files
+cd /var/home/dlafreniere/projects/dcutil
 
 # Commit all changes
 git add -A

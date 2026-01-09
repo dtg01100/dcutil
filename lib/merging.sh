@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Image Metadata Merging support for dcutil
 # Implements the merge logic between image metadata and devcontainer.json per specification
 
@@ -56,9 +57,7 @@ merge_features_property() {
     local merged_features
     merged_features=$(jq -s '.[0] + .[1]' <<< "$metadata_features $existing_features" 2>/dev/null || echo "{}")
 
-    local temp_file
-    temp_file=$(mktemp)
-    jq ".features = $merged_features" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+    update_json_file "$MERGED_CONFIG_FILE" ".features = $merged_features"
 }
 
 # Parse and merge image metadata with devcontainer.json
@@ -184,9 +183,7 @@ merge_array_property() {
     combined_array=$(jq -s 'add | unique' <<< "$existing_array $new_array" 2>/dev/null || echo "[]")
     
     # Update the merged config
-    local temp_file
-    temp_file=$(mktemp)
-    jq ".$property = $combined_array" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+    update_json_file "$MERGED_CONFIG_FILE" ".$property = $combined_array"
 }
 
 # Merge mounts property with conflict resolution
@@ -211,9 +208,7 @@ merge_mounts_property() {
     combined_mounts=$(jq -s 'add' <<< "$existing_mounts $new_mounts" 2>/dev/null || echo "[]")
     
     # Update the merged config
-    local temp_file
-    temp_file=$(mktemp)
-    jq ".mounts = $combined_mounts" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+    update_json_file "$MERGED_CONFIG_FILE" ".mounts = $combined_mounts"
 }
 
 # Merge lifecycle commands (Collected list)
@@ -255,14 +250,10 @@ merge_lifecycle_commands() {
         combined=$(jq -s 'add' <<< "$existing_array $new_array" 2>/dev/null || echo "[]")
         
         # Update the merged config
-        local temp_file
-        temp_file=$(mktemp)
-        jq ".$property = $combined" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+        update_json_file "$MERGED_CONFIG_FILE" ".$property = $combined"
     elif [ "$new_cmd" != "null" ]; then
         # Only new command exists, use it
-        local temp_file
-        temp_file=$(mktemp)
-        jq ".$property = $new_cmd" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+        update_json_file "$MERGED_CONFIG_FILE" ".$property = $new_cmd"
     fi
 }
 
@@ -288,9 +279,7 @@ merge_object_property() {
     merged_obj=$(jq -s '.[0] + .[1]' <<< "$existing_obj $new_obj" 2>/dev/null || echo "{}")
     
     # Update the merged config
-    local temp_file
-    temp_file=$(mktemp)
-    jq ".$property = $merged_obj" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+    update_json_file "$MERGED_CONFIG_FILE" ".$property = $merged_obj"
 }
 
 # Merge string properties (Last value wins)
@@ -308,9 +297,7 @@ merge_string_property() {
     
     # If new value exists, override existing
     if [ "$new_value" != "null" ] && [ "$new_value" != "" ]; then
-        local temp_file
-        temp_file=$(mktemp)
-        jq ".$property = \"$new_value\"" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+        update_json_file "$MERGED_CONFIG_FILE" ".$property = \"$new_value\""
     fi
 }
 
@@ -329,9 +316,7 @@ merge_boolean_property() {
     
     # If new value exists, override existing
     if [ "$new_value" != "null" ]; then
-        local temp_file
-        temp_file=$(mktemp)
-        jq ".$property = $new_value" "$MERGED_CONFIG_FILE" > "$temp_file" && mv "$temp_file" "$MERGED_CONFIG_FILE"
+        update_json_file "$MERGED_CONFIG_FILE" ".$property = $new_value"
     fi
 }
 

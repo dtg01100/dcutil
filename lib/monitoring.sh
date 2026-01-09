@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #
+set -euo pipefail
 # dcutil - Development Container Utility
 # https://github.com/dtg01100/dcutil
 #
@@ -67,7 +68,7 @@ show_container_stats() {
     fi
     
     # Check if container is running
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         if ! execute_container_command container inspect "$container_name" &>/dev/null; then
             echo ""
             echo "⚠️  Your development container is not currently running."
@@ -119,7 +120,7 @@ show_container_stats() {
         echo "Live monitoring active (press Ctrl+C to stop)..."
         echo ""
         # Live streaming mode
-        if command -v execute_container_command >/dev/null 2>&1; then
+        if has_command execute_container_command; then
             execute_container_command stats "$container_name"
         else
             docker stats "$container_name"
@@ -127,7 +128,7 @@ show_container_stats() {
     else
         # One-time snapshot with formatted output
         local stats_output
-        if command -v execute_container_command >/dev/null 2>&1; then
+        if has_command execute_container_command; then
             stats_output=$(execute_container_command stats --no-stream --format "table {{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}" "$container_name" 2>/dev/null)
         else
             stats_output=$(docker stats --no-stream --format "table {{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}\t{{.PIDs}}" "$container_name" 2>/dev/null)
@@ -171,7 +172,7 @@ show_detailed_stats() {
     
     # Get container inspect data
     local inspect_data
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         inspect_data=$(execute_container_command inspect "$container_name" 2>/dev/null)
     else
         inspect_data=$(docker inspect "$container_name" 2>/dev/null)
@@ -241,7 +242,7 @@ show_detailed_stats() {
     
     # Get real-time stats
     local stats_line
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         stats_line=$(execute_container_command stats --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}|{{.PIDs}}" "$container_name" 2>/dev/null)
     else
         stats_line=$(docker stats --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}|{{.PIDs}}" "$container_name" 2>/dev/null)
@@ -309,7 +310,7 @@ show_container_top() {
     echo ""
     echo ""
     
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         execute_container_command top "$container_name" || error_exit "Failed to get process list" "$EXIT_DOCKER_ERROR"
     else
         docker top "$container_name" || error_exit "Failed to get process list" "$EXIT_DOCKER_ERROR"

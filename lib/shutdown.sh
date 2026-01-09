@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # shutdownAction handling for dcutil
 # Implements shutdown actions per devcontainer specification
 
@@ -131,7 +132,7 @@ execute_shutdown_action() {
                 info "Executing custom shutdown command: $SHUTDOWN_ACTION"
                 
                 # Execute shutdown command in container
-                if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                if has_command execute_command_in_devcontainer; then
                     if execute_command_in_devcontainer "$PROJECT_DIR" sh -c "$SHUTDOWN_ACTION" >/dev/null 2>&1; then
                         success "Custom shutdown command executed successfully"
                         return 0

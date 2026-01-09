@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Volume management functionality for dcutil
 
 # Source core functionality
@@ -146,7 +147,7 @@ add_volume() {
 
         if [ ! -e "$host_path" ]; then
             # Consider interactive only when both stdin and stdout are TTYs (avoid prompting when output is piped)
-            if ! ([ -t 0 ] && [ -t 1 ]); then
+            if ! { [ -t 0 ] && [ -t 1 ]; }; then
                 # Non-interactive: attempt to create directory; fail if creation is not possible
                 if ! mkdir -p "$host_path" 2>/dev/null; then
                     error_exit "Failed to create host path '$host_path'" "$EXIT_CONFIG_ERROR"
@@ -456,7 +457,7 @@ mount_volume() {
                 echo ""
                 read -r -p "Copy files from host to container as demonstration? (y/N): " copy_files
                 if [[ "$copy_files" =~ ^[Yy] ]]; then
-                    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                    if has_command execute_command_in_devcontainer; then
                         if execute_command_in_devcontainer "$PROJECT_DIR" mkdir -p "$container_path" 2>/dev/null &&
                            execute_command_in_devcontainer "$PROJECT_DIR" cp -rL "$host_path/." "$container_path/" 2>/dev/null; then
                             success "Files copied to container"
@@ -485,7 +486,7 @@ mount_volume() {
             read -r -p "Recreate container with volume '$volume_name'? (y/N): " recreate
             if [[ "$recreate" =~ ^[Yy] ]]; then
                 info "Recreating container with volume mount..."
-                if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                if has_command execute_command_in_devcontainer; then
                     execute_command_in_devcontainer "$PROJECT_DIR" down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
                 else
                     devcontainer down --workspace-folder "$PROJECT_DIR" 2>/dev/null || true
@@ -537,7 +538,7 @@ unmount_volume() {
     container_path=$(jq -r ".volumes[\"$volume_name\"].container_path" "$volume_file" 2>/dev/null)
 
     if [ -n "$container_path" ] && [ "$container_path" != "null" ]; then
-        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        if has_command execute_command_in_devcontainer; then
             if execute_command_in_devcontainer "$PROJECT_DIR" umount "$container_path" 2>/dev/null; then
                 success "Volume '$volume_name' unmounted successfully"
             else

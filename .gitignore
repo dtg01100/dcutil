@@ -3,3 +3,21 @@
 /.devcontainer/
 /devcontainer.json
 /devcontainer.jsonc
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Test artifacts
+tmp/
+*.backup
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

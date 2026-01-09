@@ -1,5 +1,6 @@
 #!/bin/bash
 # shellcheck disable=SC2140,SC1078,SC1079,SC1125,SC2027,SC2086
+set -euo pipefail
 
 # Security functions for dcutil
 
@@ -15,7 +16,7 @@ create_system_venv() {
     local venv_dir="$1"
 
     # Try installing python3-venv and python3-pip first if not already installed
-    if run_in_container "if ! python3 -m venv --help >/dev/null 2>&1; then if command -v apt-get >/dev/null 2>&1; then apt-get update >/dev/null && apt-get install -y python3 python3-venv python3-pip >/dev/null; elif command -v apk >/dev/null 2>&1; then apk add --no-cache python3 py3-virtualenv py3-pip >/dev/null; elif command -v dnf >/dev/null 2>&1; then dnf install -y python3 python3-venv python3-pip >/dev/null || true; fi; fi" 2>/dev/null; then
+    if run_in_container "if ! python3 -m venv --help >/dev/null 2>&1; then if has_command apt-get; then apt-get update >/dev/null && apt-get install -y python3 python3-venv python3-pip >/dev/null; elif has_command apk; then apk add --no-cache python3 py3-virtualenv py3-pip >/dev/null; elif has_command dnf; then dnf install -y python3 python3-venv python3-pip >/dev/null || true; fi; fi" 2>/dev/null; then
         # Try to create venv with sudo for directory creation
         if run_in_container "sudo mkdir -p \"$venv_dir\" && sudo chown -R vscode:vscode \"$venv_dir\" && python3 -m venv \"$venv_dir\" >/dev/null 2>&1" 2>/dev/null; then
             return 0
@@ -298,10 +299,10 @@ setup_portable_python_impl() {
     while [ $attempt -lt "$max_attempts" ]; do
         if run_in_container "
             mkdir -p \"$python_bin_dir\"
-            if command -v curl >/dev/null 2>&1; then
+            if has_command curl; then
                 GET_CMD='curl -fsSL'
                 GET_FILE_CMD='curl -fsSL -o'
-            elif command -v wget >/dev/null 2>&1; then
+            elif has_command wget; then
                 GET_CMD='wget -qO-'
                 GET_FILE_CMD='wget -qO'
             else

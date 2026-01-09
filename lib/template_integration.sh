@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-#!/usr/bin/env bash
-#!/usr/bin/env bash
-#!/usr/bin/env bash
+set -euo pipefail
 # Enhanced template integration with official devcontainer ecosystem
 # This file provides integration with official templates, features, and CLI
 
@@ -48,7 +46,7 @@ fetch_available_templates_official() {
     fi
 
     # Fetch from GitHub API like VSCode does
-    if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    if has_command curl && has_command jq; then
         info "Fetching official devcontainer templates from GitHub..."
         local templates_json="[]"
         local api_url="https://api.github.com/repos/devcontainers/templates/contents/src"
@@ -138,7 +136,7 @@ fetch_available_features_official() {
     fi
 
     # Fetch from GitHub API like VSCode does
-    if command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    if has_command curl && has_command jq; then
         info "Fetching official devcontainer features from GitHub..."
         local features_json="[]"
         local api_url="https://api.github.com/repos/devcontainers/features/contents/src"
@@ -264,14 +262,14 @@ apply_official_template() {
     info "Applying official template: $template_id"
     
     # Use the official devcontainer CLI
-    if ! command -v devcontainer >/dev/null 2>&1; then
+    if ! has_command devcontainer; then
         error "devcontainer CLI not found. Please install it with: brew install devcontainer"
         return 1
     fi
 
     # Validate features_json
     local features_arg="[]"
-    if [ "$features_json" != "[]" ] && command -v jq >/dev/null 2>&1; then
+    if [ "$features_json" != "[]" ] && has_command jq; then
         if ! echo "$features_json" | jq -e . >/dev/null 2>&1; then
             error "Invalid features JSON provided to apply_official_template"
             echo "$features_json" >&2
@@ -330,7 +328,7 @@ sanitize_features_json() {
     if [ ! -f "$dev_file" ]; then
         return 0
     fi
-    if ! command -v jq >/dev/null 2>&1; then
+    if ! has_command jq; then
         return 0
     fi
 
@@ -378,7 +376,7 @@ enable_ssh_propagation() {
         return 1
     fi
 
-    if ! command -v jq >/dev/null 2>&1; then
+    if ! has_command jq; then
         error "jq is required to modify the configuration"
         return 1
     fi
@@ -408,7 +406,7 @@ disable_ssh_propagation() {
         return 1
     fi
 
-    if ! command -v jq >/dev/null 2>&1; then
+    if ! has_command jq; then
         error "jq is required to modify the configuration"
         return 1
     fi
@@ -476,7 +474,7 @@ check_ssh_propagation_status() {
         return 1
     fi
 
-    if ! command -v jq >/dev/null 2>&1; then
+    if ! has_command jq; then
         echo "❌ jq is required to check the configuration"
         return 1
     fi
@@ -498,7 +496,7 @@ check_ssh_propagation_status() {
 get_template_metadata() {
     local template_id="$1"
     
-    if command -v devcontainer >/dev/null 2>&1; then
+    if has_command devcontainer; then
         devcontainer templates metadata "$template_id" 2>/dev/null || echo "{}"
     else
         echo "{}"
@@ -763,7 +761,7 @@ wizard_with_official_integration() {
         
     else
         # Use official template with devcontainer CLI
-        if command -v devcontainer >/dev/null 2>&1; then
+        if has_command devcontainer; then
             info "Applying official template: $selected_template_id"
             
             if ! devcontainer templates apply \
@@ -782,7 +780,7 @@ wizard_with_official_integration() {
 # Enhance with SSH and VS Code customizations using devcontainer CLI metadata
             if [ -f ".devcontainer/devcontainer.json" ]; then
                 # Use devcontainer CLI to enhance the configuration
-                if command -v jq >/dev/null 2>&1; then
+                if has_command jq; then
                     # Get current configuration
                     local current_config
                     current_config=$(cat .devcontainer/devcontainer.json)
@@ -857,7 +855,7 @@ wizard_with_official_integration() {
             start_now=${start_now:-Y}
             if [[ "$start_now" =~ ^[Yy] ]]; then
                 info "Starting devcontainer..."
-                if command -v devcontainer_up >/dev/null 2>&1; then
+                if has_command devcontainer_up; then
                     devcontainer_up
                     return 0
                 fi

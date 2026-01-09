@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # userEnvProbe support for dcutil
 # Implements shell-based environment variable probing per devcontainer specification
 
@@ -105,7 +106,7 @@ EOF
     
     # Run probe script with the specified shell
     local probe_output
-    if command -v "$USER_ENV_PROBE" >/dev/null 2>&1; then
+    if has_command "$USER_ENV_PROBE"; then
         probe_output=$("$USER_ENV_PROBE" "$probe_script" 2>/dev/null)
     else
         # Fallback to bash if specified shell is not available
@@ -160,7 +161,7 @@ apply_probed_environment() {
             # Validate variable name contains only valid identifier characters
             if [[ "$var_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$ ]]; then
                 # Prefer official devcontainer CLI for exec
-                if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                if has_command execute_command_in_devcontainer; then
                     if execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "export $var_name=\"$var_value\" && echo 'export $var_name=\"$var_value\"' >> /etc/environment" 2>/dev/null; then
                         info "Applied: $var_name"
                     else
@@ -232,7 +233,7 @@ validate_user_env_probe_config() {
     local warnings=()
     
     # Validate shell availability
-    if ! command -v "$USER_ENV_PROBE" >/dev/null 2>&1; then
+    if ! has_command "$USER_ENV_PROBE"; then
         warnings+=("Shell '$USER_ENV_PROBE' not found, will fallback to bash")
     fi
     

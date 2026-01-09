@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #
+set -euo pipefail
 # dcutil - Development Container Utility
 # https://github.com/dtg01100/dcutil
 #
@@ -58,9 +59,48 @@ if [ "$(id -u)" -eq 0 ]; then
 
 # Require devcontainer CLI to be installed for dcutil to function correctly
 require_devcontainer_cli() {
-    if ! command -v devcontainer >/dev/null 2>&1; then
+    if ! has_command devcontainer; then
         error_exit "The official devcontainer CLI is required by dcutil. Please install it: https://github.com/devcontainers/cli" "$EXIT_DEP_NOT_FOUND"
     fi
+}
+
+# Check if a command is available
+has_command() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Update a JSON file atomically using jq
+update_json_file() {
+    local file="$1"
+    local filter="$2"
+    local tmp
+    tmp=$(mktemp)
+    if jq "$filter" "$file" > "$tmp"; then
+        mv "$tmp" "$file"
+        return 0
+    else
+        rm -f "$tmp"
+        return 1
+    fi
+}
+
+# Find the devcontainer configuration file in a project directory
+find_devcontainer_config() {
+    local project_dir="${1:-$PROJECT_DIR}"
+    local config_file=""
+
+    # Check standard locations in priority order
+    if [ -f "$project_dir/.devcontainer/devcontainer.json" ]; then
+        config_file="$project_dir/.devcontainer/devcontainer.json"
+    elif [ -f "$project_dir/.devcontainer.json" ]; then
+        config_file="$project_dir/.devcontainer.json"
+    elif [ -f "$project_dir/devcontainer.json" ]; then
+        config_file="$project_dir/devcontainer.json"
+    elif [ -f "$project_dir/.devcontainer/devcontainer/devcontainer.json" ]; then
+        config_file="$project_dir/.devcontainer/devcontainer/devcontainer.json"
+    fi
+
+    echo "$config_file"
 }
 
 check_root_user
@@ -70,7 +110,7 @@ check_disk_space() {
     local available_mb=""
 
     # Check available disk space in MB
-    if command -v df >/dev/null 2>&1; then
+    if has_command df; then
         available_mb=$(df -m "$PROJECT_DIR" 2>/dev/null | tail -1 | { read -r _ _ _ avail _; echo "$avail"; })
         if [ -n "$available_mb" ] && [ "$available_mb" -lt "$required_mb" ]; then
             warning "Low disk space: ${available_mb}MB available, ${required_mb}MB recommended"
@@ -142,14 +182,14 @@ detect_cli_backend() {
     fi
 
     # Check Docker first
-    if command -v docker >/dev/null 2>&1 && \
+        if has_command docker && \
        docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
         DETECTED_BACKEND="docker"
         return 0
     fi
 
     # Check Podman
-    if command -v podman >/dev/null 2>&1 && \
+        if has_command podman && \
        podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 >/dev/null; then
         DETECTED_BACKEND="podman"
         return 0
@@ -387,7 +427,7 @@ validate_devcontainer_config_cli() {
         error_exit "JSON file not found for devcontainer CLI validation: $cfg" "$EXIT_CONFIG_ERROR"
     fi
 
-    if ! command -v devcontainer >/dev/null 2>&1; then
+    if ! has_command devcontainer; then
         error_exit "The official devcontainer CLI is required for this operation. Install it: https://github.com/devcontainers/cli" "$EXIT_DEP_NOT_FOUND"
     fi
 
@@ -402,7 +442,7 @@ check_user_in_image() {
     local image="$1"
     local user="$2"
 
-    if ! command -v docker >/dev/null 2>&1; then
+    if ! has_command docker; then
         return 2
     fi
 

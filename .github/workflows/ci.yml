@@ -25,7 +25,7 @@ jobs:
     - name: Make scripts executable
       run: |
         chmod +x dcutil
-        chmod +x test.sh
+        chmod +x tests/test.sh
         find . -name "*.sh" -exec chmod +x {} \;
 
     - name: Run basic functionality tests
@@ -36,15 +36,9 @@ jobs:
 
     - name: Run comprehensive test suite
       run: |
-        echo "Running minimal and targeted tests for CI"
-        ./minimal_test.sh
-        ./targeted_functionality_test.sh
-
-    - name: Run security and functionality tests
-      run: |
-        # Test that our security fixes work
-        ./minimal_test.sh
-        ./targeted_functionality_test.sh
+        echo "Running minimal, targeted, and security tests for CI"
+        ./tests/integration/minimal_test.sh
+        ./tests/integration/targeted_functionality_test.sh
 
     - name: Test interactive features
       run: |

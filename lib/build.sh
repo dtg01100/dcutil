@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Enhanced build configuration support for dcutil
 # Handles advanced Dockerfile build options per devcontainer specification
 
@@ -149,7 +150,7 @@ docker_build_enhanced() {
     check_disk_space 500
 
     # If features are configured, warn user about better approach with the official CLI
-    if command -v has_features >/dev/null 2>&1 && has_features; then
+    if has_command has_features && has_features; then
         warning "Features detected - recommended to use official devcontainer CLI for proper feature handling"
         info "For best experience with features, consider using: devcontainer build instead of dcutil build"
     fi
@@ -219,7 +220,7 @@ docker_build_enhanced() {
 # Show build configuration info
 show_build_info() {
     # Parse devcontainer config first to set DEVCONTAINER_CONFIG_FILE
-    if command -v parse_devcontainer_config >/dev/null 2>&1; then
+    if has_command parse_devcontainer_config; then
         parse_devcontainer_config
     else
         error_exit "Failed to parse devcontainer configuration" "$EXIT_CONFIG_ERROR"

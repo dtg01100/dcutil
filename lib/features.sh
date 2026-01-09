@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Devcontainer Features support for dcutil
 # Implements Devcontainer Features specification for adding tools and runtimes
 
@@ -85,10 +86,120 @@ has_features() {
     return 1
 }
 
+# Helper: map numeric or numeric-id keys to canonical feature id
+resolve_numeric_feature_key() {
+    local key="${1:-}"
+    local available_features_json="${2:-}"
+    if [[ -z "$key" ]]; then
+        echo ""
+        return 1
+    fi
+    # If key is purely numeric
+    if [[ "$key" =~ ^[0-9]+$ ]]; then
+        local idx=$((key - 1))
+        local mapped_id
+        mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null || echo "")
+        local mapped_registry
+        mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null || echo "")
+        if [ -n "$mapped_id" ]; then
+            if [[ "$mapped_id" == ghcr.io/* ]]; then
+                echo "$mapped_id"
+                return 0
+            elif [ -n "$mapped_registry" ]; then
+                echo "$mapped_registry/$mapped_id"
+                return 0
+            else
+                echo "ghcr.io/devcontainers/features/$mapped_id"
+                return 0
+            fi
+        fi
+    fi
+    # If key contains container registry and numeric like ghcr.io/devcontainers/features/2
+    if [[ "$key" =~ ^ghcr.io/devcontainers/features/[0-9]+(:.*)?$ ]]; then
+        # Extract numeric ID from feature path
+        local id_match
+        if [[ "$key" =~ /([0-9]+)(:|$) ]]; then
+            id_match="${BASH_REMATCH[1]}"
+        else
+            id_match=""
+        fi
+        if [[ "$id_match" =~ ^[0-9]+$ ]]; then
+            local idx=$((id_match - 1))
+            local mapped_id
+            mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null || echo "")
+            local mapped_registry
+            mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null || echo "")
+            if [ -n "$mapped_id" ]; then
+                if [[ "$mapped_id" == ghcr.io/* ]]; then
+                    echo "$mapped_id"
+                    return 0
+                elif [ -n "$mapped_registry" ]; then
+                    echo "$mapped_registry/$mapped_id"
+                    return 0
+                else
+                    echo "ghcr.io/devcontainers/features/$mapped_id"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+    echo "$key"
+    return 0
+}
+
+# Parse features in object format (map of feature_id -> config)
+parse_features_object_format() {
+    local available_features_json="$1"
+
+    while IFS= read -r feature_key; do
+        if [ -n "$feature_key" ] && [ "$feature_key" != "null" ]; then
+            local feature_config
+            feature_config=$(jq -c --arg key "$feature_key" '.features[$key]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
+
+            # Skip disabled features (boolean false)
+            if [ "$feature_config" = "false" ] || [ "$feature_config" = "null" ]; then
+                continue
+            fi
+
+            # Normalize true -> {}
+            if [ "$feature_config" = "true" ]; then
+                feature_config="{}"
+            fi
+
+            # Resolve numeric keys to canonical ids when possible
+            local resolved_key
+            resolved_key=$(resolve_numeric_feature_key "$feature_key" "$available_features_json")
+
+            # If user didn't provide version in key, use version from feature_config if present
+            if jq -e --arg key "$feature_key" '.features[$key] | type == "object" and .version' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
+                # Extract version property
+                local cfg_ver
+                cfg_ver=$(jq -r --arg key "$feature_key" '.features[$key].version // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                if [ -n "$cfg_ver" ]; then
+                    resolved_key="$resolved_key:$cfg_ver"
+                fi
+            fi
+
+            # Normalize to canonical spec (ghcr.io/.../name:version)
+            local canonical_spec
+            canonical_spec=$(parse_feature_spec "$resolved_key")
+
+            FEATURES_IDS+=("$canonical_spec")
+            FEATURES_CONFIG_MAP["$canonical_spec"]="$feature_config"
+            # Also store mapping by id-only for convenience
+            local id_only
+            id_only="${canonical_spec%:*}"
+            if [ -z "${FEATURES_CONFIG_MAP[$id_only]:-}" ]; then
+                FEATURES_CONFIG_MAP["$id_only"]="$feature_config"
+            fi
+        fi
+    done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+}
+
 # Parse Features configuration from devcontainer.json
 parse_features_config() {
     # Parse devcontainer config first to set DEVCONTAINER_CONFIG_FILE
-    if command -v parse_devcontainer_config >/dev/null 2>&1; then
+    if has_command parse_devcontainer_config; then
         parse_devcontainer_config
     else
         error_exit "⚠️  Unable to read configuration. This is unexpected - please report this issue." "$EXIT_CONFIG_ERROR"
@@ -116,119 +227,19 @@ parse_features_config() {
 
         # Optionally fetch available official features list for numeric mapping
         local available_features_json
-        if command -v fetch_available_features_official >/dev/null 2>&1; then
+        if has_command fetch_available_features_official; then
             available_features_json=$(fetch_available_features_official || echo "[]")
         else
             available_features_json="[]"
         fi
 
-        # Helper: map numeric or numeric-id keys to canonical feature id
-        resolve_numeric_feature_key() {
-            local key="${1:-}"
-            if [[ -z "$key" ]]; then
-                echo ""
-                return 1
-            fi
-            # If key is purely numeric
-            if [[ "$key" =~ ^[0-9]+$ ]]; then
-                local idx=$((key - 1))
-                local mapped_id
-                mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null || echo "")
-                local mapped_registry
-                mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null || echo "")
-                if [ -n "$mapped_id" ]; then
-                    if [[ "$mapped_id" == ghcr.io/* ]]; then
-                        echo "$mapped_id"
-                        return 0
-                    elif [ -n "$mapped_registry" ]; then
-                        echo "$mapped_registry/$mapped_id"
-                        return 0
-                    else
-                        echo "ghcr.io/devcontainers/features/$mapped_id"
-                        return 0
-                    fi
-                fi
-            fi
-            # If key contains container registry and numeric like ghcr.io/devcontainers/features/2
-            if [[ "$key" =~ ^ghcr.io/devcontainers/features/[0-9]+(:.*)?$ ]]; then
-                # Extract numeric ID from feature path
-                local id_match
-                if [[ "$key" =~ /([0-9]+)(:|$) ]]; then
-                    id_match="${BASH_REMATCH[1]}"
-                else
-                    id_match=""
-                fi
-                if [[ "$id_match" =~ ^[0-9]+$ ]]; then
-                    local idx=$((id_match - 1))
-                    local mapped_id
-                    mapped_id=$(echo "$available_features_json" | jq -r ".[$idx].id // empty" 2>/dev/null || echo "")
-                    local mapped_registry
-                    mapped_registry=$(echo "$available_features_json" | jq -r ".[$idx].registry // empty" 2>/dev/null || echo "")
-                    if [ -n "$mapped_id" ]; then
-                        if [[ "$mapped_id" == ghcr.io/* ]]; then
-                            echo "$mapped_id"
-                            return 0
-                        elif [ -n "$mapped_registry" ]; then
-                            echo "$mapped_registry/$mapped_id"
-                            return 0
-                        else
-                            echo "ghcr.io/devcontainers/features/$mapped_id"
-                            return 0
-                        fi
-                    fi
-                fi
-            fi
-            echo "$key"
-            return 0
-        }
+        
 
         # Parse features - handle both object and array formats
         if jq -e '.features' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
             # If it's an object (map)
             if jq -e '.features | type == "object"' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-                while IFS= read -r feature_key; do
-                    if [ -n "$feature_key" ] && [ "$feature_key" != "null" ]; then
-                        local feature_config
-                        feature_config=$(jq -c --arg key "$feature_key" '.features[$key]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
-
-                        # Skip disabled features (boolean false)
-                        if [ "$feature_config" = "false" ] || [ "$feature_config" = "null" ]; then
-                            continue
-                        fi
-
-                        # Normalize true -> {}
-                        if [ "$feature_config" = "true" ]; then
-                            feature_config="{}"
-                        fi
-
-                        # Resolve numeric keys to canonical ids when possible
-                        local resolved_key
-                        resolved_key=$(resolve_numeric_feature_key "$feature_key")
-
-                        # If user didn't provide version in key, use version from feature_config if present
-                        if jq -e --arg key "$feature_key" '.features[$key] | type == "object" and .version' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
-                            # Extract version property
-                            local cfg_ver
-                            cfg_ver=$(jq -r --arg key "$feature_key" '.features[$key].version // empty' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
-                            if [ -n "$cfg_ver" ]; then
-                                resolved_key="$resolved_key:$cfg_ver"
-                            fi
-                        fi
-
-                        # Normalize to canonical spec (ghcr.io/.../name:version)
-                        local canonical_spec
-                        canonical_spec=$(parse_feature_spec "$resolved_key")
-
-                        FEATURES_IDS+=("$canonical_spec")
-                        FEATURES_CONFIG_MAP["$canonical_spec"]="$feature_config"
-                        # Also store mapping by id-only for convenience
-                        local id_only
-                        id_only="${canonical_spec%:*}"
-                        if [ -z "${FEATURES_CONFIG_MAP[$id_only]:-}" ]; then
-                            FEATURES_CONFIG_MAP["$id_only"]="$feature_config"
-                        fi
-                    fi
-                done < <(jq -r '.features | keys[]' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "")
+                parse_features_object_format "$available_features_json"
             elif jq -e '.features | type == "array"' "$DEVCONTAINER_CONFIG_FILE" >/dev/null 2>&1; then
                 # If it's an array, read entries as feature specs
                 local entries
@@ -241,7 +252,7 @@ parse_features_config() {
                     entry_type=$(jq -r 'type' <<< "$entry" 2>/dev/null || echo "")
                     if [ "$entry_type" = "string" ]; then
                         local resolved_key
-                        resolved_key=$(resolve_numeric_feature_key "$entry")
+                        resolved_key=$(resolve_numeric_feature_key "$entry" "$available_features_json")
                         local canonical_spec
                         canonical_spec=$(parse_feature_spec "$resolved_key")
                         FEATURES_IDS+=("$canonical_spec")
@@ -259,8 +270,8 @@ parse_features_config() {
                             if [ -n "$id" ]; then
                                 local cfg
                                 cfg=$(jq -c '.' <<< "$entry" 2>/dev/null || echo "{}")
-                                local resolved_key
-                                resolved_key=$(resolve_numeric_feature_key "$id")
+                            local resolved_key
+                            resolved_key=$(resolve_numeric_feature_key "$id" "$available_features_json")
                                 local canonical_spec
                                 canonical_spec=$(parse_feature_spec "$resolved_key")
                                 # If the entry contains a version in the object, prefer it
@@ -389,7 +400,7 @@ validate_feature_cache_dir() {
     # Must contain either devcontainer-feature.json or src/install.sh
     if [ -f "$cache_dir/devcontainer-feature.json" ]; then
         # If jq is available, validate JSON
-        if command -v jq >/dev/null 2>&1; then
+        if has_command jq; then
             if jq -e . "$cache_dir/devcontainer-feature.json" >/dev/null 2>&1; then
                 return 0
             else
@@ -443,7 +454,7 @@ download_feature() {
 
     # Resolve version based on config or feature metadata
     # Prefer explicit version in feature_config if present
-    if [ -n "$feature_config" ] && [ "$feature_config" != "{}" ] && command -v jq >/dev/null 2>&1; then
+    if [ -n "$feature_config" ] && [ "$feature_config" != "{}" ] && has_command jq; then
         local cfg_version
         cfg_version=$(jq -r '.version // empty' <<< "$feature_config" 2>/dev/null || echo "")
         if [ -n "$cfg_version" ]; then
@@ -452,7 +463,7 @@ download_feature() {
     fi
 
     # Use feature metadata to resolve numeric-only versions or missing versions
-    if command -v jq >/dev/null 2>&1 && [ -f "$feature_json_file" ]; then
+    if has_command jq && [ -f "$feature_json_file" ]; then
         # If no explicit version requested, prefer the devcontainer-feature.json version field
         if [ -z "$feature_version" ] || [ "$feature_version" = "$FEATURES_DEFAULT_VERSION" ]; then
             local def_version
@@ -524,7 +535,7 @@ FEATURE_INSTALL_SCRIPT
     # Parse dependencies from downloaded metadata in tmp dir
     local depends_on=()
     local installs_after=()
-    if command -v jq >/dev/null 2>&1 && [ -f "$tmp_cache_dir/devcontainer-feature.json" ]; then
+    if has_command jq && [ -f "$tmp_cache_dir/devcontainer-feature.json" ]; then
         if jq -e '.dependsOn' "$tmp_cache_dir/devcontainer-feature.json" >/dev/null 2>&1; then
             while IFS= read -r dep; do
                 if [ -n "$dep" ]; then
@@ -626,7 +637,7 @@ env_prepare_inputs_for_feature() {
     local cache_dir="${FEATURES_CACHE_DIR}/${cache_key}"
 
     # Load defaults from feature definition, if available
-    if [ -f "$cache_dir/devcontainer-feature.json" ] && command -v jq >/dev/null 2>&1; then
+    if [ -f "$cache_dir/devcontainer-feature.json" ] && has_command jq; then
         # For each option, if feature_config doesn't provide it, use default
         while IFS= read -r opt; do
             if [ -z "$opt" ]; then
@@ -649,7 +660,7 @@ env_prepare_inputs_for_feature() {
         done < <(jq -r 'keys[]' "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
     fi
 
-    if [ -n "$feature_config" ] && [ "$feature_config" != "{}" ] && command -v jq >/dev/null 2>&1; then
+    if [ -n "$feature_config" ] && [ "$feature_config" != "{}" ] && has_command jq; then
         # feature_config might be a JSON object or array; handle object case
         if jq -e 'type == "object"' <<< "$feature_config" >/dev/null 2>&1; then
             while IFS= read -r key; do
@@ -686,11 +697,11 @@ get_running_container_for_project() {
     local project_dir="${1:-$PROJECT_DIR}"
     
     # Prefer official devcontainer CLI to get container name
-    if command -v get_current_devcontainer_name >/dev/null 2>&1; then
+    if has_command get_current_devcontainer_name; then
         local container_name
         container_name=$(get_current_devcontainer_name "$project_dir" 2>/dev/null || true)
         if [ -n "$container_name" ]; then
-            if command -v docker >/dev/null 2>&1; then
+            if has_command docker; then
                 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q "^${container_name}$"; then
                     echo "$container_name"
                     return 0
@@ -701,7 +712,7 @@ get_running_container_for_project() {
 
     # Fallback to docker-based detection
     local candidate=""
-    if command -v docker >/dev/null 2>&1; then
+    if has_command docker; then
         # Prefer labeled containers
         candidate=$(docker ps --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
         if [ -n "$candidate" ]; then
@@ -744,12 +755,12 @@ execute_feature_install_in_container() {
 
     # Determine backend command (docker or podman)
     local backend_cmd="docker"
-    if command -v podman >/dev/null 2>&1; then
+    if has_command podman; then
         backend_cmd="podman"
     fi
 
     # Try to use library wrapper if available
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         execute_container_command exec "$container_name" mkdir -p "$dest_dir" >/dev/null 2>&1 || true
         execute_container_command cp "$install_script" "$container_name:$dest" || return 1
 
@@ -811,7 +822,7 @@ execute_feature_install_in_container() {
     env_args+=("-e" "VERSION=$feature_version")
     env_inline+=" FEATURE_ID='$feature_id' FEATURE_NAME='$feature_name' FEATURE_VERSION='$feature_version' VERSION='$feature_version'"
 
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         local exec_cmd="$env_inline bash -x '$dest'"
         if execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -lc "$exec_cmd" >> "$FEATURES_INSTALL_LOG" 2>&1; then
             "$backend_cmd" exec -i "$container_name" rm -f "$dest" >/dev/null 2>&1 || true
@@ -1166,7 +1177,7 @@ install_features() {
     info "Installing ${#FEATURES_IDS[@]} feature(s) with dependency resolution..."
     
     # Show initial progress message
-    if command -v show_progress >/dev/null 2>&1; then
+    if has_command show_progress; then
         echo "⏳ This may take a few minutes depending on the features being installed..."
     fi
 
@@ -1579,7 +1590,7 @@ features_cli() {
         "help"|"-h"|"--help")
             # Use the print_features_usage function defined in main script
             # Since features.sh is sourced by main script, this should be available
-            if command -v print_features_usage >/dev/null 2>&1; then
+            if has_command print_features_usage; then
                 print_features_usage
             else
                 # Fallback help text if function not available
@@ -1962,7 +1973,7 @@ features_add() {
 
     if [ "$should_rebuild" = true ]; then
         info "Rebuilding container to apply changes..."
-        if command -v devcontainer_rebuild >/dev/null 2>&1; then
+        if has_command devcontainer_rebuild; then
             devcontainer_rebuild
         else
             error "Rebuild functionality not available"
@@ -2012,7 +2023,7 @@ features_remove() {
 
     if [ "$should_rebuild" = true ]; then
         info "Rebuilding container to apply changes..."
-        if command -v devcontainer_rebuild >/dev/null 2>&1; then
+        if has_command devcontainer_rebuild; then
             devcontainer_rebuild
         else
             error "Rebuild functionality not available"

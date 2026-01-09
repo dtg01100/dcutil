@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # hostRequirements validation for dcutil
 # Implements validation of system requirements per devcontainer specification
 
@@ -59,7 +60,7 @@ check_cpu_requirements() {
     local cpu_count=1
     if [ -f /proc/cpuinfo ]; then
         cpu_count=$(nproc 2>/dev/null || grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo "1")
-    elif command -v sysctl >/dev/null 2>&1; then
+    elif has_command sysctl; then
         cpu_count=$(sysctl -n hw.ncpu 2>/dev/null || echo "1")
     fi
     
@@ -98,7 +99,7 @@ check_memory_requirements() {
     local memory_mb=1024
     if [ -f /proc/meminfo ]; then
         memory_mb=$(grep MemTotal /proc/meminfo | { read -r _ kb _; echo "$((kb / 1024))"; } 2>/dev/null || echo "1024")
-    elif command -v sysctl >/dev/null 2>&1; then
+    elif has_command sysctl; then
         memory_mb=$(sysctl -n hw.memsize_max 2>/dev/null || sysctl -n hw.physmem 2>/dev/null || echo "1073741824")
         memory_mb=$((memory_mb / 1024 / 1024))
     fi
@@ -143,7 +144,7 @@ check_storage_requirements() {
     
     # Get available storage in GB (check current directory filesystem)
     local storage_gb=10
-    if command -v df >/dev/null 2>&1; then
+    if has_command df; then
         local avail_str
         avail_str=$(df -BG . 2>/dev/null | tail -1 | { read -r _ _ _ avail _; echo "$avail"; } || echo "10G")
         storage_gb="${avail_str%G}"
@@ -185,7 +186,7 @@ check_gpu_requirements() {
     local gpu_info=""
 
     # Check NVIDIA GPUs
-    if command -v nvidia-smi >/dev/null 2>&1; then
+    if has_command nvidia-smi; then
         if nvidia-smi --list-gpus >/dev/null 2>&1; then
             gpu_present=true
             gpu_info=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits 2>/dev/null | head -1)
@@ -196,7 +197,7 @@ check_gpu_requirements() {
     fi
 
     # Check AMD GPUs
-    if command -v rocm-smi >/dev/null 2>&1; then
+    if has_command rocm-smi; then
         if rocm-smi --showid >/dev/null 2>&1; then
             gpu_present=true
             gpu_info=$(rocm-smi --showproductname 2>/dev/null | head -1)
@@ -207,13 +208,13 @@ check_gpu_requirements() {
     fi
 
     # Check Intel GPUs
-    if command -v intel-gpu-top >/dev/null 2>&1; then
+    if has_command intel-gpu-top; then
         gpu_present=true
         info "Intel GPU detected"
     fi
 
     # Fallback check for any GPU
-    if [ "$gpu_present" = false ] && command -v lspci >/dev/null 2>&1; then
+    if [ "$gpu_present" = false ] && has_command lspci; then
         if lspci | grep -i "vga\|3d\|display" | grep -v "virtual\|vmware\|qemu\|cirrus" >/dev/null 2>&1; then
             gpu_present=true
             gpu_info=$(lspci | grep -i "vga\|3d\|display" | head -1 | cut -d: -f3-)
@@ -253,7 +254,7 @@ check_gpu_requirements() {
         *)
             # Parse specific GPU requirements (e.g., "nvidia", ">=2GB", etc.)
             if [[ "$gpu_req" =~ ^nvidia ]]; then
-                if command -v nvidia-smi >/dev/null 2>&1; then
+                if has_command nvidia-smi; then
                     success "NVIDIA GPU requirement met"
                     return 0
                 else
@@ -261,7 +262,7 @@ check_gpu_requirements() {
                     return 1
                 fi
             elif [[ "$gpu_req" =~ ^amd ]]; then
-                if command -v rocm-smi >/dev/null 2>&1; then
+                if has_command rocm-smi; then
                     success "AMD GPU requirement met"
                     return 0
                 else

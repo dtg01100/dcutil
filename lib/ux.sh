@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 #
+set -euo pipefail
 # dcutil - Development Container Utility
 # https://github.com/dtg01100/dcutil
 #
@@ -9,13 +10,13 @@
 has_dialog() {
     # Allow forcing dialog usage for debugging
     if [ "${DCUTIL_FORCE_DIALOG:-0}" = "1" ]; then
-        if command -v dialog >/dev/null 2>&1; then
+        if has_command dialog; then
             return 0
         fi
     fi
 
     # Basic binary check
-    if ! command -v dialog >/dev/null 2>&1; then
+    if ! has_command dialog; then
         return 1
     fi
 
@@ -224,7 +225,7 @@ show_interactive_menu() {
             if [ -f ".devcontainer/devcontainer.json" ] || [ -f "devcontainer.json" ]; then
                 echo ""
                 info "Managing devcontainer features..."
-                if command -v show_interactive_feature_management >/dev/null 2>&1; then
+                if has_command show_interactive_feature_management; then
                     show_interactive_feature_management
                     return 0  # Show menu again after feature management
                 else
@@ -536,13 +537,13 @@ show_interactive_feature_management() {
     export PROJECT_DIR
 
     # Initialize DEVCONTAINER_CONFIG_FILE as well
-    if command -v initialize_devcontainer_config >/dev/null 2>&1; then
+    if has_command initialize_devcontainer_config; then
         initialize_devcontainer_config
     fi
 
     # For the UX function, instead of calling the full parse_devcontainer_config which involves devcontainer CLI validation
     # that may fail with permission errors, let's directly load features using jq only
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         # Initialize features configuration variables directly
         if [ -n "${DEVCONTAINER_CONFIG_FILE:-}" ] && [ -f "$DEVCONTAINER_CONFIG_FILE" ]; then
             # Parse features using jq directly
@@ -571,7 +572,7 @@ show_interactive_feature_management() {
     # Load available features from registry
     info "Loading available features..."
     local features_json
-    if command -v fetch_available_features_official >/dev/null 2>&1; then
+    if has_command fetch_available_features_official; then
         features_json=$(fetch_available_features_official 2>/dev/null || echo "[]")
     else
         # Fallback to a basic feature list
@@ -586,7 +587,7 @@ show_interactive_feature_management() {
     fi
 
     # Parse current features using jq directly to avoid validation issues in UX context
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         local current_features_json
         if [ -n "${DEVCONTAINER_CONFIG_FILE:-}" ]; then
             current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
@@ -738,7 +739,7 @@ show_interactive_feature_management_text() {
 
                     if [ -n "$feature_id" ]; then
                         # Check if feature already exists
-                        if command -v jq >/dev/null 2>&1 && [ "$current_features_json" != "{}" ]; then
+                        if has_command jq && [ "$current_features_json" != "{}" ]; then
                             local exists
                             exists=$(echo "$current_features_json" | jq -r "has(\"$feature_id\")" 2>/dev/null)
                             if [ "$exists" = "true" ]; then
@@ -753,7 +754,7 @@ show_interactive_feature_management_text() {
                         if [ -n "$feature_exists" ]; then
                             echo "Adding feature: $feature_id"
                             # Use the function from features.sh
-                            if command -v add_feature_to_config >/dev/null 2>&1; then
+                            if has_command add_feature_to_config; then
                                 add_feature_to_config "$feature_id" "{}"
                                 # Refresh current features
                                 current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
@@ -796,7 +797,7 @@ show_interactive_feature_management_text() {
                     local feature_to_remove="${feature_array[$((remove_choice-1))]}"
                     echo "Removing feature: $feature_to_remove"
                     # Use the function from features.sh
-                    if command -v remove_feature_from_config >/dev/null 2>&1; then
+                    if has_command remove_feature_from_config; then
                         remove_feature_from_config "$feature_to_remove"
                         # Refresh current features
                         current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
@@ -888,7 +889,7 @@ add_feature_dialog() {
         esac
 
         # Prepare feature list based on search
-        local feature_list=""
+        local feature_list=()
         local i=1
 
         if [ -n "$search_term" ]; then
@@ -899,7 +900,7 @@ add_feature_dialog() {
                     id=$(echo "$feature" | jq -r '.id')
                     name=$(echo "$feature" | jq -r '.name')
                     desc=$(echo "$feature" | jq -r '.description')
-                    feature_list="$feature_list $i \"$id - $name ($desc)\""
+                    feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
             done <<< "$(echo "$features_json" | jq -r --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
@@ -911,13 +912,13 @@ add_feature_dialog() {
                     id=$(echo "$feature" | jq -r '.id')
                     name=$(echo "$feature" | jq -r '.name')
                     desc=$(echo "$feature" | jq -r '.description')
-                    feature_list="$feature_list $i \"$id - $name ($desc)\""
+                    feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
             done <<< "$(echo "$features_json" | jq -r '.[]')"
         fi
 
-        if [ -z "$feature_list" ]; then
+        if [ ${#feature_list[@]} -eq 0 ]; then
             dialog --msgbox "No features match your search: $search_term" 8 40
             continue
         fi
@@ -925,7 +926,7 @@ add_feature_dialog() {
         # Show feature selection menu
         local selection
         selection=$(dialog --clear --title "Add Feature - Select" \
-            --menu "Select a feature to add:" 18 70 10 $feature_list \
+            --menu "Select a feature to add:" 18 70 10 "${feature_list[@]}" \
             2>&1 >/dev/tty)
 
         case $? in
@@ -953,7 +954,7 @@ add_feature_dialog() {
 
         if [ -n "$selected_feature" ]; then
             # Check if feature already exists
-            if command -v jq >/dev/null 2>&1 && [ "$current_features_json" != "{}" ]; then
+            if has_command jq && [ "$current_features_json" != "{}" ]; then
                 local exists
                 exists=$(echo "$current_features_json" | jq -r "has(\"$selected_feature\")" 2>/dev/null)
                 if [ "$exists" = "true" ]; then
@@ -963,7 +964,7 @@ add_feature_dialog() {
             fi
 
             # Add the feature
-            if command -v add_feature_to_config >/dev/null 2>&1; then
+            if has_command add_feature_to_config; then
                 add_feature_to_config "$selected_feature" "{}"
                 dialog --msgbox "Feature '$selected_feature' has been added!" 7 40
                 return 0
@@ -988,17 +989,17 @@ remove_feature_dialog() {
     fi
 
     # Create list of current features
-    local feature_list=""
+    local feature_list=()
     local i=1
 
     while IFS= read -r key; do
         if [ -n "$key" ]; then
-            feature_list="$feature_list $i \"$key\""
+            feature_list+=("$i" "$key")
             i=$((i + 1))
         fi
     done <<< "$(echo "$current_features_json" | jq -r 'keys[]' 2>/dev/null)"
 
-    if [ -z "$feature_list" ]; then
+    if [ ${#feature_list[@]} -eq 0 ]; then
         dialog --msgbox "No features available to remove" 7 40
         return 0
     fi
@@ -1006,7 +1007,7 @@ remove_feature_dialog() {
     # Show feature removal menu
     local selection
     selection=$(dialog --clear --title "Remove Feature - Select" \
-        --menu "Select a feature to remove:" 15 60 8 $feature_list \
+        --menu "Select a feature to remove:" 15 60 8 "${feature_list[@]}" \
         2>&1 >/dev/tty)
 
     case $? in
@@ -1038,7 +1039,7 @@ remove_feature_dialog() {
 
     if [ -n "$feature_to_remove" ]; then
         # Remove the feature
-        if command -v remove_feature_from_config >/dev/null 2>&1; then
+        if has_command remove_feature_from_config; then
             remove_feature_from_config "$feature_to_remove"
             dialog --msgbox "Feature '$feature_to_remove' has been removed!" 7 40
             # Refresh current features
@@ -1065,6 +1066,7 @@ view_features_dialog() {
         esac
 
         # Prepare feature list based on search
+        # shellcheck disable=SC2178,SC2128
         local feature_list=""
         local i=1
 
@@ -1112,7 +1114,8 @@ view_features_dialog() {
         # Extract just the feature names (skip numbers and quotes)
         while read -r line; do
             # Extract feature text from quoted strings
-            local feature_desc=$(echo "$line" | sed -n 's/.* "\([^"]*\)".*/- \1/p')
+            local feature_desc
+            feature_desc=$(echo "$line" | sed -n 's/.* "\([^"]*\)".*/- \1/p')
             if [ -n "$feature_desc" ]; then
                 display_text="$display_text
 $feature_desc"

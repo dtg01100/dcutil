@@ -4,8 +4,7 @@
 
 set -e  # Exit on error
 
-# Change to dcutil-files directory
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Extract version from dcutil script
 VERSION=$(grep '^VERSION=' dcutil | cut -d'"' -f2)

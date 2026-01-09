@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Tool Integration support for dcutil
 # Implements customizations and metadata parsing from devcontainer specification
 
@@ -37,7 +38,7 @@ has_tool_integration() {
 # Parse customizations configuration
 parse_customizations_config() {
     # Parse devcontainer config first to set DEVCONTAINER_CONFIG_FILE
-    if command -v parse_devcontainer_config >/dev/null 2>&1; then
+    if has_command parse_devcontainer_config; then
         parse_devcontainer_config
     else
         error_exit "Failed to parse devcontainer configuration" "$EXIT_CONFIG_ERROR"
@@ -237,7 +238,7 @@ apply_vscode_customizations() {
 # Helper function to check if container is running
 is_container_running() {
     local container_name="$1"
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         if execute_container_command container inspect "$container_name" &>/dev/null; then
             execute_container_command container inspect "$container_name" | grep -q '"Running": true'
             return $?
@@ -255,7 +256,7 @@ is_container_running() {
 execute_in_container() {
     local command="$1"
     shift
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         execute_command_in_devcontainer "$PROJECT_DIR" "$command" "$@"
     else
         docker exec "$CONTAINER_NAME" "$command" "$@"
@@ -265,7 +266,7 @@ execute_in_container() {
 # Helper function to check if a command exists in the container
 command_exists_in_container() {
     local cmd="$1"
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         execute_command_in_devcontainer "$PROJECT_DIR" sh -c "command -v '$cmd'" &>/dev/null
     else
         docker exec "$CONTAINER_NAME" sh -c "command -v '$cmd'" &>/dev/null

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Docker Compose support for dcutil
 # Handles docker-compose.yml based devcontainer configurations
 

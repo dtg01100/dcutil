@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Environment management for dcutil
 # Handles containerEnv, remoteEnv, and user management
 
@@ -15,11 +16,10 @@ REMOTE_USER=""
 # Parse and validate environment variables from devcontainer.json
 parse_environment_config() {
     local config_file=""
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    else
+
+    config_file=$(find_devcontainer_config)
+
+    if [ -z "$config_file" ]; then
         return 0
     fi
 
@@ -28,7 +28,7 @@ parse_environment_config() {
     CONTAINER_ENV=()
     REMOTE_ENV=()
 
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         # Parse containerEnv
         if jq -e '.containerEnv' "$config_file" >/dev/null 2>&1; then
             while IFS='=' read -r key val; do
@@ -150,7 +150,7 @@ apply_remote_environment() {
             info "Remote environment: $env_var"
             
             # Add to user's bash profile for persistence
-            if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            if has_command execute_command_in_devcontainer; then
                 execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "
                     if [ -f /home/vscode/.bashrc ]; then
                         echo 'export $key=\"$value\"' >> /home/vscode/.bashrc
@@ -209,7 +209,7 @@ setup_user_environment() {
     info "Setting up user environment for $CONTAINER_USER..."
     
     # Check if user exists and set up home directory
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "
             # Check if user exists
             if id -u $CONTAINER_USER >/dev/null 2>&1; then
@@ -219,7 +219,7 @@ setup_user_environment() {
                 fi
                 
                 # Add user to sudo group if needed and possible
-                if command -v usermod >/dev/null 2>&1; then
+                if has_command usermod; then
                     usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
                 fi
             else
@@ -239,7 +239,7 @@ setup_user_environment() {
                 fi
                 
                 # Add user to sudo group if needed and possible
-                if command -v usermod >/dev/null 2>&1; then
+                if has_command usermod; then
                     usermod -aG sudo $CONTAINER_USER 2>/dev/null || true
                 fi
             else
@@ -269,7 +269,7 @@ list_environment_config() {
     echo "Environment Configuration:"
     echo "========================="
     
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         echo "Container User: $(jq -r '.containerUser // "vscode"' "$config_file")"
         echo "Remote User: $(jq -r '.remoteUser // .containerUser // "vscode"' "$config_file")"
         
@@ -312,7 +312,7 @@ export_devcontainer_env() {
     if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ]; then
         echo "export DEVCONTAINER_CONTAINER_ENGINE=\"podman\""
         # Podman typically does not need special DOCKER_HOST setting if using rootless
-        if command -v podman >/dev/null 2>&1; then
+        if has_command podman; then
             # Check if we need to set CONTAINER_HOST for podman
             local podman_socket
             podman_socket=$(podman info --format '{{.Host.RemoteSocket.Path}}' 2>/dev/null || echo "")
@@ -332,7 +332,7 @@ export_devcontainer_env() {
     fi
 
     # Export environment variables from configuration
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         if jq -e '.containerEnv' "$config_file" >/dev/null 2>&1; then
             while IFS='=' read -r key val; do
                 if [ -n "$key" ] && [ -n "$val" ]; then

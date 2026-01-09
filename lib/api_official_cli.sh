@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Devcontainer CLI Interface for dcutil
 # Provides a bridge to the official devcontainer CLI while adding enhanced UX
 
@@ -13,7 +14,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/core.sh"
 
 # Verify devcontainer CLI version compatibility
 verify_devcontainer_cli() {
-    if ! command -v devcontainer >/dev/null 2>&1; then
+    if ! has_command devcontainer; then
         error_exit "devcontainer CLI not found. dcutil requires devcontainer CLI as a hard dependency. Please install it with: brew install devcontainer" "$EXIT_DEVCONTAINER_ERROR"
     fi
 
@@ -105,7 +106,7 @@ devcontainer_cli_down() {
     # The devcontainer CLI may not have a direct down command
     if [ -n "$container_name" ]; then
         local backend_cmd="docker"
-        if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+        if [ "$DETECTED_BACKEND" = "podman" ] && has_command podman; then
             backend_cmd="podman"
         fi
         if $backend_cmd ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
@@ -169,7 +170,7 @@ devcontainer_cli_exec() {
 
     if [ -n "$container_name" ]; then
         local backend_cmd="docker"
-        if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+        if [ "$DETECTED_BACKEND" = "podman" ] && has_command podman; then
             backend_cmd="podman"
         fi
         if $backend_cmd ps --format '{{.Names}}' | grep -q "^${container_name}$"; then

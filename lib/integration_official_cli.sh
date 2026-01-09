@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Devcontainer CLI integration for dcutil
 # Provides compatibility and enhanced functionality using the official devcontainer CLI
 

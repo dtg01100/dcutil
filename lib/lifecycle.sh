@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Lifecycle command support for dcutil
 # Implements additional lifecycle hooks from devcontainer specification
 
@@ -229,7 +230,7 @@ execute_lifecycle_command() {
                 info "[$command_name] Executing: $cmd"
                 # If container is running, execute inside container; otherwise run locally
                 if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-                    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                    if has_command execute_command_in_devcontainer; then
                         if ! execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd"; then
                             error "[$command_name] Command failed: $cmd"
                             return 1
@@ -250,7 +251,7 @@ execute_lifecycle_command() {
         # Single command
         info "[$command_name] Executing: $command_json"
         if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-            if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+            if has_command execute_command_in_devcontainer; then
                 if ! execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$command_json"; then
                     error "[$command_name] Command failed: $command_json"
                     return 1
@@ -350,7 +351,7 @@ execute_parallel_commands() {
                         echo "$cmd_value" | jq -r '.[]' 2>/dev/null | while IFS= read -r cmd; do
                             if [ -n "$cmd" ] && [ "$cmd" != "null" ]; then
                                 if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-                                    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                                    if has_command execute_command_in_devcontainer; then
                                         execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd"
                                     else
                                         docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd"
@@ -363,7 +364,7 @@ execute_parallel_commands() {
                     else
                         # Single command
                         if [ -n "${CONTAINER_NAME:-}" ] && docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
-                            if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+                            if has_command execute_command_in_devcontainer; then
                                 execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -c "$cmd_value"
                             else
                                 docker exec "$CONTAINER_NAME" /bin/sh -c "$cmd_value"
@@ -468,7 +469,7 @@ execute_parallel_commands_host() {
 
 # Execute lifecycle commands based on waitFor policy
 execute_lifecycle_commands() {
-    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+    if ! has_command parse_lifecycle_config || ! parse_lifecycle_config >/dev/null 2>&1; then
         return 0
     fi
 
@@ -509,7 +510,7 @@ execute_lifecycle_commands() {
 
 # Execute post start lifecycle commands
 execute_post_start_lifecycle_commands() {
-    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+    if ! has_command parse_lifecycle_config || ! parse_lifecycle_config >/dev/null 2>&1; then
         return 0
     fi
 
@@ -523,7 +524,7 @@ execute_post_start_lifecycle_commands() {
 
 # Show lifecycle configuration
 show_lifecycle_info() {
-    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+    if ! has_command parse_lifecycle_config || ! parse_lifecycle_config >/dev/null 2>&1; then
         echo "No lifecycle configuration found."
         return 1
     fi
@@ -549,7 +550,7 @@ show_lifecycle_info() {
 
 # Validate lifecycle configuration
 validate_lifecycle_config() {
-    if ! command -v parse_lifecycle_config >/dev/null 2>&1 || ! parse_lifecycle_config >/dev/null 2>&1; then
+    if ! has_command parse_lifecycle_config || ! parse_lifecycle_config >/dev/null 2>&1; then
         return 0
     fi
     

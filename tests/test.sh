@@ -6,7 +6,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DCUTIL="$SCRIPT_DIR/dcutil"
+DCUTIL="$SCRIPT_DIR/../dcutil"
 
 # Colors for output
 RED='\033[0;31m'

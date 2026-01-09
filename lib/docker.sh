@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Docker-native devcontainer operations for dcutil
 # Direct Docker operations without external dependencies
 
@@ -35,7 +36,7 @@ get_container_name_for_project() {
 
     # Look for a container with a matching label first
     local container_name
-    if [ "$DETECTED_BACKEND" = "podman" ] && command -v podman >/dev/null 2>&1; then
+    if [ "$DETECTED_BACKEND" = "podman" ] && has_command podman; then
         container_name=$(podman ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
     else
         container_name=$(docker ps -a --filter "label=devcontainer.local_folder=$project_dir" --format "{{.Names}}" 2>/dev/null | head -1 || true)
@@ -76,7 +77,7 @@ rename_conflicting_container() {
 # Check container daemon availability (Docker or Podman)
 check_container_daemon() {
     # Check if Podman backend is enabled and available
-    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ] && command -v podman >/dev/null 2>&1; then
+    if [ "${PODMAN_BACKEND_ENABLED:-false}" = true ] && has_command podman; then
         if podman info &> /dev/null; then
             info "Using Podman container engine"
             return 0
@@ -84,7 +85,7 @@ check_container_daemon() {
     fi
     
     # Fallback to Docker
-    if command -v docker >/dev/null 2>&1 && docker info &> /dev/null; then
+    if has_command docker && docker info &> /dev/null; then
         info "Using Docker container engine"
         return 0
     fi
@@ -113,7 +114,7 @@ validate_devcontainer_json() {
 
 # Helper function to apply VSCode customizations if integration modules exist and customizations are configured
 apply_vscode_customizations_if_available() {
-    if command -v parse_customizations_config >/dev/null 2>&1 && command -v apply_vscode_customizations >/dev/null 2>&1; then
+    if has_command parse_customizations_config && has_command apply_vscode_customizations; then
         if parse_customizations_config 2>/dev/null; then
             info "Applying VS Code customizations..."
             apply_vscode_customizations
@@ -124,14 +125,10 @@ apply_vscode_customizations_if_available() {
 # Parse devcontainer.json configuration
 parse_devcontainer_config() {
     local config_file=""
-    
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    elif [ -f ".devcontainer/devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer/devcontainer.json"
-    else
+
+    config_file=$(find_devcontainer_config)
+
+    if [ -z "$config_file" ]; then
         echo ""
         echo "⚠️  No development environment configuration found."
         echo ""
@@ -171,7 +168,7 @@ parse_devcontainer_config() {
     SHUTDOWN_ACTION="stopContainer"
     
     # Check if custom build is configured and generate image name
-    if command -v is_custom_build >/dev/null 2>&1 && is_custom_build; then
+    if has_command is_custom_build && is_custom_build; then
         # Generate image name from project directory
         IMAGE_NAME="dcutil-${PWD##*/}:custom"
         info "Generated custom image name: $IMAGE_NAME"
@@ -179,7 +176,7 @@ parse_devcontainer_config() {
 
     if command -v jq &> /dev/null; then
         # Only parse image if not using custom build
-        if ! command -v is_custom_build >/dev/null 2>&1 || ! is_custom_build; then
+        if ! has_command is_custom_build || ! is_custom_build; then
             IMAGE_NAME=$(jq -r '.image // env.IMAGE_NAME' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "$IMAGE_NAME")
         fi
         # Only update WORKSPACE_FOLDER if it's not null
@@ -292,7 +289,7 @@ docker_down() {
     local result=$?
     
     # Show what to do next
-    if [ $result -eq 0 ] && command -v show_contextual_tips >/dev/null 2>&1; then
+    if [ $result -eq 0 ] && has_command show_contextual_tips; then
         show_contextual_tips "not-running"
     fi
     
@@ -306,13 +303,13 @@ docker_restart() {
     echo ""
 
     # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
+    if has_command is_compose_mode && is_compose_mode 2>/dev/null; then
         docker_compose_restart
         return 0
     fi
 
     # Check if container exists
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             echo "⚠️  Your environment isn't running yet."
             echo ""
@@ -343,7 +340,7 @@ docker_restart() {
     fi
 
     # Execute post-start lifecycle commands (handles postStartCommand)
-    if command -v execute_post_start_lifecycle_commands >/dev/null 2>&1; then
+    if has_command execute_post_start_lifecycle_commands; then
         execute_post_start_lifecycle_commands
     fi
 
@@ -353,7 +350,7 @@ docker_restart() {
     success "Devcontainer restarted successfully"
     
     # Show what to do next
-    if command -v show_contextual_tips >/dev/null 2>&1; then
+    if has_command show_contextual_tips; then
         show_contextual_tips "running"
     fi
 }
@@ -367,7 +364,7 @@ docker_enter() {
     info "Entering container (using dcutil implementation)..."
 
     # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
+    if has_command is_compose_mode && is_compose_mode 2>/dev/null; then
         if [ -t 0 ]; then
             docker_compose_exec /bin/bash
         else
@@ -384,7 +381,7 @@ docker_enter() {
     local container_exists=false
     local container_running=false
 
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         if execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             container_exists=true
             if execute_container_command container inspect "$CONTAINER_NAME" | grep -q '"Running": true'; then
@@ -489,7 +486,7 @@ docker_enter() {
         # These will be handled by VS Code when it connects
         # Running them here blocks the interactive shell from starting properly
         
-        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        if has_command execute_command_in_devcontainer; then
             if [ -t 0 ]; then
                 execute_command_in_devcontainer "$PROJECT_DIR" /bin/bash
             else
@@ -520,17 +517,17 @@ docker_status() {
     CONTAINER_NAME=$(get_container_name_for_project "$project_dir")
 
     # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
+    if has_command is_compose_mode && is_compose_mode 2>/dev/null; then
         docker_compose_status
         return 0
     fi
 
 # Check if container exists
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             echo "Container is not running"
             # Show contextual tip
-            if command -v show_contextual_tips >/dev/null 2>&1; then
+            if has_command show_contextual_tips; then
                 show_contextual_tips "not-running"
             fi
             return 0
@@ -541,7 +538,7 @@ docker_status() {
             echo "Container is running"
             
             # Show contextual tip
-            if command -v show_contextual_tips >/dev/null 2>&1; then
+            if has_command show_contextual_tips; then
                 show_contextual_tips "running"
             fi
             
@@ -565,7 +562,7 @@ docker_status() {
         if ! docker container inspect "$CONTAINER_NAME" &>/dev/null; then
             echo "Container is not running"
             # Show contextual tip
-            if command -v show_contextual_tips >/dev/null 2>&1; then
+            if has_command show_contextual_tips; then
                 show_contextual_tips "not-running"
             fi
             return 0
@@ -576,7 +573,7 @@ docker_status() {
             echo "Container is running"
             
             # Show contextual tip
-            if command -v show_contextual_tips >/dev/null 2>&1; then
+            if has_command show_contextual_tips; then
                 show_contextual_tips "running"
             fi
             
@@ -596,7 +593,7 @@ docker_status() {
         else
             echo "Container is stopped"
             # Show contextual tip
-            if command -v show_contextual_tips >/dev/null 2>&1; then
+            if has_command show_contextual_tips; then
                 show_contextual_tips "not-running"
             fi
         fi
@@ -641,13 +638,13 @@ docker_logs() {
     info "Using container name: $CONTAINER_NAME"
 
     # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
+    if has_command is_compose_mode && is_compose_mode 2>/dev/null; then
         docker_compose_logs
         return 0
     fi
     
     # Check if container exists
-    if command -v execute_container_command >/dev/null 2>&1; then
+    if has_command execute_container_command; then
         if ! execute_container_command container inspect "$CONTAINER_NAME" &>/dev/null; then
             error_exit "No devcontainer found. Run 'dcutil up' first." "$EXIT_DEVCONTAINER_ERROR"
         fi
@@ -721,7 +718,7 @@ docker_run() {
         apply_vscode_customizations_if_available
     fi
 
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         # Use devcontainer CLI which handles argument passing securely
         execute_command_in_devcontainer "$PROJECT_DIR" "$@"
         return $?
@@ -765,7 +762,7 @@ docker_clean() {
     log_dangerous_operation "clean" "removing containers and configuration"
 
     # Check if we're in Docker Compose mode
-    if command -v is_compose_mode >/dev/null 2>&1 && is_compose_mode 2>/dev/null; then
+    if has_command is_compose_mode && is_compose_mode 2>/dev/null; then
         docker_compose_clean
         return 0
     fi
@@ -835,7 +832,7 @@ docker_clean() {
     success "Devcontainer cleaned up"
     
     # Show what to do next
-    if command -v show_contextual_tips >/dev/null 2>&1; then
+    if has_command show_contextual_tips; then
         show_contextual_tips "not-running"
     fi
 }
@@ -941,21 +938,21 @@ devcontainer_rebuild() {
     # Clean up based on preservation options
     if [ "$preserve_volumes" != true ]; then
         info "Cleaning volumes..."
-        if command -v cleanup_volumes >/dev/null 2>&1; then
+        if has_command cleanup_volumes; then
             cleanup_volumes
         fi
     fi
     
     if [ "$preserve_ssh" != true ]; then
         info "Cleaning SSH configuration..."
-        if command -v cleanup_ssh >/dev/null 2>&1; then
+        if has_command cleanup_ssh; then
             cleanup_ssh
         fi
     fi
     
     if [ "$preserve_agents" != true ]; then
         info "Cleaning AI agents..."
-        if command -v cleanup_agents >/dev/null 2>&1; then
+        if has_command cleanup_agents; then
             cleanup_agents
         fi
     fi
@@ -982,7 +979,7 @@ execute_container_command() {
         fi
     fi
 
-    if [ "$backend" = "podman" ] && command -v execute_podman_command >/dev/null 2>&1; then
+    if [ "$backend" = "podman" ] && has_command execute_podman_command; then
         execute_podman_command "$cmd" "$@"
     else
         docker "$cmd" "$@"
@@ -992,7 +989,7 @@ execute_container_command() {
 # Execute a command inside the devcontainer: prefer devcontainer CLI, fall back to docker/podman exec
 exec_in_container() {
     local cmd="$*"
-    if command -v devcontainer >/dev/null 2>&1; then
+    if has_command devcontainer; then
         devcontainer exec --workspace-folder . /bin/bash -lc "$cmd"
         return $?
     fi
@@ -1005,10 +1002,10 @@ exec_in_container() {
     fi
 
     # Prefer official devcontainer CLI for exec
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         execute_command_in_devcontainer "$PROJECT_DIR" /bin/sh -lc "$cmd"
         return $?
-    elif command -v execute_container_command >/dev/null 2>&1; then
+    elif has_command execute_container_command; then
         execute_container_command exec -i "$container_name" /bin/sh -lc "$cmd"
         return $?
     else
@@ -1020,7 +1017,7 @@ exec_in_container() {
 # Backwards-compatible alias used across the codebase
 run_in_container() {
     # Prefer official devcontainer CLI for exec
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         execute_command_in_devcontainer "$PROJECT_DIR" "$@"
     else
         exec_in_container "$@"
@@ -1201,14 +1198,14 @@ docker_build() {
     info "Building devcontainer image..."
 
     # Run the official build with potential customizations
-    if command -v devcontainer >/dev/null 2>&1; then
+    if has_command devcontainer; then
         local result
         devcontainer build --workspace-folder "$workspace_folder"
         result=$?
 
         # If build was successful and we have customizations, they should be handled by the devcontainer CLI
         # But make sure integration module is available for post-build operations
-        if [ $result -eq 0 ] && command -v parse_customizations_config >/dev/null 2>&1; then
+        if [ $result -eq 0 ] && has_command parse_customizations_config; then
             info "Build completed successfully, customizations will be applied during container startup"
         fi
 
@@ -1294,6 +1291,6 @@ devcontainer_enter() {
 }
 
 # Initialize Podman backend on startup
-if command -v init_podman_backend >/dev/null 2>&1; then
+if has_command init_podman_backend; then
     init_podman_backend
 fi

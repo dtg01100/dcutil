@@ -4,7 +4,7 @@
 # Focus on specific failing areas and edge cases
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DCUTIL="$SCRIPT_DIR/dcutil"
+DCUTIL="$SCRIPT_DIR/../../dcutil"
 
 echo "🎯 TARGETED DCUTIL FUNCTIONALITY TESTS"
 echo "====================================="
@@ -148,9 +148,9 @@ echo "🧪 TESTING LIBRARY INTEGRATION"
 echo "=============================="
 
 # Test that libraries can be sourced
-run_test "core library source" "bash -c 'source \"$SCRIPT_DIR/dcutil-files/lib/core.sh\" && echo \"EXIT_SUCCESS=$EXIT_SUCCESS\"' >/dev/null 2>&1" 0
+run_test "core library source" "bash -c 'source \"$SCRIPT_DIR/../../lib/core.sh\" && echo \"EXIT_SUCCESS=$EXIT_SUCCESS\"' >/dev/null 2>&1" 0
 
-run_test "docker library source" "bash -c 'source \"$SCRIPT_DIR/dcutil-files/lib/core.sh\" && source \"$SCRIPT_DIR/dcutil-files/lib/docker.sh\" && echo \"loaded\"' | grep -q 'loaded'" 0
+run_test "docker library source" "bash -c 'source \"$SCRIPT_DIR/../../lib/core.sh\" && source \"$SCRIPT_DIR/../../lib/docker.sh\" && echo \"loaded\"' | grep -q 'loaded'" 0
 
 echo ""
 echo "🎯 TESTING SPECIFIC FUNCTIONALITY"

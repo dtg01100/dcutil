@@ -47,7 +47,7 @@
 
 ### 1. Commit All Changes
 ```bash
-cd /var/home/dlafreniere/projects/dcutil/dcutil-files
+cd /path/to/dcutil
 
 # Stage all changes
 git add -A

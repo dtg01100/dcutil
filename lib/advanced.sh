@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Advanced Features support for dcutil
 # Implements advanced devcontainer specification features
 
@@ -40,7 +41,7 @@ has_advanced_features() {
 # Parse advanced features configuration
 parse_advanced_features_config() {
     # Parse devcontainer config first to set DEVCONTAINER_CONFIG_FILE
-    if command -v parse_devcontainer_config >/dev/null 2>&1; then
+    if has_command parse_devcontainer_config; then
         parse_devcontainer_config
     else
         error_exit "Failed to parse devcontainer configuration" "$EXIT_CONFIG_ERROR"
@@ -129,7 +130,7 @@ apply_user_uid_sync() {
     # Check if container user exists and get its UID/GID
     local container_uid
     local container_gid
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         container_uid=$(execute_command_in_devcontainer "$PROJECT_DIR" id -u "${CONTAINER_USER:-}" 2>/dev/null || echo "")
         container_gid=$(execute_command_in_devcontainer "$PROJECT_DIR" id -g "${CONTAINER_USER:-}" 2>/dev/null || echo "")
     else
@@ -141,7 +142,7 @@ apply_user_uid_sync() {
         info "Updating container user UID from $container_uid to $current_uid"
         
         # Update user UID
-        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        if has_command execute_command_in_devcontainer; then
             if ! execute_command_in_devcontainer "$PROJECT_DIR" usermod -u "$current_uid" "${CONTAINER_USER:-vscode}" 2>/dev/null; then
                 warning "Failed to update container user UID"
             fi
@@ -164,7 +165,7 @@ apply_user_uid_sync() {
         info "Updating container user GID from $container_gid to $current_gid"
         
         # Update user GID
-        if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+        if has_command execute_command_in_devcontainer; then
             if ! execute_command_in_devcontainer "$PROJECT_DIR" groupmod -g "$current_gid" "$(id -gn "${CONTAINER_USER:-vscode}" 2>/dev/null || echo "vscode")" 2>/dev/null; then
                 warning "Failed to update container user GID"
             fi

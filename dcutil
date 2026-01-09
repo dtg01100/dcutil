@@ -1198,28 +1198,7 @@ EOF
             ;;
     esac
 else
-    # Define schema usage function before command routing
-    print_schema_usage() {
-        cat << 'EOF'
-Usage: dcutil schema <command> [options]
 
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
-    }
-    
     # For up command, check for --project-home flag before determining project directory
 # Add edit command handling in top-level command routing
 
@@ -1281,238 +1260,82 @@ info "PROJECT_DIR before cd: '$PROJECT_DIR'"
 export PROJECT_DIR
 cd "$PROJECT_DIR" || error_exit "Failed to change to project directory: $PROJECT_DIR" "$EXIT_PERMISSION_ERROR"
 
-# Usage functions
-print_compose_usage() {
-    cat << 'EOF'
-Usage: dcutil compose <command> [options]
+# Load help functions
+source "$LIB_DIR/help.sh"
 
-Docker Compose commands for multi-container devenvironments:
+# Command handler functions
+handle_volumes_command() {
+    if [ $# -eq 0 ]; then
+        print_volumes_usage
+        exit "$EXIT_INVALID_ARGS"
+    fi
 
-Commands:
-  up       Start the Docker Compose environment
-  down     Stop the Docker Compose environment
-  restart  Restart the Docker Compose environment
-  logs     Show logs from the Docker Compose services
-  exec     Execute a command in the main service container
-  status   Show status of Docker Compose services
-  build    Build Docker Compose images
-  clean    Clean up Docker Compose environment (stop and remove)
-  scale    Scale services to specified replica count
-  config   Show Docker Compose configuration
+    subcommand="$1"
+    shift
 
-Examples:
-  dcutil compose up
-  dcutil compose logs
-  dcutil compose exec bash
-  dcutil compose down
-  dcutil compose build
-
-Requires a devcontainer.json with dockerComposeFile and service properties.
-EOF
-}
-
-print_features_usage() {
-    cat << 'EOF'
-Usage: dcutil features <command> [options]
-
-Devcontainer Features commands for adding tools and runtimes:
-
-Commands:
-  add                  Add a feature to devcontainer configuration
-  remove               Remove a feature from devcontainer configuration
-  install              Install all configured features
-  info                 Show features configuration and status
-  validate             Validate features configuration
-  clean                Clean features cache and installation
-  update               Update all features (re-download and install)
-  check-updates        Check for available feature updates
-  test [target]        Test Features (similar to devcontainer CLI)
-  package <target>     Package Features (similar to devcontainer CLI)
-  publish <target>     Package and publish Features (similar to devcontainer CLI)
-  resolve-dependencies Resolve dependency graph from configuration (similar to devcontainer CLI)
-  generate-docs        Generate documentation for configured features (similar to devcontainer CLI)
-
-Examples:
-  dcutil features add node
-  dcutil features remove node
-  dcutil features add python --rebuild
-  dcutil features remove git --rebuild
-  dcutil features install
-  dcutil features info
-  dcutil features validate
-  dcutil features clean
-  dcutil features update
-  dcutil features test .
-  dcutil features package ./my-feature
-  dcutil features resolve-dependencies
-  dcutil features generate-docs
-
-Requires a devcontainer.json with features property containing feature specifications.
-EOF
-}
-
-print_advanced_usage() {
-    cat << 'EOF'
-Usage: dcutil advanced <command> [options]
-
-Advanced devcontainer features for enhanced configuration:
-
-Commands:
-  info      Show advanced features configuration
-  validate  Validate advanced features configuration
-  apply     Apply advanced features to running container
-
-Examples:
-  dcutil advanced info
-  dcutil advanced validate
-  dcutil advanced apply
-
-Supports updateRemoteUserUID, entrypoint override, overrideCommand,
-forwardPorts, portsAttributes, and workspaceMount features.
-EOF
-}
-
-print_integration_usage() {
-    cat << 'EOF'
-Usage: dcutil integration <command> [options]
-
-Tool integration features for enhanced development environment:
-
-Commands:
-  info      Show tool integration configuration
-  validate  Validate tool integration configuration
-  apply     Apply tool integration features to running container
-
-Examples:
-  dcutil integration info
-  dcutil integration validate
-  dcutil integration apply
-
-Supports VS Code customizations, other tool customizations,
-and devcontainer.metadata label parsing.
-EOF
-}
-
-print_merging_usage() {
-    cat << 'EOF'
-Usage: dcutil merging <command> [options]
-
-Image metadata merging for combining image labels with devcontainer.json:
-
-Commands:
-  show      Show merged configuration (image metadata + devcontainer.json)
-  validate  Validate merged configuration
-  cleanup   Cleanup temporary merged configuration files
-
-Examples:
-  dcutil merging show
-  dcutil merging validate
-  dcutil merging cleanup
-
-Implements the devcontainer specification merge logic for image metadata.
-EOF
-}
-
-print_userprobe_usage() {
-    cat << 'EOF'
-Usage: dcutil userprobe <command> [options]
-
-User environment probing for extracting user shell environment variables:
-
-Commands:
-  probe     Probe user environment variables using configured shell
-  show      Show probed environment variables
-  apply     Apply probed environment variables to running container
-  validate  Validate userEnvProbe configuration
-  cleanup   Cleanup probed environment variables
-
-Examples:
-  dcutil userprobe probe
-  dcutil userprobe show
-  dcutil userprobe apply
-  dcutil userprobe validate
-
-Supports bash, zsh, fish, and sh shells for environment probing.
-Implements devcontainer specification userEnvProbe property.
-EOF
-}
-
-print_hostrequirements_usage() {
-    cat << 'EOF'
-Usage: dcutil hostrequirements <command> [options]
-
-Host system requirements validation for devcontainer compatibility:
-
-Commands:
-  validate  Validate host system meets configured requirements
-  show      Show host requirements configuration and status
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil hostrequirements validate
-  dcutil hostrequirements show
-
-Validates CPU, memory, storage, and GPU requirements specified in devcontainer.json.
-EOF
-}
-
-print_shutdown_usage() {
-    cat << 'EOF'
-Usage: dcutil shutdown <command> [options]
-
-Container shutdown actions for handling container termination:
-
-Commands:
-  execute   Execute shutdown action for running container
-  show      Show shutdown action configuration
-  validate  Validate shutdown action configuration
-
-Examples:
-  dcutil shutdown execute
-  dcutil shutdown show
-  dcutil shutdown validate
-
-Supports stop, kill, none, shutdown actions and custom commands.
-EOF
-}
-
-print_lifecycle_usage() {
-    cat << 'EOF'
-Usage: dcutil lifecycle <command> [options]
-
-Devcontainer lifecycle commands for container initialization and management:
-
-Commands:
-  info      Show lifecycle configuration
-  validate  Validate lifecycle configuration
-
-Examples:
-  dcutil lifecycle info
-  dcutil lifecycle validate
-
-Manages onCreateCommand, updateContentCommand, postAttachCommand, and waitFor properties.
-EOF
-}
-
-print_schema_usage() {
-    cat << 'EOF'
-Usage: dcutil schema <command> [options]
-
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
+    case "$subcommand" in
+        "list")
+            # Check if a project path was provided
+            if [ -n "${1:-}" ] && [ -d "$1" ]; then
+                PROJECT_DIR="$1"
+                initialize_devcontainer_config
+                shift  # Remove the project path from arguments
+            fi
+            list_volumes
+            ;;
+        "add")
+            if [ $# -lt 3 ]; then
+                error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type] [project_path]" "$EXIT_INVALID_ARGS"
+            fi
+            # Check if last argument is a project path
+            if [ $# -gt 3 ] && [ -d "${!#}" ]; then
+                PROJECT_DIR="${!#}"
+                initialize_devcontainer_config
+                # Remove the project path from arguments
+                set -- "${@:1:$#-1}"
+            fi
+            add_volume "$1" "$2" "$3" "${4:-}"
+            ;;
+        "remove")
+            if [ $# -eq 0 ]; then
+                error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
+            fi
+            remove_volume "$1"
+            ;;
+        "mount")
+            if [ $# -eq 0 ]; then
+                error_exit "Usage: dcutil volumes mount <name>" "$EXIT_INVALID_ARGS"
+            fi
+            mount_volume "$1"
+            ;;
+        "unmount")
+            if [ $# -eq 0 ]; then
+                error_exit "Usage: dcutil volumes unmount <name>" "$EXIT_INVALID_ARGS"
+            fi
+            unmount_volume "$1"
+            ;;
+        "status")
+            volume_status
+            ;;
+        "backup")
+            if [ $# -eq 0 ]; then
+                error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
+            fi
+            backup_volume "$1" "${2:-}"
+            ;;
+        "restore")
+            if [ $# -lt 2 ]; then
+                error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
+            fi
+            restore_volume "$1" "$2"
+            ;;
+        "help"|"-h"|"--help")
+            print_volumes_usage
+            ;;
+        *)
+            handle_unknown_subcommand "volumes" "$subcommand"
+            ;;
+    esac
 }
 
 # Command routing
@@ -1572,77 +1395,7 @@ case "$COMMAND" in
          ;;
 
     "volumes")
-        if [ $# -eq 0 ]; then
-            print_volumes_usage
-            exit "$EXIT_INVALID_ARGS"
-        fi
-
-        subcommand="$1"
-        shift
-
-        case "$subcommand" in
-            "list")
-                # Check if a project path was provided
-                if [ -n "${1:-}" ] && [ -d "$1" ]; then
-                    PROJECT_DIR="$1"
-                    initialize_devcontainer_config
-                    shift  # Remove the project path from arguments
-                fi
-                list_volumes
-                ;;
-            "add")
-                if [ $# -lt 3 ]; then
-                    error_exit "Usage: dcutil volumes add <name> <host_path> <container_path> [type] [project_path]" "$EXIT_INVALID_ARGS"
-                fi
-                # Check if last argument is a project path
-                if [ $# -gt 3 ] && [ -d "${!#}" ]; then
-                    PROJECT_DIR="${!#}"
-                    initialize_devcontainer_config
-                    # Remove the project path from arguments
-                    set -- "${@:1:$#-1}"
-                fi
-                add_volume "$1" "$2" "$3" "${4:-}"
-                ;;
-            "remove")
-                if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes remove <name>" "$EXIT_INVALID_ARGS"
-                fi
-                remove_volume "$1"
-                ;;
-            "mount")
-                if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes mount <name>" "$EXIT_INVALID_ARGS"
-                fi
-                mount_volume "$1"
-                ;;
-            "unmount")
-                if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes unmount <name>" "$EXIT_INVALID_ARGS"
-                fi
-                unmount_volume "$1"
-                ;;
-            "status")
-                volume_status
-                ;;
-            "backup")
-                if [ $# -eq 0 ]; then
-                    error_exit "Usage: dcutil volumes backup <name> [backup_path]" "$EXIT_INVALID_ARGS"
-                fi
-                backup_volume "$1" "${2:-}"
-                ;;
-            "restore")
-                if [ $# -lt 2 ]; then
-                    error_exit "Usage: dcutil volumes restore <name> <backup_path>" "$EXIT_INVALID_ARGS"
-                fi
-                restore_volume "$1" "$2"
-                ;;
-            "help"|"-h"|"--help")
-                print_volumes_usage
-                ;;
-            *)
-                handle_unknown_subcommand "volumes" "$subcommand"
-                ;;
-        esac
+        handle_volumes_command "$@"
         ;;
     "compose")
         if [ $# -eq 0 ]; then

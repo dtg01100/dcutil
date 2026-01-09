@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Podman backend support for dcutil
 # Provides Podman compatibility layer for Docker-native operations
 
@@ -15,7 +16,7 @@ PODMAN_FALLBACK_ENABLED=false
 
 # Check if Podman is available and functional
 check_podman_availability() {
-    if command -v podman >/dev/null 2>&1; then
+    if has_command podman; then
         info "Podman found, checking functionality..."
         
         # Test basic Podman functionality
@@ -66,7 +67,7 @@ auto_detect_backend() {
     if [ "$PODMAN_BACKEND_ENABLED" = false ]; then
         if check_podman_availability && [ "$PODMAN_AVAILABLE" = true ]; then
             # Check if Docker is available for fallback
-            if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            if has_command docker && docker info >/dev/null 2>&1; then
                 PODMAN_FALLBACK_ENABLED=true
             else
                 PODMAN_FALLBACK_ENABLED=false
@@ -321,7 +322,7 @@ podman_docker_rmi() {
 
 podman_docker_exec() {
     # Prefer official devcontainer CLI for exec
-    if command -v execute_command_in_devcontainer >/dev/null 2>&1; then
+    if has_command execute_command_in_devcontainer; then
         execute_command_in_devcontainer "$PROJECT_DIR" "$@"
     elif [ "$PODMAN_BACKEND_ENABLED" = true ]; then
         execute_podman_command exec "$@"
@@ -351,7 +352,7 @@ podman_docker_compose() {
         info "Podman backend: Using podman-compose or podman play..."
         
         # Check if podman-compose is available
-        if command -v podman-compose >/dev/null 2>&1; then
+        if has_command podman-compose; then
             info "Using podman-compose"
             podman-compose "$@"
         elif podman play kube >/dev/null 2>&1; then
@@ -414,7 +415,7 @@ validate_backend_config() {
 # Initialize Podman backend
 init_podman_backend() {
     # Only initialize if Docker is not available or Podman is explicitly requested
-    if [ "${DCUTIL_BACKEND:-}" = "podman" ] || ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+    if [ "${DCUTIL_BACKEND:-}" = "podman" ] || ! has_command docker || ! docker info >/dev/null 2>&1; then
         info "Initializing Podman backend support..."
         
         # Auto-detect backend preference
@@ -443,19 +444,15 @@ offer_podman_tweaks() {
     local config_file=""
 
     # Find devcontainer.json
-    if [ -f ".devcontainer/devcontainer.json" ]; then
-        config_file=".devcontainer/devcontainer.json"
-    elif [ -f ".devcontainer.json" ]; then
-        config_file=".devcontainer.json"
-    elif [ -f "devcontainer.json" ]; then
-        config_file="devcontainer.json"
-    else
+    config_file=$(find_devcontainer_config)
+
+    if [ -z "$config_file" ]; then
         # No devcontainer.json found, skip offering tweaks
         return 0
     fi
 
     # Check if tweaks are already applied
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         local has_security_opts
         local has_run_args
         has_security_opts=$(jq -e '.securityOpt // empty' "$config_file" 2>/dev/null || echo "false")
@@ -485,7 +482,7 @@ offer_podman_tweaks() {
     fi
 
     # Check if tweaks are already applied
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         local has_security_opts
         local has_run_args
         has_security_opts=$(jq -e '.securityOpt // empty' "$config_file" 2>/dev/null || echo "false")
@@ -519,7 +516,7 @@ apply_podman_tweaks() {
 
     info "Applying Podman-specific tweaks to $config_file..."
 
-    if command -v jq >/dev/null 2>&1; then
+    if has_command jq; then
         # Create backup
         cp "$config_file" "${config_file}.backup" 2>/dev/null || true
 
@@ -531,7 +528,7 @@ apply_podman_tweaks() {
             mv "${config_file}.tmp" "$config_file"
             success "Applied Podman tweaks: disabled SELinux labeling and enabled user namespace keep-id"
             # Validate with devcontainer CLI instead of strict JSON validation to handle comments
-            if command -v devcontainer >/dev/null 2>&1; then
+            if has_command devcontainer; then
                 devcontainer read-configuration --config "$config_file" >/dev/null 2>&1 || error_exit "Modified devcontainer config is invalid" "$EXIT_CONFIG_ERROR"
             else
                 error_exit "devcontainer CLI not available for configuration validation" "$EXIT_DEVCONTAINER_ERROR"

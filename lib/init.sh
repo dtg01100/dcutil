@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+set -euo pipefail
 # Initialization functionality for dcutil
 
 # Source core functionality first, then template integration
@@ -52,7 +53,7 @@ init_mode() {
             features_json=$(suggest_features_for_project "$template_id")
             
             # Apply the official template using the devcontainer CLI
-            if command -v devcontainer >/dev/null 2>&1; then
+            if has_command devcontainer; then
                 info "Using official template: $template_id"
                 
                 # Apply the template with suggested features
@@ -71,7 +72,7 @@ init_mode() {
                     success "✅ Development environment configured successfully!"
                     
                     # Show what to do next
-                    if command -v show_contextual_tips >/dev/null 2>&1; then
+                    if has_command show_contextual_tips; then
                         show_contextual_tips "not-running"
                     fi
                     
@@ -82,7 +83,7 @@ init_mode() {
                         start_now=${start_now:-Y}
                         if [[ "$start_now" =~ ^[Yy] ]]; then
                             info "Starting your environment..."
-                            if command -v devcontainer_up >/dev/null 2>&1; then
+                            if has_command devcontainer_up; then
                                 devcontainer_up
                                 return 0
                             fi
