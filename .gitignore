@@ -1,1 +1,20 @@
+# Devcontainer / VS Code Remote - we don't develop in a container
+# Ignore devcontainer folder and any devcontainer json files
+/.devcontainer/
+/devcontainer.json
+/devcontainer.jsonc
+
+# Debug and test logs
 comprehensive_debug.log
+*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~

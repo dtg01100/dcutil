@@ -1,0 +1,302 @@
+# Changelog
+
+## [1.6.0] - 2025-12-09
+
+### 🚀 Major Feature: Devcontainer Features Management
+
+- **Interactive Features Wizard**: New `dcutil features` command for managing devcontainer features
+  - `dcutil features` - Launch interactive wizard to add/remove features
+  - `dcutil features list` - Show currently configured features
+  - `dcutil features add <feature>` - Add specific features (supports comma-separated lists)
+  - `dcutil features remove <feature>` - Remove specific features
+- **Feature Discovery**: Automatically fetch available features from official devcontainers registry
+- **Smart Feature Handling**: Supports both object and array feature configurations
+- **Dependency Resolution**: Automatically handles feature installation order based on dependencies
+- **Offline Mode**: Fallback to cached/local features when registry is unavailable
+
+### 🛠️ Technical Infrastructure
+
+- **New Features Library**: `lib/features.sh` (12,942 lines) - Complete features management system
+- **Comprehensive Testing**: Added regression and unit tests for features functionality
+- **Template Integration**: Enhanced template system with feature-aware configurations
+- **Error Handling**: Robust error handling for feature installation and configuration issues
+
+### 📊 Quality Assurance
+
+- **Test Coverage**: Added 50+ new tests covering feature management edge cases
+- **Regression Testing**: Comprehensive test suite for backward compatibility
+- **Syntax Validation**: All new code passes shellcheck validation
+- **Documentation**: Updated help system and command documentation
+
+### 🔧 Dependencies
+
+- **Dependabot Configuration**: Added automated dependency updates for devcontainer ecosystem
+- **Registry Integration**: Seamless integration with official devcontainers features registry
+
+## [1.5.0] - 2025-11-25
+
+### 🚀 Features
+- **Resource Monitoring**: Added `dcutil stats` command for monitoring container resource usage
+  - Quick snapshot view with `dcutil stats show` (default)
+  - Live streaming view with `dcutil stats watch` for continuous monitoring
+  - Detailed resource information with `dcutil stats detailed` showing limits and configuration
+  - Process viewer with `dcutil stats top` to see running processes
+- **Enhanced User Experience**: Intuitive command structure with helpful aliases (watch/live/follow, detailed/full, top/ps)
+- **Resource Insights**: Track CPU usage, memory consumption, network I/O, disk I/O, and process counts
+- **Limit Awareness**: See configured resource limits and how close you are to hitting them
+
+### 🎯 Beginner-Friendly Redesign
+- **No Docker Knowledge Required**: Completely rewritten user-facing messages to eliminate container jargon
+- **Plain Language**: Commands phrased as questions users actually ask ("Is my code using a lot of resources?")
+- **Helpful Error Messages**: Every error explains what happened and shows the exact command to fix it
+- **Contextual Explanations**: All metrics include inline explanations in beginner-friendly terms
+- **Friendly Prompts**: Interactive prompts use clear, encouraging language
+- **Updated Help**: Main help completely rewritten to focus on "your development environment" not "containers"
+- **README Overhaul**: Introduction emphasizes ease of use and zero Docker expertise needed
+
+### 🛠️ Improvements
+- **Shell Completion**: Added stats command autocomplete with subcommands
+- **Help System**: Comprehensive help text explaining capabilities without technical jargon
+- **Error Handling**: Clear messages with actionable next steps, not technical error codes
+- **Visual Clarity**: Uses emojis and formatting to make output easy to scan (📊, 💡, ⚠️, ✓)
+
+### 📝 Message Improvements
+- "Development environment" instead of "devcontainer" or "container"
+- "Your environment" instead of technical container references
+- Action-oriented help: "Start your environment" not "Start the devcontainer"
+- Beginner-focused examples in all help text
+- Removed references to Docker/Podman in user-facing messages
+
+### 🎨 Command-Line UX Enhancements
+- **Interactive Menu Mode**: Run `dcutil` without arguments for a friendly menu interface with 9 common tasks
+- **Smart Command Suggestions**: Typo detection with "Did you mean?" suggestions using Levenshtein distance algorithm
+- **First-Run Experience**: Welcome screen with quick start guide for new users (shown once)
+- **Contextual Tips**: Helpful hints based on environment state integrated into key commands:
+  - After `init` → "Next: Run 'dcutil up' to start your environment"
+  - After `status` → Different tips based on running/stopped state (6 integration points)
+  - After `down`, `restart`, `clean` → Guidance on next steps
+- **Time Expectation Messages**: Clear indicators for long operations to set user expectations:
+  - `dcutil up` → "⏳ This may take a few minutes on first run..."
+  - `dcutil build` → "⏳ This may take several minutes depending on the image size..."
+  - `dcutil features install` → "⏳ This may take a few minutes depending on the features..."
+- **Enhanced Shell Completion**: Updated bash, zsh, and fish completions with `menu` and `stats` commands
+- **UX Module**: New `lib/ux.sh` (386 lines) with comprehensive helper functions for beginner-friendly interactions
+
+## [1.4.1] - 2025-11-25
+
+### 🚀 Features
+- **Environment Export**: Added `dcutil environment export-env` command to output environment variables matching devcontainer CLI settings
+- **VSCode Integration**: Enhanced environment variable handling to match VSCode devcontainer environment
+- **Docker CLI Environment Export**: Export DOCKER_HOST, DEVCONTAINER_CONFIG, and other settings for compatible Docker CLI usage
+
+### 🛠️ Improvements
+- **Devcontainer CLI Validation**: Rely exclusively on devcontainer CLI for validation instead of fallback methods
+- **Hard Dependency**: Properly enforce devcontainer CLI as hard requirement without fallbacks
+- **Environment Consistency**: Align with official devcontainer environment variable handling
+
+## [1.3.7] - 2025-11-24
+
+### 🧹 Cleanup
+- **Removed accidental test file**: Cleaned up test_name_clash.sh that was accidentally added during development
+- **Code hygiene**: Maintained clean repository state without development artifacts
+
+## [1.3.6] - 2025-11-24
+
+### 🔧 Technical Improvements
+- **Shellcheck Compliance**: Addressed all shellcheck warnings and improved code quality
+- **Code Quality**: Enhanced parameter expansion and variable handling for better portability
+- **Robustness**: Improved array handling and dimension calculations
+
+### Technical Details
+- Fixed unquoted array expansion by using direct array access instead of mapfile
+- Added proper quoting for all dialog variables to prevent globbing and word splitting
+- Improved parameter expansion for string trimming using bash built-ins
+- Enhanced exit statement quoting for consistent behavior
+- Streamlined dimension calculations and removed unused variables
+
+## [1.3.5] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Numeric Validation**: Added validation for dialog dimensions to ensure numeric values before arithmetic operations
+- **Array Bounds**: Added bounds checking before array access to prevent unbound variable errors in template selection
+- **Robust Parsing**: Enhanced dialog_maxsize parsing to handle non-numeric output gracefully
+
+## [1.3.4] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Verification**: Added `verify-dialog` command for manual testing and debugging dialog UI issues
+- **Dialog Stability**: Improved dialog detection with `safe_dialog()` wrapper and proper terminal sizing
+- **Syntax Fixes**: Fixed bash regex parsing issues in dialog output handling
+
+## [1.3.3] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Detection**: Fixed `has_dialog()` test to use non-displaying `--print-maxsize` option instead of `--msgbox` to avoid unwanted dialog displays during testing
+
+## [1.3.2] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Detection**: Improved `has_dialog()` function with additional checks for `/dev/tty` availability and actual dialog functionality testing
+
+## [1.3.1] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Dialog Detection**: Fixed `has_dialog()` function to properly detect non-interactive environments, preventing dialog failures in CI/automated environments
+
+## [1.3.0] - 2025-11-24
+
+### 🚀 Features
+- **Guardrails**: Added comprehensive guardrails and shellcheck fixes for improved code quality and security
+
+## [1.2.0] - 2025-11-24
+
+### 🚀 Major Refactoring
+- **CLI Wrapper Architecture**: Refactored dcutil as a wrapper for the official devcontainer CLI with enhanced UX, removing Docker-native mode
+- **Automatic Backend Detection**: Implemented automatic detection of which backend (Docker/Podman) the devcontainer CLI uses, ensuring consistent operations
+- **Documentation Overhaul**: Updated README to be user-focused, moved technical details to DEVELOPER.md
+- **Backend Preference**: Changed to prefer Docker for better testing coverage
+
+### 🔧 Technical Improvements
+- **Selective Direct Calls**: Direct backend interactions now only occur for CLI-unsupported features (restart, status, logs, etc.)
+- **Backend Consistency**: All operations respect the detected backend from devcontainer CLI usage
+- **Modular Documentation**: Separated user and developer documentation
+
+## [1.1.2] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Container Entry**: Fixed "exec: executable file not found" error when entering devcontainers
+- **Devcontainer CLI**: Corrected function calls to `execute_command_in_devcontainer`
+- **Command Execution**: Removed duplicate 'exec' arguments causing command failures
+
+## [1.1.1] - 2025-11-24
+
+### 🐛 Bug Fixes
+- **Syntax Errors**: Fixed malformed if/else structures in `environment.sh` and `podman.sh`
+- **Script Validation**: Ensured all shell scripts pass syntax validation
+
+## [1.1.0] - 2025-11-24
+
+### 🚀 Major Refactoring
+- **Devcontainer CLI Integration**: Replaced all direct docker/podman exec calls with the official devcontainer CLI
+- **Simplified Architecture**: Removed Python fallbacks for JSON processing (jq is now required)
+- **Container-First Execution**: All operations now prefer running through the devcontainer CLI for consistency
+
+### 🔧 Technical Improvements
+- **Reduced Maintenance**: No longer maintaining low-level docker exec logic
+- **Better Compatibility**: Leverages official devcontainer CLI for cross-platform consistency
+- **Improved Feature Installation**: Enhanced container detection and in-container execution
+- **Cleaner Dependencies**: Removed unnecessary Python dependency from Homebrew formula
+
+### 📦 Package Updates
+- **Homebrew Formula**: Updated to remove Python dependency
+
+## [1.0.8] - 2025-11-23
+
+### Added
+- Comprehensive completion files for bash, zsh, and fish shells with support for all commands and options
+
+## [1.0.7] - 2025-11-23
+
+### Added
+- Automated Homebrew formula updates via GitHub Actions
+- Repository dispatch workflows for cross-repo automation
+
+## [1.0.6] - 2025-11-23
+
+### Added
+- Embed version in script for better version detection
+
+## [1.0.5] - 2025-11-23
+
+### Added
+- `dcutil version` command to show current version
+- Version command support in bash/zsh completion
+
+## [1.0.4] - 2025-11-23
+
+### Changed
+- Update help text to use `--help` convention instead of `help`
+
+## [1.0.3] - 2025-11-23
+
+### Fixed
+- Fix `dcutil init` exiting immediately in non-interactive environments
+- Add check for interactive terminal before running wizard mode
+
+## [1.0.2] - 2025-11-23
+
+### Added
+- Initial release with full devcontainer specification compliance
+
+## [Unreleased]
+
+### Added
+- **Docker-Native Mode**: Complete container management without devcontainer CLI dependency
+- **Interactive Container Entry**: Smart `dcutil enter` command that offers to start stopped containers
+- **Advanced Volume Management**: Atomic JSON operations with file locking and race condition prevention
+- **Cross-Platform Portability**: Portable bash shebangs (`#!/usr/bin/env bash`) and relative paths
+- **Path Resolution Fixes**: Proper handling of symlinks and relative Dockerfile paths
+
+### Fixed
+- **Logging Output Contamination**: Fixed stdout/stderr redirection to prevent log messages from interfering with command output
+- **Symlink Path Resolution**: Script directory detection now works correctly with symlinked dcutil installations
+- **Dockerfile Path Resolution**: Custom Dockerfiles in subdirectories now build correctly
+- **Container Entry Detection**: Fixed CONTAINER_NAME initialization in docker_enter function
+- **Hermetic Portable Python Installation**: True isolation with portable Python binaries from python-build-standalone
+- **Enhanced Security Scanning**: Multi-layered vulnerability detection including Safety, dependency conflict checking, and core package validation
+- **Robust Portable Python Downloads**: Hardcoded checksums and fallback to system Python for reliability
+- **Platform Detection**: Automatic platform and architecture detection for portable Python
+- **Agent Activation Instructions**: Clear guidance for activating installed AI agents
+- **Conflict Detection**: Advanced package dependency conflict resolution for AI agents
+- **Robust error handling** with structured exit codes (0-6)
+- **Input validation** for all commands and arguments
+- **Self-contained auto-completion** system (no installation required)
+- **Docker daemon connectivity** validation
+- **Project path validation** with permission checking
+- **Safe command execution** wrapper for devcontainer operations
+- **Automatic shell detection** in setup script
+- **Completion command** (`dcutil completion bash|zsh`)
+
+### Enhanced
+- **Python Setup**: Completely rewritten with portable Python downloads, SHA256 verification, and virtual environment nesting
+- **Security**: Advanced vulnerability scanning with multiple tools and extensive package analysis
+- **Venv Creation Centralization**: Consolidated duplicated venv creation logic into reusable helpers (`create_system_venv`, `create_portable_venv`)
+
+- Better error messages with actionable guidance
+- Graceful failure handling for non-critical operations
+- Improved project directory detection and validation
+- Enhanced dependency checking with clear error messages
+- More reliable container state checking
+
+### Security
+- **Portable Python Isolation**: Agents now run in hermetic environments separate from system Python
+- **SHA256 Verification**: All downloads verified with cryptographic checksums
+- **Package Vulnerability Scanning**: Automated security checks for installed packages
+- **Dependency Conflict Detection**: Prevents incompatible package installations
+- **Core Package Validation**: Ensures pip, setuptools, and other core packages are up-to-date
+- Permission validation for file and directory access
+- Safe path resolution and directory traversal protection
+- Input sanitization for user-provided arguments
+
+### Developer Experience
+- **Hermetic Environments**: AI agents are truly isolated, preventing conflicts with system or project packages
+- **Clear Activation Instructions**: Step-by-step guidance for using installed agents
+- **Platform Compatibility**: Automatic detection and fallback for different architectures
+- Tab completion for commands, project paths, and container commands
+- Smart context-aware suggestions
+- One-command setup script for auto-completion
+- Consistent colored output with proper error/warning/success indicators
+
+### Files Added
+- `setup-completion.sh` - Automatic completion setup script
+- `completion.bash` - Standalone bash completion (legacy)
+- `_dcutil` - Standalone zsh completion (legacy)
+
+### Breaking Changes
+- None - all existing functionality preserved
+
+### Migration
+- Existing users can continue using dcutil as before
+- Auto-completion is now available without any installation
+- Error codes are now standardized for better scripting support
+- Python installations are now more secure and isolated
