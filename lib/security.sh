@@ -357,4 +357,65 @@ setup_portable_python_impl() {
 
 
 
-# Function to add a feature to the devcontainer.json
+# Function to automatically install prerequisites for agents using devcontainer features
+# This attempts to add the necessary features to the devcontainer.json file
+attempt_auto_install_prerequisites() {
+    local agent="$1"
+    local need_restart=false
+    
+    info "Checking for optimal installation method for $agent using Python feature manager..."
+    
+    # Use the Python-based feature manager for more reliable feature handling
+    if command -v python3 >/dev/null 2>&1; then
+        # Check for Python script to manage features
+        local feature_mgr_script
+        feature_mgr_script="$(dirname "$(realpath "${BASH_SOURCE[0]}")")/feature_manager.py"
+        
+        if [ -f "$feature_mgr_script" ]; then
+            info "Using Python-based feature manager for $agent..."
+            if python3 "$feature_mgr_script" "$agent" "$PROJECT_DIR" 2>/dev/null; then
+                info "Feature managed successfully, proceeding with agent installation..."
+                return 0  # Success - feature was handled by Python script
+            else
+                info "Python-based feature manager declined or could not apply feature, proceeding with manual installation"
+                return 1
+            fi
+        else
+            return 1
+        fi
+    else
+        info "Python3 not available for feature management, proceeding with manual installation"
+        return 1
+    fi
+}
+
+# Function to copy agent configuration files to the devcontainer
+copy_agent_config_files() {
+    local agent="$1"
+    local container_name="$2"
+    
+    info "Copying configuration files for $agent to $container_name..."
+    # Implementation placeholder
+    return 0
+}
+
+# Function to copy a single file to the devcontainer
+copy_single_file() {
+    local src="$1"
+    local dest="$2"
+    local container_name="$3"
+    
+    # Implementation placeholder
+    return 0
+}
+
+# Function to copy directory content to the devcontainer
+copy_dir_content() {
+    local src_dir="$1"
+    local dest_dir="$2"
+    local container_name="$3"
+    
+    # Implementation placeholder
+    return 0
+}
+

@@ -911,6 +911,36 @@ execute_feature_install_in_container() {
 }
 
 
+# Get effective feature spec based on config and defaults
+get_effective_feature_spec() {
+    local feature_spec="$1"
+    local feature_config="${2:-}"
+    
+    local parsed_spec
+    parsed_spec=$(parse_feature_spec "$feature_spec")
+    local feature_id="${parsed_spec%:*}"
+    local feature_version="${parsed_spec#*:}"
+    
+    # If version is numeric and we're known to need normalization, or if config overrides it
+    if [ -n "$feature_config" ] && [ "$feature_config" != "{}" ]; then
+        if command -v jq >/dev/null 2>&1; then
+            local cfg_version
+            cfg_version=$(jq -r '.version // empty' <<< "$feature_config" 2>/dev/null || echo "")
+            if [ -n "$cfg_version" ]; then
+                feature_version="$cfg_version"
+            fi
+        fi
+    fi
+    
+    # For common features like 'git', numeric versions like '1' often need to be 'latest'
+    # if we don't have a specific mapping yet
+    if [[ "$feature_id" == *"features/git" ]] && [[ "$feature_version" =~ ^[0-9]+$ ]]; then
+        feature_version="latest"
+    fi
+    
+    echo "$feature_id:$feature_version"
+}
+
 # Install a single feature
 install_feature() {
     local feature_spec="$1"
@@ -2158,62 +2188,3 @@ features_remove() {
     fi
 }
 
-# Generate documentation for features (similar to devcontainer CLI)
-features_generate_docs() {
-    info "Generating feature documentation..."
-
-    if ! parse_features_config; then
-        info "No features configured to generate documentation for"
-        return 0
-    fi
-
-    echo "# Devcontainer Features Documentation"
-    echo ""
-    echo "This document describes the features configured in this development environment."
-    echo ""
-
-    for feature_key in "${FEATURES_IDS[@]}"; do
-        local parsed_spec
-        parsed_spec=$(parse_feature_spec "$feature_key")
-        local feature_id="${parsed_spec%:*}"
-        local feature_version="${parsed_spec#*:}"
-        local feature_name="${feature_id##*/}"
-
-        echo "## $feature_name ($feature_id:$feature_version)"
-        echo ""
-
-        # Try to get more detailed info from the cached feature metadata
-        local cache_key="${feature_id//\//_}_$feature_version"
-        local cache_dir="$FEATURES_CACHE_DIR/$cache_key"
-        if [ -f "$cache_dir/devcontainer-feature.json" ] && command -v jq &> /dev/null; then
-            local description
-            description=$(jq -r '.description // empty' "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
-            if [ -n "$description" ] && [ "$description" != "null" ]; then
-                echo "$description"
-                echo ""
-            fi
-
-            # Show options if available
-            if jq -e '.options' "$cache_dir/devcontainer-feature.json" >/dev/null 2>&1; then
-                echo "### Options:"
-                echo ""
-                while IFS= read -r option_name; do
-                    if [ -n "$option_name" ] && [ "$option_name" != "null" ]; then
-                        local opt_desc
-                        opt_desc=$(jq -r ".options[\"$option_name\"].description // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
-                        local opt_default
-                        opt_default=$(jq -r ".options[\"$option_name\"].default // empty" "$cache_dir/devcontainer-feature.json" 2>/dev/null || echo "")
-                        echo "- **$option_name**"
-                        if [ -n "$opt_desc" ] && [ "$opt_desc" != "null" ]; then
-                            echo "  - Description: $opt_desc"
-                        fi
-                        if [ -n "$opt_default" ] && [ "$opt_default" != "null" ]; then
-                            echo "  - Default: $opt_default"
-                        fi
-                        echo ""
-                    fi
-                done < <(jq -r '.options | keys[]' "$cache_dir/devcontainer-feature.json" 2>/dev/null)
-            fi
-        fi
-    done
-}

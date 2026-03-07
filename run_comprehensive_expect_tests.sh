@@ -74,7 +74,7 @@ run_expect_test() {
     local test_name="$1"
     local test_script="$2"
     local test_dir="$3"
-    local timeout="${4:-120}"
+    local timeout_val="${4:-120}"
     local dialog_force="${5:-${DCUTIL_FORCE_DIALOG}}"
     local skip_if_no_docker="${6:-0}"
     local skip_setup="${7:-0}"
@@ -91,25 +91,23 @@ run_expect_test() {
     # Prepare environment
     local prev_dir
     prev_dir="$(pwd)"
-local prev_home
+    local prev_home
     prev_home="$HOME"
     local tmp_home
     tmp_home=$(mktemp -d)
     mkdir -p "$tmp_home"
-    if [ -z "${first_run:-}" ] || [ "${first_run:-0}" -eq 0 ]; then
-        touch "$tmp_home/.dcutil_first_run" # Mark as not first run
-    fi
+    touch "$tmp_home/.dcutil_first_run" # Mark as not first run
     export HOME="$tmp_home"
 
     # Prepare test dir
     local tmp_dir=""
     local cleanup_tmp=0
-    if [ -n "$test_dir" ]; then
-        rm -rf "$test_dir/.devcontainer" "$test_dir/.github" 2>/dev/null || true
+    if [ -n "$test_dir" ] && [ -d "$SCRIPT_DIR/$test_dir" ]; then
+        rm -rf "$SCRIPT_DIR/$test_dir/.devcontainer" "$SCRIPT_DIR/$test_dir/.github" 2>/dev/null || true
         if [ "$skip_setup" -eq 0 ]; then
-            ensure_devcontainer_config "$test_dir"
+            ensure_devcontainer_config "$SCRIPT_DIR/$test_dir"
         fi
-        cd "$test_dir" || true
+        cd "$SCRIPT_DIR/$test_dir" || true
     else
         tmp_dir="$(mktemp -d)"
         cleanup_tmp=1
@@ -147,13 +145,16 @@ local prev_home
     else
         # If test_dir is set, check if the script exists in test_dir or needs full path
         if [ -f "$SCRIPT_DIR/$test_dir/$test_script" ]; then
-            expect_script="$test_script"  # Relative to test_dir
+            expect_script="./$test_script"  # Relative to test_dir
         else
             expect_script="$SCRIPT_DIR/$test_script"  # Full path from root
         fi
     fi
     
-    output=$(timeout "$timeout" expect "$expect_script" "$SCRIPT_DIR/dcutil" 2>&1 || true)
+    # Ensure dcutil path is absolute
+    local dcutil_path="$SCRIPT_DIR/dcutil"
+    
+    output=$(timeout "$timeout_val" expect "$expect_script" "$dcutil_path" 2>&1 || true)
     local exit_code=$?
 
     # Restore environment
@@ -177,144 +178,72 @@ local prev_home
     fi
 }
 
-# Individual tests - ensure devcontainer configs exist where relevant
-ensure_devcontainer_config "test-volumes"
-ensure_devcontainer_config "test_features_dir"
-ensure_devcontainer_config "test-volumes-restore"
-ensure_devcontainer_config "test-fast-init"
+# Initial setup
+mkdir -p test-dialog-mode test-menu test-text-mode test-unified-mode test-wizard-comprehensive test-volumes test_features_dir test-volumes-restore test-fast-init test-wizard-custom test-edit test-error-conditions
 
-# Test 1: Comprehensive features and menu test
-if [ -f "test_comprehensive.expect" ]; then
-    run_expect_test "Comprehensive Features & Menu" "test_comprehensive.expect" "" 120 0 0 0
+# 1. Dialog Mode Tests
+if [ -f "test-dialog-mode/test_menu_dialog.expect" ]; then
+    run_expect_test "Menu Dialog Mode" "test_menu_dialog.expect" "test-dialog-mode" 60 1
+fi
+if [ -f "test-dialog-mode/test_wizard_dialog.expect" ]; then
+    run_expect_test "Wizard Dialog Mode" "test_wizard_dialog.expect" "test-dialog-mode" 60 1 0 1
 fi
 
-# Test 2: Dialog features test
+# 2. Text Mode Tests
+if [ -f "test-text-mode/test_menu_text.expect" ]; then
+    run_expect_test "Menu Text Mode" "test_menu_text.expect" "test-text-mode" 60 0
+fi
+if [ -f "test-text-mode/test_wizard_text.expect" ]; then
+    run_expect_test "Wizard Text Mode" "test_wizard_text.expect" "test-text-mode" 60 0 0 1
+fi
+
+# 3. Unified/Comprehensive Tests
+if [ -f "test-unified-mode/test_unified_comprehensive.expect" ]; then
+    run_expect_test "Unified Comprehensive" "test_unified_comprehensive.expect" "test-unified-mode" 120 0
+fi
+if [ -f "test-unified-mode/test_unified_wizard.expect" ]; then
+    run_expect_test "Unified Wizard" "test_unified_wizard.expect" "test-unified-mode" 120 0 0 1
+fi
+
+# 4. Wizard Comprehensive
+if [ -f "test-wizard-comprehensive/test_wizard_comprehensive.expect" ]; then
+    run_expect_test "Wizard Comprehensive" "test_wizard_comprehensive.expect" "test-wizard-comprehensive" 120 0 0 1
+fi
+if [ -f "test-wizard-comprehensive/test_wizard_dialog_mode.expect" ]; then
+    run_expect_test "Wizard Comprehensive (Dialog)" "test_wizard_dialog_mode.expect" "test-wizard-comprehensive" 120 1 0 1
+fi
+
+# 5. Features Tests
 if [ -f "test_dialog_features.expect" ]; then
-    # Force dialog mode for this test
-    run_expect_test "Dialog Features" "test_dialog_features.expect" "" 60 1 0 0
+    run_expect_test "Dialog Features" "test_dialog_features.expect" "" 60 1
 fi
-
-# Test 3: Wizard comprehensive test (skipped - requires interactive setup)
-# if [ -f "test-wizard-comprehensive/test_wizard_comprehensive.expect" ]; then
-#     # Skip pre-creating a devcontainer config to force the interactive wizard to run
-#     run_expect_test "Wizard Comprehensive" "test-wizard-comprehensive/test_wizard_comprehensive.expect" "test-wizard-comprehensive" 120 0 0 1
-# fi
-
-# Test 4: Menu functionality test
-if [ -f "test-menu/test_menu.expect" ]; then
-    run_expect_test "Menu Functionality" "test_menu.expect" "test-menu" 60 0 0 0
-fi
-
-
-
-# Test 5: Actual features test (existing)
-if [ -f "test_actual_features.expect" ]; then
-    if [ -d "test_features_dir" ]; then
-        # Force text mode for this test (it expects text mode)
-        run_expect_test "Actual Features" "test_actual_features.expect" "test_features_dir" 60 0 0 0
-    else
-        echo "⚠️  Skipping actual features test (test_features_dir not found)"
-    fi
-fi
-
-# Test 6: Features dialog test (existing)
 if [ -f "test_features_dialog.expect" ]; then
-    run_expect_test "Features Dialog" "test_features_dialog.expect" "" 60 0 0 0
+    run_expect_test "Features Dialog" "test_features_dialog.expect" "" 60 0
 fi
-
-# Test 7: Wizard comprehensive test (existing)
-if [ -f "test_wizard_comprehensive.expect" ]; then
-    if [ -d "test-wizard-comprehensive" ]; then
-        # Skip pre-creating a devcontainer config to force the interactive wizard to run
-        run_expect_test "Wizard Basic" "test_wizard_comprehensive.expect" "test-wizard-comprehensive" 120 0 0 1
-    else
-        echo "⚠️  Skipping wizard comprehensive test (test-wizard-comprehensive not found)"
-    fi
-fi
-
-
-
-# Additional CLI tests for missing coverage
-# Features CLI
 if [ -f "test_features_cli.expect" ]; then
-    if [ -d "test_features_dir" ]; then
-        run_expect_test "Features CLI" "test_features_cli.expect" "test_features_dir" 60
-    else
-        echo "⚠️  Skipping features CLI test (test_features_dir not available)"
-    fi
+    run_expect_test "Features CLI" "test_features_cli.expect" "test_features_dir" 60 0
 fi
 
-# Volumes CLI
+# 6. Volumes Tests
 if [ -f "test_volumes_cli.expect" ]; then
-    run_expect_test "Volumes CLI" "test_volumes_cli.expect" "test-volumes" 60
+    run_expect_test "Volumes CLI" "test_volumes_cli.expect" "test-volumes" 60 0
 fi
-
-# Volumes backup/restore test
 if [ -f "test_volumes_backup_restore.expect" ]; then
-    run_expect_test "Volumes Backup/Restore" "test_volumes_backup_restore.expect" "test-volumes-restore" 120
+    run_expect_test "Volumes Backup/Restore" "test_volumes_backup_restore.expect" "test-volumes-restore" 120 0
 fi
 
-# Compose CLI
-if [ -f "test_compose_cli.expect" ]; then
-    run_expect_test "Compose CLI" "test_compose_cli.expect" "" 60
+# 7. Edit & Config Tests
+if [ -f "test-edit/expect_edit_valid.expect" ]; then
+    run_expect_test "Edit valid" "expect_edit_valid.expect" "test-edit" 60 0
+fi
+if [ -f "test-error-conditions/test_error_existing_config.expect" ]; then
+    run_expect_test "Error: Existing Config" "test_error_existing_config.expect" "test-error-conditions" 60 0
 fi
 
-# Test 9: Error conditions test (existing)
-if [ -d "test-error-conditions" ]; then
-    if [ -f "test-error-conditions/test_error_existing_config.expect" ]; then
-        run_expect_test "Error: Existing Config" "test_error_existing_config.expect" "test-error-conditions" 60
-    else
-        echo "⚠️  Skipping error conditions test (test_error_existing_config.expect not found)"
-    fi
-else
-    echo "⚠️  Skipping error conditions test (test-error-conditions directory not found)"
+# 8. Fast Init
+if [ -f "test-fast-init/test_fast_init.expect" ]; then
+    run_expect_test "Fast Init" "test_fast_init.expect" "test-fast-init" 120 0 0 1
 fi
-
-# Test 10: Fast init test (existing)
-if [ -d "test-fast-init" ]; then
-    if [ -f "test-fast-init/test_fast_init.expect" ]; then
-        run_expect_test "Fast Init" "test_fast_init.expect" "test-fast-init" 120
-    else
-        echo "⚠️  Skipping fast init test (test_fast_init.expect not found)"
-    fi
-else
-    echo "⚠️  Skipping fast init test (test-fast-init directory not found)"
-fi
-
-# Test 11: Wizard custom test (existing)
-if [ -d "test-wizard-custom" ]; then
-    if [ -f "test-wizard-custom/test_wizard_custom.expect" ]; then
-        run_expect_test "Wizard Custom Image" "test_wizard_custom.expect" "test-wizard-custom" 120
-    else
-        echo "⚠️  Skipping wizard custom test (test_wizard_custom.expect not found)"
-    fi
-else
-    echo "⚠️  Skipping wizard custom test (test-wizard-custom directory not found)"
-fi
-
-# Test 12: Edit tests (existing)
-if [ -d "test-edit" ]; then
-    if [ -f "test-edit/expect_edit_valid.expect" ]; then
-        run_expect_test "Edit valid" "expect_edit_valid.expect" "test-edit" 60
-    else
-        echo "⚠️  Skipping edit valid test (expect_edit_valid.expect not found)"
-    fi
-    
-    if [ -f "test-edit/expect_edit_invalid_then_reedit.expect" ]; then
-        run_expect_test "Edit invalid-then-reedit" "expect_edit_invalid_then_reedit.expect" "test-edit" 60
-    else
-        echo "⚠️  Skipping edit invalid-then-reedit test (expect_edit_invalid_then_reedit.expect not found)"
-    fi
-    
-    if [ -f "test-edit/expect_edit_invalid_cycle.expect" ]; then
-        run_expect_test "Edit invalid cycle (re-edit)" "expect_edit_invalid_cycle.expect" "test-edit" 60
-    else
-        echo "⚠️  Skipping edit invalid cycle test (expect_edit_invalid_cycle.expect not found)"
-    fi
-else
-    echo "⚠️  Skipping edit tests (test-edit directory not found)"
-fi
-
 
 echo ""
 echo "=== Test Results ==="

@@ -86,6 +86,8 @@ done
 set -- "${filtered_args[@]:-}"
 
 # Source core functionality first
+# shellcheck disable=SC1091
+# shellcheck source=lib/core.sh
 source "$LIB_DIR/core.sh"
 
 # Guardrail: Check for root user
@@ -420,6 +422,8 @@ _dcutil() {
             ;;
     esac
 }
+
+complete -F _dcutil dcutil
 BASH_EOF
     elif [ "$shell" = "zsh" ]; then
         cat << 'ZSH_EOF'
@@ -437,20 +441,12 @@ _dcutil() {
     _describe 'command' commands
 }
 ZSH_EOF
-    elif [ "$shell" = "zsh" ]; then
-        cat << 'ZSH_EOF'
-#compdef _dcutil
-#autoload colors
-#autoload compinit
-
-ZSH_EOF
     else
         echo "Unsupported shell: $shell" >&2
         return 1
     fi
 }
 
-complete -F _dcutil dcutil
     _generate_completion "$@"
     exit "$EXIT_SUCCESS"
 fi
@@ -810,9 +806,8 @@ EOF
             # Default: show info
             if command -v show_advanced_features_info >/dev/null 2>&1; then
                 # echo "DEBUG: show_advanced_features_info exists" >&2
-                show_advanced_features_info
-                # echo "DEBUG: show_advanced_features_info returned $?" >&2
-                if [ $? -ne 0 ]; then
+                # shellcheck disable=SC2181
+                if ! show_advanced_features_info; then
                     error_exit "No advanced features configured." "$EXIT_CONFIG_ERROR"
                 fi
             else
@@ -1314,26 +1309,6 @@ EOF
     esac
 else
     # Define schema usage function before command routing
-    print_schema_usage() {
-        cat << 'EOF'
-Usage: dcutil schema <command> [options]
-
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
-    }
 
     # For up command, check for --project-home flag before determining project directory
 # Add edit command handling in top-level command routing
@@ -1591,46 +1566,6 @@ Supports stop, kill, none, shutdown actions and custom commands.
 EOF
 }
 
-print_lifecycle_usage() {
-    cat << 'EOF'
-Usage: dcutil lifecycle <command> [options]
-
-Devcontainer lifecycle commands for container initialization and management:
-
-Commands:
-  info      Show lifecycle configuration
-  validate  Validate lifecycle configuration
-
-Examples:
-  dcutil lifecycle info
-  dcutil lifecycle validate
-
-Manages onCreateCommand, updateContentCommand, postAttachCommand, and waitFor properties.
-EOF
-}
-
-print_schema_usage() {
-    cat << 'EOF'
-Usage: dcutil schema <command> [options]
-
-Devcontainer configuration schema validation for specification compliance:
-
-Commands:
-  validate  Validate devcontainer.json against specification schema
-  show      Show schema validation status and results
-  cleanup   Cleanup validation state
-
-Examples:
-  dcutil schema validate
-  dcutil schema show
-  dcutil schema validate .devcontainer/devcontainer.json
-
-Validates JSON structure, property types, required fields, and specification compliance.
-Provides detailed error and warning messages for configuration issues.
-EOF
-}
-
-# Command routing
 case "$COMMAND" in
     "up")
         # First check if help was requested

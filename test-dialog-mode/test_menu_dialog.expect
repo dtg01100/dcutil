@@ -16,31 +16,31 @@ proc test_menu_dialog_mode {} {
     puts "🧪 Testing dcutil menu in DIALOG mode..."
     
     # Ensure dialog is enabled (don't set DCUTIL_DISABLE_DIALOG)
-    spawn $dcutil_cmd menu
+    spawn env DCUTIL_FORCE_DIALOG=1 $dcutil_cmd menu
     
     expect {
-        "What would you like to do?" {
+        "dcutil - Main Menu" {
             puts "✓ Dialog mode menu loaded successfully"
             
-            # Test help option
-            send "10\r"
+            # Test help option (H)
+            send "H\r"
             
             expect {
-                "Usage:" {
-                    puts "✓ Help option works in dialog mode"
-                    send "\r"
+                "Help" {
+                    puts "✓ Help dialog loaded in dialog mode"
+                    send "\r" ;# Dismiss msgbox
                     
-                    expect "What would you like to do?"
+                    expect "dcutil - Main Menu"
                     puts "✓ Returned to menu after help"
                 }
                 timeout {
-                    puts "✗ FAIL: Help option failed in dialog mode"
+                    puts "✗ FAIL: Help dialog failed to load in dialog mode"
                     exit 1
                 }
             }
             
-            # Test exit option
-            send "0\r"
+            # Test exit option (Q)
+            send "Q\r"
             
             expect {
                 "Goodbye!" {
@@ -67,74 +67,64 @@ proc test_features_dialog_mode {} {
     
     puts "🧪 Testing dcutil features in DIALOG mode..."
     
-    spawn $dcutil_cmd menu
+    spawn env DCUTIL_FORCE_DIALOG=1 $dcutil_cmd menu
     
     expect {
-        "What would you like to do?" {
-            send "9\r"
+        "dcutil - Main Menu" {
+            send "F\r"
             
             expect {
-                "Managing devcontainer features..." {
+                "Devcontainer Features Management" {
+                    puts "✓ Features menu loaded in dialog mode"
+                    
+                    # Test view features (option 3)
+                    send "3\r"
+                    
                     expect {
-                        "Devcontainer Features Management" {
-                            puts "✓ Features menu loaded in dialog mode"
-                            
-                            # Test view features (option 3)
-                            send "3\r"
+                        "View Features - Search" {
+                            puts "✓ View features search loaded"
+                            send "\r" ;# Empty search
                             
                             expect {
                                 "Available Features" {
-                                    puts "✓ View features works in dialog mode"
+                                    puts "✓ Available Features list displayed"
+                                    send "\r" ;# Close msgbox
                                     
-                                    # Look for OK button and press it
-                                    expect {
-                                        "OK" {
-                                            send " "
-                                            expect {
-                                                "What would you like to do?" {
-                                                    puts "✓ Returned to features menu"
-                                                }
-                                                timeout {
-                                                    puts "✗ FAIL: Did not return to features menu"
-                                                    exit 1
-                                                }
-                                            }
-                                        }
-                                        timeout {
-                                            puts "✗ FAIL: OK button not found"
-                                            exit 1
-                                        }
-                                    }
+                                    expect "View Features - Search"
+                                    send "\x1b" ;# Escape to exit the search loop
+                                    
+                                    expect "Devcontainer Features Management"
+                                    puts "✓ Returned to features menu"
                                 }
                                 timeout {
-                                    puts "✗ FAIL: View features failed in dialog mode"
+                                    puts "✗ FAIL: Available Features list failed to load"
                                     exit 1
                                 }
                             }
-                            
-                            # Test exit without saving (option 5)
-                            send "5\r"
-                            
-                            expect {
-                                "What would you like to do?" {
-                                    puts "✓ Exit without saving works in dialog mode"
-                                }
-                                timeout {
-                                    puts "✗ FAIL: Exit without saving failed in dialog mode"
-                                    exit 1
-                                }
-                            }
-                            
-                            puts "✅ Dialog mode features tests PASSED"
                         }
                         timeout {
-                            puts "✗ FAIL: Features menu failed to load in dialog mode"
+                            puts "✗ FAIL: View features search failed to load"
                             exit 1
                         }
                     }
+                    
+                    # Test exit without saving (option 5)
+                    send "5\r"
+                    
+                    expect {
+                        "dcutil - Main Menu" {
+                            puts "✓ Exit without saving works in dialog mode"
+                        }
+                        timeout {
+                            puts "✗ FAIL: Exit without saving failed in dialog mode"
+                            exit 1
+                        }
+                    }
+                    
+                    puts "✅ Dialog mode features tests PASSED"
                 }
                 timeout {
-                    puts "✗ FAIL: Features menu failed to load"
+                    puts "✗ FAIL: Features menu failed to load in dialog mode"
                     exit 1
                 }
             }

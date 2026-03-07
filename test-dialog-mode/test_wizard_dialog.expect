@@ -8,6 +8,7 @@ set dcutil_cmd [lindex $argv 0]
 if {$dcutil_cmd eq ""} {
     set dcutil_cmd "./dcutil"
 }
+set dcutil_cmd [file normalize $dcutil_cmd]
 
 # Test dialog mode wizard functionality
 proc test_wizard_dialog_mode {} {
@@ -25,51 +26,84 @@ proc test_wizard_dialog_mode {} {
     file mkdir $temp_bin
     set dev_stub "$temp_bin/devcontainer"
     set fh [open $dev_stub "w"]
-    puts $fh "#!/bin/bash"
-    puts $fh "if [[ \"\$1\" == \"templates\" && \"\$2\" == \"apply\" ]]; then"
-    puts $fh "  echo '{\"name\":\"test\",\"image\":\"ubuntu:22.04\"}' > .devcontainer/devcontainer.json"
-    puts $fh "  echo 'Template applied successfully'"
-    puts $fh "  exit 0"
-    puts $fh "fi"
-    puts $fh "echo 'devcontainer CLI stub'"
+    puts $fh {#!/bin/bash
+if [[ "$1" == "templates" && "$2" == "apply" ]]; then
+  mkdir -p .devcontainer
+  echo '{"name":"test","image":"ubuntu:22.04"}' > .devcontainer/devcontainer.json
+  echo 'Template applied successfully'
+  exit 0
+fi
+echo "devcontainer CLI stub: args=$*"
+}
     close $fh
     exec chmod +x $dev_stub
     
     # Run wizard in dialog mode
-    spawn env HOME=$temp_home PATH="$temp_bin:$env(PATH)" CI=1 $dcutil_cmd init wizard
+    set env(HOME) $temp_home
+    set env(CI) 1
+    set env(DC_TEST_MODE) 1
+    # Add temp_bin to PATH if PATH exists, otherwise just use temp_bin and common paths
+    if {[info exists env(PATH)]} {
+        set env(PATH) "$temp_bin:$env(PATH)"
+    } else {
+        set env(PATH) "$temp_bin:/usr/local/bin:/usr/bin:/bin"
+    }
+    
+    cd $project_dir
+    spawn env DCUTIL_FORCE_DIALOG=1 $dcutil_cmd init wizard
     
     expect {
-        "Devcontainer Initialization Wizard" {
+        "dcutil Wizard - Step 1" {
             puts "✓ Wizard launched in dialog mode"
             
-            # Wait for project type detection
+            # Wait for project type detection and use default (option 1)
             expect {
                 "Automatically detected:" {
                     puts "✓ Project type detected in dialog mode"
-                    
-                    # Use detected template (press Enter for default option 1)
                     send "\r"
                     
                     expect {
-                        "Feature Selection" {
+                        "Select Features" {
                             puts "✓ Feature selection reached in dialog mode"
-                            
-                            # Skip features (press Enter for default option 4)
+                            # Finish selection (empty)
                             send "\r"
                             
                             expect {
                                 "Advanced Configuration" {
                                     puts "✓ Advanced configuration reached in dialog mode"
-                                    
-                                    # Use defaults (press Enter)
+                                    # Use default name
                                     send "\r"
                                     
                                     expect {
-                                        "Template applied successfully" {
-                                            puts "✓ Template applied successfully in dialog mode"
+                                        "Enable SSH propagation?" {
+                                            puts "✓ SSH prompt reached"
+                                            # No
+                                            send "n"
+                                            
+                                            expect {
+                                                "Add VS Code customizations" {
+                                                    puts "✓ VS Code customizations prompt reached"
+                                                    # No
+                                                    send "n"
+                                                    
+                                                    expect {
+                                                        "successfully" {
+                                                            puts "✓ Configuration created successfully"
+                                                        }
+                                                        timeout {
+                                                            puts "✗ FAIL: Final success message not found"
+                                                            exit 1
+                                                        }
+                                                    }
+                                                }
+                                                timeout {
+                                                    puts "✗ FAIL: VS Code prompt not found"
+                                                    exit 1
+                                                }
+                                            }
                                         }
                                         timeout {
-                                            puts "✗ FAIL: Template application failed in dialog mode"
+                                            puts "✗ FAIL: SSH prompt not found"
                                             exit 1
                                         }
                                     }

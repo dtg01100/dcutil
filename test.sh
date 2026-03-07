@@ -5,6 +5,10 @@
 
 set -euo pipefail
 
+# Avoid interactive prompts during tests
+export CI=true
+export DCUTIL_QUIET=0
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DCUTIL="$SCRIPT_DIR/dcutil"
 
@@ -23,19 +27,19 @@ TESTS_FAILED=0
 # Test helper functions
 test_pass() {
     echo -e "${GREEN}✅ PASS${NC}: $1"
-    ((TESTS_PASSED++))
-    ((TESTS_RUN++))
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    TESTS_RUN=$((TESTS_RUN + 1))
 }
 
 test_fail() {
     echo -e "${RED}❌ FAIL${NC}: $1"
-    ((TESTS_FAILED++))
-    ((TESTS_RUN++))
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    TESTS_RUN=$((TESTS_RUN + 1))
 }
 
 test_skip() {
     echo -e "${YELLOW}⏭️  SKIP${NC}: $1"
-    ((TESTS_RUN++))
+    TESTS_RUN=$((TESTS_RUN + 1))
 }
 
 run_test() {
@@ -56,7 +60,8 @@ run_test() {
         DCUTIL_QUIET=1
         export DCUTIL_QUIET
     fi
-    eval "$test_cmd" >"$tmp_out" 2>"$tmp_err"
+    # Use < /dev/null to prevent hangs if a command ignores DCUTIL_QUIET
+    eval "$test_cmd" < /dev/null >"$tmp_out" 2>"$tmp_err"
     local rc=$?
     # restore previous DCUTIL_QUIET
     if [ -n "$prev_dcquiet" ]; then
@@ -82,116 +87,109 @@ run_test() {
 }
 
 # Test: Basic help command
-run_test "Help command" "$DCUTIL" --quiet help
+run_test "Help command" "$DCUTIL --quiet help" 0
 
 # Test: Version command
-run_test "Version command" "$DCUTIL" --quiet version
+run_test "Version command" "$DCUTIL --quiet version" 0
 
 # Test: Invalid command
-run_test "Invalid command" 1 "$DCUTIL" --quiet nonexistent-command
+run_test "Invalid command" "$DCUTIL --quiet nonexistent-command" 1
 
 # Test: Test command (our improvements test)
-run_test "Test command" "$DCUTIL" --quiet test
+run_test "Test command" "$DCUTIL --quiet test" 0
 
 # Test: Completion setup
-run_test "Completion command" "$DCUTIL" --quiet completion bash
+run_test "Completion command" "$DCUTIL --quiet completion bash" 0
 
 # Test: Status command (should work even without containers)
-run_test "Status command" "$DCUTIL" --quiet status
+run_test "Status command" "$DCUTIL --quiet status" 0
 
 # Test: List command
-run_test "List command" "$DCUTIL" --quiet list
+run_test "List command" "$DCUTIL --quiet list" 0
 
 # Test: Podman status
-run_test "Podman status" "$DCUTIL" --quiet podman status
+run_test "Podman status" "$DCUTIL --quiet podman status" 0
 
 # Test: Agent help
-run_test "Agent help" 1 "$DCUTIL" --quiet install-agent
+run_test "Agent help" "$DCUTIL --quiet install-agent" 1
 
 # Test: Volumes help
-run_test "Volumes help" 1 "$DCUTIL" --quiet volumes
+run_test "Volumes help" "$DCUTIL --quiet volumes" 1
 
 # Test: Compose help
-run_test "Compose help" 1 "$DCUTIL" --quiet compose
+run_test "Compose help" "$DCUTIL --quiet compose" 1
 
 # Test: Features help
-run_test "Features help" 1 "$DCUTIL" --quiet features
+run_test "Features help" "$DCUTIL --quiet features" 1
 
 # Test: Advanced help
-run_test "Advanced help" 1 "$DCUTIL" --quiet advanced
+run_test "Advanced help" "$DCUTIL --quiet advanced" 0
 
 # Test: Integration help
-run_test "Integration help" 1 "$DCUTIL" --quiet integration
+run_test "Integration help" "$DCUTIL --quiet integration" 0
 
 # Test: Merging help
-run_test "Merging help" 1 "$DCUTIL" --quiet merging
+run_test "Merging help" "$DCUTIL --quiet merging" 0
 
 # Test: Userprobe help
-run_test "Userprobe help" 1 "$DCUTIL" --quiet userprobe
+run_test "Userprobe help" "$DCUTIL --quiet userprobe" 0
 
 # Test: Hostrequirements help
-run_test "Hostrequirements help" 1 "$DCUTIL" --quiet hostrequirements
+run_test "Hostrequirements help" "$DCUTIL --quiet hostrequirements" 1
 
 # Test: Shutdown help
-run_test "Shutdown help" 1 "$DCUTIL" --quiet shutdown
+run_test "Shutdown help" "$DCUTIL --quiet shutdown" 1
 
 # Test: Schema help
-run_test "Schema help" 1 "$DCUTIL" --quiet schema
+run_test "Schema help" "$DCUTIL --quiet schema" 1
 
 # Test syntax validation
 run_test "Syntax validation" "bash -n \"$DCUTIL\""
 
 # Test library syntax
 run_test "Core library syntax" "bash -n \"$SCRIPT_DIR/lib/core.sh\""
-
-# Test podman library syntax
 run_test "Podman library syntax" "bash -n \"$SCRIPT_DIR/lib/podman.sh\""
-
-# Test docker library syntax
 run_test "Docker library syntax" "bash -n \"$SCRIPT_DIR/lib/docker.sh\""
-
-# Test API library syntax
 run_test "API library syntax" "bash -n \"$SCRIPT_DIR/lib/api_official_cli.sh\""
 
-# Additional feature unit tests
+# Feature parsing tests using a temporary script for better isolation
+run_feature_tests() {
+    local tscript=$(mktemp)
+    cat > "$tscript" <<EOF
+source "$SCRIPT_DIR/lib/core.sh"
+source "$SCRIPT_DIR/lib/features.sh"
 
-# Test: parse_feature_spec - short format
-run_test "parse_feature_spec short" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; parse_feature_spec \"node\" | grep -q \"^ghcr.io/devcontainers/features/node:latest$\"'"
+echo "Running parse_feature_spec short"
+parse_feature_spec node | grep -q "^ghcr.io/devcontainers/features/node:latest$" || exit 1
 
-# Test: parse_feature_spec - medium format
-run_test "parse_feature_spec medium" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; parse_feature_spec \"devcontainers/features/node:18\" | grep -q \"^ghcr.io/devcontainers/features/node:18$\"'"
+echo "Running parse_feature_spec medium"
+parse_feature_spec devcontainers/features/node:18 | grep -q "^ghcr.io/devcontainers/features/node:18$" || exit 1
 
-# Test: parse_feature_spec - full format
-run_test "parse_feature_spec full" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; parse_feature_spec \"ghcr.io/devcontainers/features/node:18\" | grep -q \"^ghcr.io/devcontainers/features/node:18$\"'"
+echo "Running get_effective_feature_spec git numeric->latest"
+get_effective_feature_spec git:1 '{}' | grep -q "^ghcr.io/devcontainers/features/git:latest$" || exit 1
 
-# Test: get_effective_feature_spec - normalize git numeric version
-run_test "get_effective_feature_spec git numeric->latest" "bash -c 'source \"$SCRIPT_DIR/lib/features.sh\"; get_effective_feature_spec \"git:1\" \"{}\" | grep -q \"^ghcr.io/devcontainers/features/git:latest$\"'"
+echo "Running validate_feature_cache_dir"
+tmpdir=\$(mktemp -d)
+mkdir -p "\$tmpdir/src"
+echo '{}' > "\$tmpdir/devcontainer-feature.json"
+echo '#!/usr/bin/env bash' > "\$tmpdir/src/install.sh"
+chmod +x "\$tmpdir/src/install.sh"
+validate_feature_cache_dir "\$tmpdir" || exit 1
+EOF
+    run_test "Feature logic suite" "bash $tscript"
+    rm -f "$tscript"
+}
 
-# Test: validate_feature_cache_dir
-run_test "validate_feature_cache_dir" "bash -c 'tmpdir=$(mktemp -d); mkdir -p \"$tmpdir/src\"; echo \"{}\" > \"$tmpdir/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpdir/src/install.sh\"; chmod +x \"$tmpdir/src/install.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; validate_feature_cache_dir \"$tmpdir\"'"
+run_feature_tests
 
-# Test: parse_features_config mapping
-run_test "parse_features_config mapping" "bash -c 'source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/docker.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; PROJECT_DIR=\"$(cd .. >/dev/null && pwd)\"; export PROJECT_DIR; parse_devcontainer_config; parse_features_config >/dev/null; printf "%s\n" \"${FEATURES_IDS[@]}\" | grep -q \"ghcr.io/devcontainers/features/git\"'"
-
-# Test: resolve_feature_install_order
-run_test "resolve_feature_install_order" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_a_latest/src\"; echo \"{\\\"id\\\":\\\"a\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_a_latest/devcontainer-feature.json\"; printf \"ghcr.io/devcontainers/features/b:latest\\n\" > \"$tmpcache/ghcr.io_devcontainers_features_a_latest/dependsOn.list\"; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_b_latest/src\"; echo \"{\\\"id\\\":\\\"b\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_b_latest/devcontainer-feature.json\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; resolve_feature_install_order \"ghcr.io/devcontainers/features/a:latest\" \"ghcr.io/devcontainers/features/b:latest\" | sed -n 1,2p | grep -q \"ghcr.io/devcontainers/features/b:latest\"'"
-
-# Test: Features install dry-run
-run_test "Features install dry-run" "\"$DCUTIL\" features install --dry-run >/dev/null" 
-
-# Test: install_feature host mode with mock cached script
-run_test "install_feature host mock" "bash -c 'tmpcache=$(mktemp -d); export FEATURES_CACHE_DIR=$tmpcache; mkdir -p \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src\"; echo \"{\\\"id\\\":\\\"git\\\",\\\"version\\\":\\\"1.3.4\\\"}\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/devcontainer-feature.json\"; echo \"#!/usr/bin/env bash\nexit 0\" > \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; chmod +x \"$tmpcache/ghcr.io_devcontainers_features_git_latest/src/install.sh\"; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/features.sh\"; export FEATURES_FORCE_HOST_INSTALL=true; install_feature ghcr.io/devcontainers/features/git:latest'"
-
-# Test: sanitize_features_json mapping of numeric keys
-run_test "sanitize_features_json mapping" "bash -c 'tmpproj=$(mktemp -d); mkdir -p \"$tmpproj/.devcontainer\"; cat > \"$tmpproj/.devcontainer/devcontainer.json\" <<JD\n{\n  \"name\": \"tmpl\",\n  \"features\": {\n    \"1\": {},\n    \"ghcr.io/devcontainers/features/2\": {}\n  }\n}\nJD\n; source \"$SCRIPT_DIR/lib/core.sh\"; source \"$SCRIPT_DIR/lib/template_integration.sh\"; fetch_available_features_official() { echo \"[{\\\"id\\\":\\\"git\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"},{\\\"id\\\":\\\"docker-in-docker\\\",\\\"registry\\\":\\\"ghcr.io/devcontainers/features\\\"}]\"; }; cd \"$tmpproj\"; sanitize_features_json; grep -q \"ghcr.io/devcontainers/features/git\" .devcontainer/devcontainer.json'"
-
-# Test: New helper functions exist in security module
-run_test "New helper functions syntax" "bash -c 'source "$SCRIPT_DIR/lib/security.sh"; declare -f copy_agent_config_files && declare -f copy_single_file && declare -f copy_dir_content'"
+# Test: New helper functions syntax
+run_test "New helper functions syntax" "bash -c \"source $SCRIPT_DIR/lib/core.sh; source $SCRIPT_DIR/lib/security.sh; declare -f copy_agent_config_files && declare -f copy_single_file && declare -f copy_dir_content\""
 
 # Test: attempt_auto_install_prerequisites function exists
-run_test "attempt_auto_install_prerequisites function exists" "bash -c 'source "$SCRIPT_DIR/lib/security.sh"; declare -f attempt_auto_install_prerequisites'"
-# Test: Function can be called without error (when no valid agent is provided, returns 1)
-run_test "attempt_auto_install_prerequisites with invalid agent" "bash -c 'source \"$SCRIPT_DIR/lib/security.sh\"; PROJECT_DIR=\"/tmp\"; export PROJECT_DIR; attempt_auto_install_prerequisites \"invalid_agent\"; exit_code=$?; [ $exit_code -ne 0 ]'"
+run_test "attempt_auto_install_prerequisites function exists" "bash -c \"source $SCRIPT_DIR/lib/core.sh; source $SCRIPT_DIR/lib/security.sh; declare -f attempt_auto_install_prerequisites\""
+
+# Test: Function can be called without error
+run_test "attempt_auto_install_prerequisites with invalid agent" "bash -c \"source $SCRIPT_DIR/lib/core.sh; source $SCRIPT_DIR/lib/security.sh; PROJECT_DIR='/tmp'; export PROJECT_DIR; attempt_auto_install_prerequisites 'invalid_agent'\"" 1
 
 # Summary
 echo

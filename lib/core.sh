@@ -352,9 +352,8 @@ safe_path() {
         path="$HOME"
     fi
 
-    while IFS= read -r line; do
-        python3 -c "import os; print(os.path.abspath('$line'))" 2>/dev/null || echo "$line"
-    done <<<"$path"
+    # Explicitly print the path (or absolute version) without reading from stdin
+    python3 -c "import os, sys; print(os.path.abspath(sys.argv[1]))" "$path" 2>/dev/null || echo "$path"
 }
 
 # Validate a workspace folder path provided for devcontainer configuration

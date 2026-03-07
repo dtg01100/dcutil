@@ -68,7 +68,7 @@ safe_dialog() {
     if [ "$width" -gt 80 ]; then width=80; fi
 
     # Run dialog with computed dimensions
-    dialog --stdout --no-shadow --no-cancel --title "dcutil" --begin 2 2 -- "$@"
+    dialog --clear --stdout --no-shadow --title "${DIALOG_TITLE:-dcutil}" --begin 2 2 "$@"
 }
 
 # Verification function for dialog
@@ -166,6 +166,12 @@ suggest_command() {
 
 # Show interactive menu for command discovery
 show_interactive_menu() {
+    # Check if dialog is available for enhanced UI
+    if has_dialog; then
+        show_interactive_menu_dialog
+        return $?
+    fi
+
     echo ""
     echo "🚀 What would you like to do?"
     echo ""
@@ -261,6 +267,60 @@ show_interactive_menu() {
             warning "Invalid choice. Please enter a number between 0 and 10."
             return 0  # Signal to show menu again
             ;;
+    esac
+}
+
+# Dialog-based interactive menu
+show_interactive_menu_dialog() {
+    local choice
+    choice=$(DIALOG_TITLE="dcutil - Main Menu" safe_dialog \
+        --menu "🚀 What would you like to do?" 22 75 12 \
+        "U" "Start my development environment (up)" \
+        "E" "Open a shell in my environment (enter)" \
+        "D" "Stop my environment (down)" \
+        "S" "Check if my environment is running (status)" \
+        "M" "Monitor resource usage (stats)" \
+        "I" "Set up a new project (init)" \
+        "L" "View logs" \
+        "V" "Manage shared storage (volumes)" \
+        "F" "Manage devcontainer features" \
+        "H" "See all commands (help)" \
+        "Q" "Exit")
+
+    case $? in
+        0) ;;
+        *) return 0 ;;
+    esac
+
+    case "${choice^^}" in
+        U) info "Starting your development environment..."; return 1 ;;
+        E) info "Opening a shell in your environment..."; return 2 ;;
+        D) info "Stopping your environment..."; return 3 ;;
+        S) info "Checking environment status..."; return 4 ;;
+        M) info "Showing resource usage..."; return 5 ;;
+        I) info "Setting up a new project..."; return 6 ;;
+        L) info "Viewing logs..."; return 7 ;;
+        V) info "Managing shared storage..."; return 8 ;;
+        F)
+            if command -v show_interactive_feature_management >/dev/null 2>&1; then
+                show_interactive_feature_management || true
+            else
+                DIALOG_TITLE="Error" safe_dialog --msgbox "Feature management interface not available" 6 40
+            fi
+            return 0
+            ;;
+        H)
+            local usage_text
+            if command -v print_usage >/dev/null 2>&1; then
+                usage_text=$(print_usage 2>&1)
+            else
+                usage_text="Usage: dcutil <command> [options]\n\nAvailable commands: up, down, enter, status, stats, init, logs, volumes, features, help"
+            fi
+            DIALOG_TITLE="Help" safe_dialog --msgbox "$usage_text" 20 70
+            return 0
+            ;;
+        Q) echo "👋 Goodbye!"; exit 0 ;;
+        *) return 0 ;;
     esac
 }
 
@@ -647,15 +707,14 @@ show_interactive_feature_management_dialog() {
 
         # Create dialog menu
         local choice
-        choice=$(dialog --clear --title "Devcontainer Features Management" \
+        choice=$(DIALOG_TITLE="Devcontainer Features Management" safe_dialog \
             --menu "Current features:\n$current_features_list\n\nSelect an option:" \
             18 70 8 \
             "1" "Add a feature" \
             "2" "Remove a feature" \
             "3" "View/Search available features" \
             "4" "Save changes and exit" \
-            "5" "Exit without saving" \
-            2>&1 >/dev/tty)
+            "5" "Exit without saving")
 
         case $? in
             0)
@@ -899,9 +958,8 @@ add_feature_dialog() {
     # Create a search interface for features
     while true; do
         local search_term
-        search_term=$(dialog --clear --title "Add Feature - Search" \
-            --inputbox "Enter search term (or leave blank for all features):" 10 60 \
-            2>&1 >/dev/tty)
+        search_term=$(DIALOG_TITLE="Add Feature - Search" safe_dialog \
+            --inputbox "Enter search term (or leave blank for all features):" 10 60)
 
         case $? in
             0) ;;
@@ -923,7 +981,7 @@ add_feature_dialog() {
                     feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
-            done <<< "$(echo "$features_json" | jq -r --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
+            done <<< "$(echo "$features_json" | jq -c --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
         else
             # Show all features
             while IFS= read -r feature; do
@@ -935,19 +993,18 @@ add_feature_dialog() {
                     feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
-            done <<< "$(echo "$features_json" | jq -r '.[]')"
+            done <<< "$(echo "$features_json" | jq -c '.[]')"
         fi
 
         if [ "${#feature_list[@]}" -eq 0 ]; then
-            dialog --msgbox "No features match your search: $search_term" 8 40
+            DIALOG_TITLE="Add Feature" safe_dialog --msgbox "No features match your search: $search_term" 8 40
             continue
         fi
 
         # Show feature selection menu
         local selection
-        selection=$(dialog --clear --title "Add Feature - Select" \
-            --menu "Select a feature to add:" 18 70 10 "${feature_list[@]}" \
-            2>&1 >/dev/tty)
+        selection=$(DIALOG_TITLE="Add Feature - Select" safe_dialog \
+            --menu "Select a feature to add:" 18 70 10 "${feature_list[@]}")
 
         case $? in
             0) ;;
@@ -956,7 +1013,7 @@ add_feature_dialog() {
 
         # Validate selection is a number
         if [[ ! "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ]; then
-            dialog --msgbox "Invalid selection" 6 30
+            DIALOG_TITLE="Add Feature" safe_dialog --msgbox "Invalid selection" 6 30
             continue
         fi
 
@@ -964,7 +1021,7 @@ add_feature_dialog() {
         local feature_count
         feature_count=$(echo "$features_json" | jq 'length' 2>/dev/null)
         if [ "$selection" -gt "$feature_count" ]; then
-            dialog --msgbox "Selection out of range" 6 30
+            DIALOG_TITLE="Add Feature" safe_dialog --msgbox "Selection out of range" 6 30
             continue
         fi
 
@@ -978,7 +1035,7 @@ add_feature_dialog() {
                 local exists
                 exists=$(echo "$current_features_json" | jq -r "has(\"$selected_feature\")" 2>/dev/null)
                 if [ "$exists" = "true" ]; then
-                    dialog --msgbox "Feature '$selected_feature' is already configured!" 8 40
+                    DIALOG_TITLE="Add Feature" safe_dialog --msgbox "Feature '$selected_feature' is already configured!" 8 40
                     continue
                 fi
             fi
@@ -986,14 +1043,14 @@ add_feature_dialog() {
             # Add the feature
             if command -v add_feature_to_config >/dev/null 2>&1; then
                 add_feature_to_config "$selected_feature" "{}"
-                dialog --msgbox "Feature '$selected_feature' has been added!" 7 40
+                DIALOG_TITLE="Add Feature" safe_dialog --msgbox "Feature '$selected_feature' has been added!" 7 40
                 return 0
             else
-                dialog --msgbox "Error: add_feature_to_config function not available" 8 40
+                DIALOG_TITLE="Add Feature" safe_dialog --msgbox "Error: add_feature_to_config function not available" 8 40
                 return 1
             fi
         else
-            dialog --msgbox "Invalid selection" 6 30
+            DIALOG_TITLE="Add Feature" safe_dialog --msgbox "Invalid selection" 6 30
             continue
         fi
     done
@@ -1004,7 +1061,8 @@ remove_feature_dialog() {
     local current_features_json="$1"
 
     if [ "$current_features_json" = "{}" ] || [ "$(echo "$current_features_json" | jq length 2>/dev/null)" -eq 0 ]; then
-        dialog --msgbox "No features configured to remove" 7 40
+        DIALOG_TITLE="Remove Feature" safe_dialog --msgbox "No features configured to remove" 7 40
+        echo "$current_features_json"
         return 0
     fi
 
@@ -1020,24 +1078,25 @@ remove_feature_dialog() {
     done <<< "$(echo "$current_features_json" | jq -r 'keys[]' 2>/dev/null)"
 
     if [ "${#feature_list[@]}" -eq 0 ]; then
-        dialog --msgbox "No features available to remove" 7 40
+        DIALOG_TITLE="Remove Feature" safe_dialog --msgbox "No features available to remove" 7 40
+        echo "$current_features_json"
         return 0
     fi
 
     # Show feature removal menu
     local selection
-    selection=$(dialog --clear --title "Remove Feature - Select" \
-        --menu "Select a feature to remove:" 15 60 8 "${feature_list[@]}" \
-        2>&1 >/dev/tty)
+    selection=$(DIALOG_TITLE="Remove Feature - Select" safe_dialog \
+        --menu "Select a feature to remove:" 15 60 8 "${feature_list[@]}")
 
     case $? in
         0) ;;
-        1|255) return 0 ;;
+        1|255) echo "$current_features_json"; return 0 ;;
     esac
 
     # Validate selection is a number
     if [[ ! "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ]; then
-        dialog --msgbox "Invalid selection" 6 30
+        DIALOG_TITLE="Remove Feature" safe_dialog --msgbox "Invalid selection" 6 30
+        echo "$current_features_json"
         return 0
     fi
 
@@ -1051,7 +1110,8 @@ remove_feature_dialog() {
 
     # Check bounds before accessing array
     if [ "$selection" -gt "${#feature_array[@]}" ]; then
-        dialog --msgbox "Selection out of range" 6 30
+        DIALOG_TITLE="Remove Feature" safe_dialog --msgbox "Selection out of range" 6 30
+        echo "$current_features_json"
         return 0
     fi
 
@@ -1061,13 +1121,14 @@ remove_feature_dialog() {
         # Remove the feature
         if command -v remove_feature_from_config >/dev/null 2>&1; then
             remove_feature_from_config "$feature_to_remove"
-            dialog --msgbox "Feature '$feature_to_remove' has been removed!" 7 40
+            DIALOG_TITLE="Remove Feature" safe_dialog --msgbox "Feature '$feature_to_remove' has been removed!" 7 40
             # Refresh current features
             current_features_json=$(jq -r '.features // {}' "$DEVCONTAINER_CONFIG_FILE" 2>/dev/null || echo "{}")
         else
-            dialog --msgbox "Error: remove_feature_from_config function not available" 8 40
+            DIALOG_TITLE="Remove Feature" safe_dialog --msgbox "Error: remove_feature_from_config function not available" 8 40
         fi
     fi
+    echo "$current_features_json"
 }
 
 # View features dialog
@@ -1076,9 +1137,8 @@ view_features_dialog() {
 
     while true; do
         local search_term
-        search_term=$(dialog --clear --title "View Features - Search" \
-            --inputbox "Enter search term (or leave blank for all features):" 10 60 \
-            2>&1 >/dev/tty)
+        search_term=$(DIALOG_TITLE="View Features - Search" safe_dialog \
+            --inputbox "Enter search term (or leave blank for all features):" 10 60)
 
         case $? in
             0) ;;
@@ -1100,7 +1160,7 @@ view_features_dialog() {
                     feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
-            done <<< "$(echo "$features_json" | jq -r --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
+            done <<< "$(echo "$features_json" | jq -c --arg search "$search_term" '.[] | select(.id | contains($search) or .name | contains($search) or .description | contains($search))')"
         else
             # Show all features
             while IFS= read -r feature; do
@@ -1112,11 +1172,11 @@ view_features_dialog() {
                     feature_list+=("$i" "$id - $name ($desc)")
                     i=$((i + 1))
                 fi
-            done <<< "$(echo "$features_json" | jq -r '.[]')"
+            done <<< "$(echo "$features_json" | jq -c '.[]')"
         fi
 
         if [ "${#feature_list[@]}" -eq 0 ]; then
-            dialog --msgbox "No features match your search: $search_term" 8 40
+            DIALOG_TITLE="View Features" safe_dialog --msgbox "No features match your search: $search_term" 8 40
             continue
         fi
 
@@ -1157,7 +1217,7 @@ $feature_desc"
         fi
 
         # Show feature list
-        dialog --clear --title "Available Features" \
+        DIALOG_TITLE="Available Features" safe_dialog \
             --msgbox "$display_text" \
             $((list_height + 4)) 70
     done
