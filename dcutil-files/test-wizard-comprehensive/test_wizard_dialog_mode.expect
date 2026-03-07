@@ -1,0 +1,57 @@
+#!/usr/bin/env expect
+
+# Dialog Mode Wizard Tests
+# Tests wizard functionality specifically in dialog mode
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test wizard in dialog mode
+proc test_wizard_dialog_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 Testing wizard functionality in DIALOG mode..."
+    
+    # Run wizard with dialog mode
+    spawn env DCUTIL_FORCE_DIALOG=1 $dcutil_cmd init wizard
+    
+    expect {
+        "dcutil Wizard - Step 1" {
+            puts "  ✓ Wizard launched successfully in dialog mode"
+            
+            # Test project type detection
+            expect {
+                "Automatically detected:" {
+                    puts "  ✓ Project type detection works in dialog mode"
+                    
+                    # Test template selection (Enter for option 1)
+                    send "\r"
+                    puts "  ✓ Template selection works in dialog mode"
+                }
+                timeout {
+                    puts "  ✗ FAIL: Project type detection failed in dialog mode"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Wizard did not launch in dialog mode"
+            exit 1
+        }
+    }
+    
+    expect eof
+    puts "✅ Wizard dialog mode test PASSED"
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 DIALOG Mode Wizard Tests"
+puts "========================================="
+
+test_wizard_dialog_mode
+
+puts "🎉 Dialog mode wizard tests completed successfully!"

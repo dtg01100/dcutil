@@ -1,0 +1,83 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Test script to verify actual feature operations work correctly
+
+set timeout 30
+
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} { set dcutil_cmd "../dcutil" }
+
+# Start dcutil in the current test directory
+spawn $dcutil_cmd
+
+# Wait for main menu
+expect {
+    "What would you like to do?" {
+        # Send option 9 to select "Manage devcontainer features"
+        send "9\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach main menu"
+        exit 1
+    }
+}
+
+# Wait for the feature management submenu
+expect {
+    "What would you like to do?" {
+        # Option 1: Add a feature 
+        send "1\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach feature management submenu"
+        exit 1
+    }
+}
+
+# Wait for the search prompt in the add feature section
+expect {
+    "Enter search term (or press Enter for all features)" {
+        # Press Enter to see all features
+        send "\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach feature search prompt"
+        exit 1
+    }
+}
+
+# Wait for feature list to show
+expect {
+    -re "Enter feature ID to add" {
+        # Select the 'git' feature by typing its name
+        send "git\r"
+    }
+    timeout {
+        puts "FAIL: Did not show available features"
+        exit 1
+    }
+}
+
+# Wait for the feature to be added
+expect {
+    "Adding feature:" {
+        send "\r"  ;# Press Enter to accept
+        # Now go back to main menu
+        send "4\r"  ;# Save and exit
+    }
+    timeout {
+        puts "FAIL: Did not process feature addition"
+        exit 1
+    }
+}
+
+expect {
+    "Changes have been saved" {
+        puts "PASS: Feature addition through interactive menu completed successfully"
+        expect eof
+    }
+    timeout {
+        puts "FAIL: Did not complete feature addition"
+        exit 1
+    }
+}

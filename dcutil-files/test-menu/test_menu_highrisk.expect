@@ -1,0 +1,107 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# High-risk coverage for main interactive menu
+# Focus: invalid input handling and option message dispatch without running heavy commands
+
+set timeout 30
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Utility: run a menu session, exercise one option, then exit
+proc test_option_message {option expected_pattern} {
+    global dcutil_cmd timeout
+
+    spawn env DCUTIL_DISABLE_DIALOG=1 $dcutil_cmd menu
+
+    expect {
+        "What would you like to do?" {}
+        timeout {
+            puts "FAIL: Menu did not load for option $option"
+            exit 1
+        }
+    }
+
+    send "$option\r"
+
+    expect {
+        -re $expected_pattern {
+            puts "PASS: Option $option shows expected prompt"
+        }
+        timeout {
+            puts "FAIL: Option $option prompt not seen"
+            exit 1
+        }
+    }
+
+    # Stop further command execution to keep test lightweight
+    send "\003"
+    set original_timeout $timeout
+    set timeout 5
+    expect {
+        eof {}
+        timeout {}
+    }
+    set timeout $original_timeout
+}
+
+# Test invalid input path
+proc test_invalid_input {} {
+    global dcutil_cmd
+
+    spawn env DCUTIL_DISABLE_DIALOG=1 $dcutil_cmd menu
+
+    expect {
+        "What would you like to do?" {}
+        timeout {
+            puts "FAIL: Menu did not load for invalid input test"
+            exit 1
+        }
+    }
+
+    send "99\r"
+
+    expect {
+        -re "Invalid choice" {
+            puts "PASS: Invalid input handled"
+        }
+        timeout {
+            puts "FAIL: Invalid input not handled"
+            exit 1
+        }
+    }
+
+    # Exit cleanly
+    send "0\r"
+    expect {
+        -re "Goodbye" {}
+        timeout {}
+    }
+}
+
+puts "🧪 Testing high-risk main menu flows..."
+
+# Invalid input handling
+test_invalid_input
+
+# Cover core commands by verifying their dispatch messages
+set option_tests {
+    1 "Starting your development environment"
+    2 "Opening a shell in your environment"
+    3 "Stopping your environment"
+    4 "Checking environment status"
+    5 "Showing resource usage"
+    7 "Viewing logs"
+    8 "Managing shared storage"
+}
+
+set pair_count [llength $option_tests]
+for {set i 0} {$i < $pair_count} {incr i 2} {
+    set opt [lindex $option_tests $i]
+    set pattern [lindex $option_tests [expr {$i + 1}]]
+    test_option_message $opt $pattern
+}
+
+puts "🎉 High-risk main menu flows completed"
+exit 0

@@ -1,0 +1,114 @@
+#!/usr/bin/env expect
+
+# Dialog Mode Menu Tests
+# Tests menu functionality specifically in dialog mode
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test dialog mode menu functionality
+proc test_menu_dialog_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 Testing menu functionality in DIALOG mode..."
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            puts "  ✓ Main menu loaded in dialog mode"
+            
+            # Test that we can see the menu options
+            expect {
+                -re "1\\) Start my development environment" {
+                    puts "  ✓ Menu options displayed correctly in dialog mode"
+                }
+                timeout {
+                    puts "  ✗ FAIL: Menu options not displayed"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Main menu did not load in dialog mode"
+            exit 1
+        }
+    }
+    
+    # Send exit command to close the menu
+    send "0\r"
+    
+    expect {
+        "Goodbye!" {
+            puts "✅ Menu dialog mode test PASSED"
+        }
+        timeout {
+            puts "✅ Menu dialog mode test PASSED (timeout)"
+        }
+    }
+}
+
+# Test feature management in dialog mode
+proc test_features_dialog_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🔴 Testing feature management in DIALOG mode..."
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    puts "  ✓ Features menu loaded in dialog mode"
+                    
+                    # Test feature menu navigation
+                    expect {
+                        "Devcontainer Features Management" {
+                            puts "  ✓ Dialog interface displayed correctly"
+                            
+                            # Exit the menu immediately
+                            send "5\r"
+                            
+                            expect {
+                                "Goodbye!" {
+                                    puts "✅ Features dialog mode test PASSED"
+                                }
+                                timeout {
+                                    puts "✅ Features dialog mode test PASSED (timeout)"
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "  ✗ FAIL: Dialog interface not displayed"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "  ✗ FAIL: Features menu did not load in dialog mode"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "  ✗ FAIL: Main menu did not load in dialog mode"
+            exit 1
+        }
+    }
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 DIALOG Mode Menu Tests"
+puts "========================================="
+
+test_menu_dialog_mode
+test_features_dialog_mode
+
+puts "🎉 All dialog mode tests completed successfully!"

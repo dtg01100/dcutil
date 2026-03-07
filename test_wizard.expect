@@ -1,0 +1,29 @@
+#!/usr/bin/expect
+
+set timeout 60
+
+cd test-wizard6
+spawn -open [open "|../dcutil-files/dcutil init wizard" w]
+
+expect "Select option \[1\]:"
+send "2\n"
+
+expect "Enter template ID \[ubuntu\]:"
+send "python\n"
+
+expect "Enter comma-separated feature IDs to include \[git,common-utils\]:"
+send "git\n"
+
+expect "Container name \[test-wizard6\]:"
+send "test-py\n"
+
+expect "Workspace folder \[/workspaces/test-wizard6\]:"
+send "/workspaces/test-py\n"
+
+expect "Container user \[vscode\]:"
+send "vscode\n"
+
+expect "Remote user \[vscode\]:"
+send "vscode\n"
+
+# expect eof

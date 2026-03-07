@@ -1,0 +1,5 @@
+{
+  "name": "Test Environment",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {}
+}

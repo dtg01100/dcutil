@@ -1,0 +1,203 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Unified wizard testing
+# Tests wizard functionality with both dialog and text interfaces
+
+set timeout 120
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test unified wizard functionality
+proc test_wizard_unified_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing dcutil wizard in UNIFIED mode..."
+    
+    # Prepare isolated environment
+    set temp_home [exec mktemp -d /tmp/dcutil_wizard_unified.XXXXXX]
+    set project_dir "$temp_home/project"
+    file mkdir "$project_dir/.devcontainer"
+    
+    # Create a devcontainer CLI stub that writes a config file when invoked with templates apply
+    set temp_bin "$temp_home/bin"
+    file mkdir $temp_bin
+    set dev_stub "$temp_bin/devcontainer"
+    set fh [open $dev_stub "w"]
+    puts $fh {#!/bin/bash}
+    puts $fh {if [ "$1" = "templates" ] && [ "$2" = "apply" ]; then}
+    puts $fh {"  echo '{"name":"test","image":"ubuntu:22.04"}' > .devcontainer/devcontainer.json"}
+    puts $fh {"  echo 'Template applied successfully'"}
+    puts $fh {"  exit 0"}
+    puts $fh {fi}
+    puts $fh {echo 'devcontainer CLI stub'}
+    close $fh
+    exec chmod +x $dev_stub
+    
+    # Test both modes
+    foreach {mode_name env_var} {DIALOG "" TEXT "DCUTIL_DISABLE_DIALOG=1"} {
+        puts "\n--- Testing $mode_name mode ---"
+        
+        # Run wizard in the specified mode
+        if {$env_var eq ""} {
+            spawn env HOME=$temp_home PATH="$temp_bin:/usr/bin:/bin" CI=1 $dcutil_cmd init wizard
+        } else {
+            spawn env HOME=$temp_home PATH="$temp_bin:/usr/bin:/bin" CI=1 $env_var $dcutil_cmd init wizard
+        }
+        
+        expect {
+            "Devcontainer Initialization Wizard" {
+                puts "✓ Wizard launched in $mode_name mode"
+                
+                # Wait for project type detection
+                expect {
+                    "Automatically detected:" {
+                        puts "✓ Project type detected in $mode_name mode"
+                        
+                        # Handle different input methods based on mode
+                        if {$mode_name eq "DIALOG"} {
+                            # Dialog mode: use Enter for default option
+                            send "\r"
+                        } else {
+                            # Text mode: use "1" for default option
+                            send "1\r"
+                        }
+                        
+                        expect {
+                            "Feature Selection" {
+                                puts "✓ Feature selection reached in $mode_name mode"
+                                
+                                # Handle different input methods based on mode
+                                if {$mode_name eq "DIALOG"} {
+                                    # Dialog mode: use Enter for default option (skip features)
+                                    send "\r"
+                                } else {
+                                    # Text mode: use "4" for skip features option
+                                    send "4\r"
+                                }
+                                
+                                expect {
+                                    "Advanced Configuration" {
+                                        puts "✓ Advanced configuration reached in $mode_name mode"
+                                        
+                                        # Use defaults (press Enter)
+                                        send "\r"
+                                        
+                                        expect {
+                                            "Template applied successfully" {
+                                                puts "✓ Template applied successfully in $mode_name mode"
+                                            }
+                                            timeout {
+                                                puts "✗ FAIL: Template application failed in $mode_name mode"
+                                                exit 1
+                                            }
+                                        }
+                                    }
+                                    timeout {
+                                        puts "✗ FAIL: Advanced configuration failed in $mode_name mode"
+                                        exit 1
+                                    }
+                                }
+                            }
+                            timeout {
+                                puts "✗ FAIL: Feature selection failed in $mode_name mode"
+                                exit 1
+                            }
+                        }
+                    }
+                    timeout {
+                        puts "✗ FAIL: Project type detection failed in $mode_name mode"
+                        exit 1
+                    }
+                }
+            }
+            timeout {
+                puts "✗ FAIL: Wizard failed to launch in $mode_name mode"
+                exit 1
+            }
+        }
+        
+        # Clean up for next test
+        catch {exec rm -rf "$project_dir/.devcontainer"}
+        catch {exec mkdir "$project_dir/.devcontainer"}
+    }
+    
+    puts "✅ Unified wizard tests PASSED"
+}
+
+# Test unified menu functionality
+proc test_menu_unified_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "\n🧪 Testing dcutil menu in UNIFIED mode..."
+    
+    # Test both modes
+    foreach {mode_name env_var} {DIALOG "" TEXT "DCUTIL_DISABLE_DIALOG=1"} {
+        puts "\n--- Testing $mode_name mode menu ---"
+        
+        # Run menu in the specified mode
+        if {$env_var eq ""} {
+            spawn $dcutil_cmd menu
+        } else {
+            spawn env $env_var $dcutil_cmd menu
+        }
+        
+        expect {
+            "What would you like to do?" {
+                puts "✓ Menu loaded successfully in $mode_name mode"
+                
+                # Test help option
+                if {$mode_name eq "DIALOG"} {
+                    send "10\r"
+                } else {
+                    send "10\r"
+                }
+                
+                expect {
+                    "Usage:" {
+                        puts "✓ Help option works in $mode_name mode"
+                        send "\r"
+                        
+                        expect "What would you like to do?"
+                        puts "✓ Returned to menu after help in $mode_name mode"
+                    }
+                    timeout {
+                        puts "✗ FAIL: Help option failed in $mode_name mode"
+                        exit 1
+                    }
+                }
+                
+                # Test exit option
+                send "0\r"
+                
+                expect {
+                    "Goodbye!" {
+                        puts "✓ Exit option works in $mode_name mode"
+                    }
+                    timeout {
+                        puts "✗ FAIL: Exit option failed in $mode_name mode"
+                        exit 1
+                    }
+                }
+            }
+            timeout {
+                puts "✗ FAIL: Menu failed to load in $mode_name mode"
+                exit 1
+            }
+        }
+    }
+    
+    puts "✅ Unified menu tests PASSED"
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 Unified Mode Testing"
+puts "========================================="
+
+test_wizard_unified_mode
+test_menu_unified_mode
+
+puts "\n🎉 All unified mode tests completed successfully!"
+puts "✅ PASS: Unified mode tests completed successfully"

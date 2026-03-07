@@ -1,0 +1,7 @@
+#!/usr/bin/expect -f
+set timeout 5
+spawn ../dcutil edit
+expect "Edit devcontainer.json with validation and optional re-edit"
+expect "Configuration updated"
+puts "PASS"
+exit 0

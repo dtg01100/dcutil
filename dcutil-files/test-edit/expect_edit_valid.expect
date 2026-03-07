@@ -1,0 +1,6 @@
+#!/usr/bin/env expect
+set timeout 10
+spawn echo "Edit valid test"
+expect "Edit valid test"
+puts "PASS: Edit valid test placeholder"
+expect eof

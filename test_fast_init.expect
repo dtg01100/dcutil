@@ -1,0 +1,23 @@
+#!/usr/bin/expect
+
+set timeout 60
+
+# Change to test directory if provided
+if {$argc >= 1} {
+    set test_dir [lindex $argv 0]
+    cd $test_dir
+}
+
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil init fast
+
+# Wait for setup to complete
+expect "✅ Development environment configured successfully!"
+
+# Wait for the prompt to start environment
+expect "Ready to start your development environment?"
+send "Y\r"
+
+# Wait for completion
+# expect eof
+
+puts "PASS: Fast init test completed"

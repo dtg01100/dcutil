@@ -1,0 +1,57 @@
+[
+  {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "description": "A simple Ubuntu container with Git and other common utilities installed."
+  },
+  {
+    "id": "go",
+    "name": "Go",
+    "description": "Official Go programming language container."
+  },
+  {
+    "id": "javascript-node",
+    "name": "Node.js",
+    "description": "Node.js development with JavaScript/TypeScript."
+  },
+  {
+    "id": "python",
+    "name": "Python",
+    "description": "Python development environment."
+  },
+  {
+    "id": "rust",
+    "name": "Rust",
+    "description": "Rust programming language development."
+  },
+  {
+    "id": "dotnet",
+    "name": "C# (.NET)",
+    "description": "C# and .NET development."
+  },
+  {
+    "id": "java",
+    "name": "Java",
+    "description": "Java development environment."
+  },
+  {
+    "id": "cpp",
+    "name": "C/C++",
+    "description": "C and C++ development."
+  },
+  {
+    "id": "php",
+    "name": "PHP",
+    "description": "PHP development environment."
+  },
+  {
+    "id": "ruby",
+    "name": "Ruby",
+    "description": "Ruby programming language development."
+  },
+  {
+    "id": "alpine",
+    "name": "Alpine Linux",
+    "description": "Lightweight Alpine Linux base container."
+  }
+]

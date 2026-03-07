@@ -1,0 +1,42 @@
+#!/usr/bin/expect
+
+set timeout 120
+
+# Change to test directory if provided
+if {$argc >= 1} {
+    set test_dir [lindex $argv 0]
+    cd $test_dir
+}
+
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil init wizard
+
+# Step 1: Project type selection - choose option 1 (use detected template)
+expect "Would you like to use the detected template or choose a different one?"
+send "1\r"
+
+# Step 2: Feature selection - use defaults
+expect "Available features:"
+expect "Enter comma-separated feature IDs to include"
+send "\r"
+
+# Step 3: Advanced configuration - use defaults
+expect "Container name"
+send "\r"
+
+expect "Workspace folder"
+send "\r"
+
+expect "Container user"
+send "\r"
+
+expect "Remote user"
+send "\r"
+
+# Step 4: VS Code customizations - say no
+expect "Would you like to add VS Code customizations (extensions, settings)? (Y/n):"
+send "n\r"
+
+# Wait for completion
+# expect eof
+
+puts "PASS: Basic wizard test completed"

@@ -1,0 +1,113 @@
+## Release v1.6.0 - Devcontainer Features Management
+
+### 🚀 Major Feature: Devcontainer Features Management
+- **Interactive Features Wizard**: New `dcutil features` command for managing devcontainer features
+  - `dcutil features` - Launch interactive wizard to add/remove features
+  - `dcutil features list` - Show currently configured features
+  - `dcutil features add <feature>` - Add specific features (supports comma-separated lists)
+  - `dcutil features remove <feature>` - Remove specific features
+- **Feature Discovery**: Automatically fetch available features from official devcontainers registry
+- **Smart Feature Handling**: Supports both object and array feature configurations
+- **Dependency Resolution**: Automatically handles feature installation order based on dependencies
+- **Offline Mode**: Fallback to cached/local features when registry is unavailable
+
+### 🛠️ Technical Infrastructure
+- **New Features Library**: `lib/features.sh` (12,942 lines) - Complete features management system
+- **Comprehensive Testing**: Added regression and unit tests for features functionality
+- **Template Integration**: Enhanced template system with feature-aware configurations
+- **Error Handling**: Robust error handling for feature installation and configuration issues
+
+### 📊 Quality Assurance
+- **Test Coverage**: Added 50+ new tests covering feature management edge cases
+- **Regression Testing**: Comprehensive test suite for backward compatibility
+- **Syntax Validation**: All new code passes shellcheck validation
+- **Documentation**: Updated help system and command documentation
+
+### 🔧 Dependencies
+- **Dependabot Configuration**: Added automated dependency updates for devcontainer ecosystem
+- **Registry Integration**: Seamless integration with official devcontainers features registry
+
+## Release v1.5.10 - Bug Fixes & Stability Improvements
+
+### 🚀 New Feature: Resource Monitoring
+- **Container Resource Monitoring**: New `dcutil stats` command provides real-time and detailed resource monitoring
+  - `dcutil stats` - "Is my code using a lot of resources?" (Quick snapshot)
+  - `dcutil stats watch` - Monitor live while running tests/builds
+  - `dcutil stats detailed` - "Am I hitting my memory limit?" (Full details with limits)
+  - `dcutil stats top` - "What programs are actually running?"
+
+### 🎯 Project-Wide Beginner-Friendly Redesign
+- **No Docker Knowledge Required**: Completely rewritten all user-facing messages to eliminate container jargon
+- **Plain Language Throughout**: Commands now use "development environment" instead of "devcontainer" or "container"
+- **Helpful Error Messages**: Every error explains what happened and shows the exact command to fix it
+- **Friendly Prompts**: All interactive messages are clear, encouraging, and action-oriented
+- **Updated Help System**: Main help and all subcommands now focus on what you want to do, not Docker terminology
+- **README Overhaul**: Introduction emphasizes ease of use and zero Docker expertise needed
+
+### 🎨 Command-Line UX Enhancements
+- **Interactive Menu**: Run `dcutil` (no arguments) to see a friendly menu with 9 common tasks
+- **Smart Suggestions**: Typos get "Did you mean?" suggestions using fuzzy matching (e.g., "stauts" → "status")
+- **First-Run Welcome**: New users see a helpful guide with quick start steps (shown once)
+- **Contextual Tips**: Get hints based on environment state:
+  - After `dcutil init` → "Next: Run 'dcutil up' to start your environment"
+  - After `dcutil status` → Different tips based on whether environment is running/stopped
+- **Time Expectations**: Clear messages for long operations:
+  - "⏳ This may take a few minutes on first run..." (dcutil up)
+  - "⏳ This may take several minutes depending on the image size..." (dcutil build)
+  - "⏳ This may take a few minutes depending on the features..." (dcutil features install)
+- **Enhanced UX Module**: New `lib/ux.sh` with comprehensive helper functions
+
+### 💡 Message Improvements - Before & After
+
+**Before**: "Error: devcontainer not found. Run docker ps to check container status."
+**After**: "⚠️  Your development environment isn't running yet. Start it with: dcutil up"
+
+**Before**: "Enter container shell"
+**After**: "Jump into a shell in your development environment"
+
+**Before**: "Usage: dcutil <command>"
+**After**: "Manage your development environment with ease - no Docker knowledge required!"
+
+### 🎨 Stats Command Design Philosophy
+- **Contextual Help**: Inline tips like "High CPU (>80%)? Your code might be processing-intensive"
+- **Visual Clarity**: Uses emojis and formatting (📊, 💡, ⚠️, ✓) to make output easy to scan
+- **Plain Language Explanations**: Every metric is explained in beginner-friendly terms
+- **Real Questions Answered**: Designed around questions developers actually ask
+
+### 🎯 Real-World Use Cases
+```bash
+# Before running tests - check baseline
+dcutil stats
+
+# During a build - watch resources in real-time
+dcutil stats watch
+
+# After getting "out of memory" error - investigate
+dcutil stats detailed
+
+# When things feel slow - see what's running
+dcutil stats top
+```
+
+### 🛠️ What You Can Monitor
+- **CPU Usage** - "Is my code doing heavy work right now?"
+- **Memory Usage** - "Am I running out of RAM?"
+- **Network I/O** - "How much data am I sending/receiving?" (web apps)
+- **Disk I/O** - "How much file reading/writing is happening?"
+- **Active Processes** - "What's actually running in there?"
+- **Resource Limits** - "Am I close to hitting configured limits?"
+
+### ✨ User Experience Highlights
+- Comprehensive shell autocomplete for stats subcommands
+- Help text written for developers, not sysadmins
+- Graceful handling with actionable next steps
+- Works seamlessly with both Docker and Podman backends
+- **Zero container platform knowledge required**
+
+### 🚀 Features
+- Added `dcutil environment export-env` command to output environment variables matching devcontainer CLI settings
+- Enhanced environment variable handling to match VSCode devcontainer environment
+
+### 🛠️ Improvements
+- Use devcontainer CLI exclusively for validation instead of fallback methods
+- Properly enforce devcontainer CLI as hard requirement

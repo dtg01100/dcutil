@@ -1,0 +1,40 @@
+#!/usr/bin/env expect
+
+# Core CLI tests: help, run, list, restart, check, completion, ssh
+
+set timeout 60
+set cmd [lindex $argv 0]
+if {$cmd eq ""} { set cmd "./dcutil" }
+
+proc run_cmd {cmd expect_re} {
+    spawn sh -c $cmd
+    expect {
+        -re $expect_re { puts "PASS: $cmd matched: $expect_re" }
+        eof { puts "PASS: $cmd ended (no specific output expected)" }
+        timeout { puts "FAIL: $cmd timed out waiting for: $expect_re"; exit 1 }
+    }
+}
+
+# help
+run_cmd "$cmd help" "Usage: dcutil"
+
+# completion
+run_cmd "$cmd completion" "bash|zsh|fish|Generate completion script" 
+
+# run without args (should error)
+run_cmd "$cmd run" "Usage: dcutil run"
+
+# list
+run_cmd "$cmd list" "Listing|devcontainers|Running devcontainers"
+
+# restart (without running will just show info or error)
+run_cmd "$cmd restart" "Restart|Stopping|No container found|Restarting"
+
+# check
+run_cmd "$cmd check" "Checking devcontainer configuration|Devcontainer configuration is valid|No devcontainer configuration found"
+
+# ssh help
+run_cmd "$cmd ssh --help" "Usage: dcutil ssh|SSH key management"
+
+puts "🎉 Core CLI tests completed successfully!"
+exit 0

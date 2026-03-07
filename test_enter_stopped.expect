@@ -1,0 +1,47 @@
+#!/usr/bin/expect
+
+set timeout 60
+
+# Change to test directory if provided
+if {$argc >= 1} {
+    set test_dir [lindex $argv 0]
+    cd $test_dir
+} else {
+    cd test-enter-stopped
+}
+
+# First, initialize the devcontainer if not already done
+if {![file exists ".devcontainer/devcontainer.json"]} {
+    spawn ../dcutil-files/dcutil init fast
+    expect "✅ Development environment configured successfully!"
+    expect "Ready to start your development environment?"
+    send "Y\r"
+    expect "Starting devcontainer..."
+    # Wait a bit for it to start
+    sleep 5
+}
+
+# Then stop it if running
+spawn ../dcutil-files/dcutil
+expect "What would you like to do?"
+send "3\r"
+expect {
+    "Stopping your environment" {}
+    "Environment is already stopped" {}
+    timeout { puts "FAIL: Could not stop environment"; exit 1 }
+}
+
+# Now test enter on stopped container
+spawn ../dcutil-files/dcutil enter
+
+# Should detect environment isn't running and prompt to start
+expect "Your environment isn't running. Start it now? (y/N):"
+send "n\r"
+
+# Should exit without starting
+expect eof
+
+# Wait for completion
+# expect eof
+
+puts "PASS: Enter command test with stopped container completed"

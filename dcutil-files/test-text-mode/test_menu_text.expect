@@ -1,0 +1,129 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Text mode menu testing
+# Tests menu functionality with DCUTIL_DISABLE_DIALOG=1
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test text mode menu functionality
+proc test_menu_text_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing dcutil menu in TEXT mode..."
+    
+    # Set environment variable to disable dialog
+    set env(DCUTIL_DISABLE_DIALOG) 1
+    
+    spawn env DCUTIL_DISABLE_DIALOG=1 $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            puts "✓ Text mode menu loaded successfully"
+            
+            # Test help option
+            send "10\r"
+            
+            expect {
+                "Usage:" {
+                    puts "✓ Help option works in text mode"
+                    send "\r"
+                    
+                    expect "What would you like to do?"
+                    puts "✓ Returned to menu after help"
+                }
+                timeout {
+                    puts "✗ FAIL: Help option failed in text mode"
+                    exit 1
+                }
+            }
+            
+            # Test exit option
+            send "0\r"
+            
+            expect {
+                "Goodbye!" {
+                    puts "✓ Exit option works in text mode"
+                }
+                timeout {
+                    puts "✗ FAIL: Exit option failed in text mode"
+                    exit 1
+                }
+            }
+            
+            puts "✅ Text mode menu tests PASSED"
+        }
+        timeout {
+            puts "✗ FAIL: Text mode menu failed to load"
+            exit 1
+        }
+    }
+}
+
+# Test feature management in text mode
+proc test_features_text_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing dcutil features in TEXT mode..."
+    
+    # Set environment variable to disable dialog
+    set env(DCUTIL_DISABLE_DIALOG) 1
+    
+    spawn env DCUTIL_DISABLE_DIALOG=1 $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    expect {
+                        "Current features in your configuration:" {
+                            puts "✓ Features menu loaded in text mode"
+                            
+                            # Test exit without saving (option 5)
+                            send "5\r"
+                            
+                            expect {
+                                "What would you like to do?" {
+                                    puts "✓ Exit without saving works in text mode"
+                                }
+                                timeout {
+                                    puts "✗ FAIL: Exit without saving failed in text mode"
+                                    exit 1
+                                }
+                            }
+                            
+                            puts "✅ Text mode features tests PASSED"
+                        }
+                        timeout {
+                            puts "✗ FAIL: Features menu failed to load in text mode"
+                            exit 1
+                        }
+                    }
+                }
+                timeout {
+                    puts "✗ FAIL: Features menu failed to load"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "✗ FAIL: Menu failed to load"
+            exit 1
+        }
+    }
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 Text Mode Menu Testing"
+puts "========================================="
+
+test_menu_text_mode
+test_features_text_mode
+
+puts "🎉 All text mode tests completed successfully!"

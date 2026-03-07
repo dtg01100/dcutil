@@ -1,0 +1,46 @@
+#!/usr/bin/expect
+
+set timeout 60
+
+# Change to test directory if provided
+if {$argc >= 1} {
+    set test_dir [lindex $argv 0]
+    cd $test_dir
+}
+
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil init wizard
+
+# Step 1: Project type selection - choose option 3 (custom image)
+expect "Would you like to use the detected template or choose a different one?"
+send "3\r"
+
+# Enter custom image
+expect "Enter custom Docker image:"
+send "ubuntu:22.04\r"
+
+# Step 2: Feature selection - skip features
+expect "Available features:"
+expect "Enter comma-separated feature IDs to include"
+send "\r"
+
+# Step 3: Advanced configuration
+expect "Container name"
+send "custom-ubuntu\r"
+
+expect "Workspace folder"
+send "/workspace\r"
+
+expect "Container user"
+send "ubuntu\r"
+
+expect "Remote user"
+send "ubuntu\r"
+
+# Step 4: VS Code customizations - say no
+expect "Would you like to add VS Code customizations (extensions, settings)? (Y/n):"
+send "n\r"
+
+# Wait for completion
+# expect eof
+
+puts "PASS: Custom image wizard test completed"

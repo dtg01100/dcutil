@@ -1,0 +1,72 @@
+#!/usr/bin/env expect
+
+# Test non-interactive features CLI: add/remove/validate
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Use the test features dir provided under repo
+set TEST_DIR "test_features_dir"
+set DCUTIL_CMD "$dcutil_cmd"
+
+proc run_cmd {cmd expect_re} {
+    spawn sh -c $cmd
+    expect {
+        -re $expect_re {
+            puts "PASS: $cmd matched: $expect_re"
+        }
+        timeout {
+            puts "FAIL: $cmd timed out waiting for: $expect_re"
+            exit 1
+        }
+    }
+    expect eof
+}
+
+# Show current features for debug
+run_cmd "$DCUTIL_CMD features info" "No features configured"
+
+# Add a feature (git)
+run_cmd "$DCUTIL_CMD features add git" "Added feature|Feature 'git' has been added|Added feature 'git'"
+
+# Confirm feature exists in devcontainer.json
+spawn sh -c "cat .devcontainer/devcontainer.json | jq -r '.features | keys[]' 2>/dev/null | grep -E 'git' || true"
+expect {
+    -re "git" {
+        puts "PASS: git feature present in devcontainer.json"
+    }
+    eof {
+        puts "INFO: git feature key not shown, verifying existence via raw file"
+    }
+    timeout {
+        puts "FAIL: Did not find feature 'git' in devcontainer.json"
+        exit 1
+    }
+}
+expect eof
+
+# Remove the feature
+run_cmd "$DCUTIL_CMD features remove git" "Removed feature|Feature 'git' has been removed"
+
+# Verify removal
+spawn sh -c "cat .devcontainer/devcontainer.json | jq -r '.features | keys[]' 2>/dev/null | grep -E 'git' || echo 'NOT_FOUND'"
+expect {
+    -re "git" {
+        puts "FAIL: git feature still present after removal"
+        exit 1
+    }
+    -re "NOT_FOUND" {
+        puts "PASS: git feature removed from devcontainer.json"
+    }
+    timeout {
+        puts "FAIL: Verification timed out"
+        exit 1
+    }
+}
+expect eof
+
+puts "🎉 Features CLI tests completed successfully!"
+exit 0

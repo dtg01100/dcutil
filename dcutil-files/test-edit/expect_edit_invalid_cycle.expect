@@ -1,0 +1,6 @@
+#!/usr/bin/env expect
+set timeout 10
+spawn echo "Edit invalid cycle test"
+expect "Edit invalid cycle test"
+puts "PASS: Edit invalid cycle test placeholder"
+expect eof

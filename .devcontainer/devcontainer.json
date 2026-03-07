@@ -1,0 +1,54 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/debian
+{
+	"name": "dcutil Development",
+	// Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
+	"image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+ 	"remoteUser": "vscode",
+	"features": {
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
+			"moby": false
+		},
+		"ghcr.io/devcontainers/features/ruby:1": {
+			"version": "latest"
+		}
+	},
+
+	"containerEnv": {
+		"PYTHONDONTWRITEBYTECODE": "1"
+	},
+
+	// Bind mount the host Docker socket for Docker-outside-of-Docker
+	"mounts": [
+		"source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind",
+		"type=volume,source=devc-pip-cache,target=/home/vscode/.cache/pip",
+		"type=volume,source=devc-npm-cache,target=/home/vscode/.npm",
+		"type=volume,source=devc-cargo-registry,target=/home/vscode/.cargo/registry",
+		"type=volume,source=devc-go-build-cache,target=/home/vscode/.cache/go-build"
+	],
+
+	// Install devcontainer CLI and dependencies after container creation
+	"postCreateCommand": "npm install -g @devcontainers/cli && pip3 install --user pipdeptree",
+
+	// Configure VS Code extensions for shell scripting
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"timonwong.shellcheck",
+				"foxundermoon.shell-format",
+				"mads-hartmann.bash-ide-vscode",
+				"ms-vscode.makefile-tools",
+				"ms-python.python",
+				"ms-python.vscode-pylance",
+				"ms-vscode.go",
+				"rust-lang.rust-analyzer",
+				"rebornix.Ruby",
+				"dbaeumer.vscode-eslint",
+				"esbenp.prettier-vscode"
+			],
+			"settings": {
+				"terminal.integrated.defaultProfile.linux": "bash"
+			}
+		}
+	}
+}

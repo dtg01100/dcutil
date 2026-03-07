@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      DCUTIL_NONINTERACTIVE: "1"
+
+    env:
+      DCUTIL_NONINTERACTIVE: '1'
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y jq curl expect nodejs npm
+
+    - name: Install devcontainer CLI
+      run: |
+        npm install -g @devcontainers/cli
+
+    - name: Make scripts executable
+      run: |
+        chmod +x dcutil
+        chmod +x test.sh
+        find . -name "*.sh" -exec chmod +x {} \;
+
+    - name: Run basic functionality tests
+      run: |
+        ./dcutil version
+        ./dcutil help | grep -q "Usage"
+        ./dcutil status 2>&1 | grep -q "status\|Status\|container"
+
+    - name: Run comprehensive test suite
+      run: |
+        echo "Running minimal and targeted tests for CI"
+        ./minimal_test.sh
+        ./targeted_functionality_test.sh
+
+    - name: Run security and functionality tests
+      run: |
+        # Test that our security fixes work
+        ./minimal_test.sh
+        ./targeted_functionality_test.sh
+
+    - name: Test interactive features (expect)
+      continue-on-error: true
+      run: |
+        echo "Running expect-based interactive tests (non-interactive mode enabled)"
+        ./run_expect_tests.sh
+
+    - name: Run deterministic non-interactive wizard test
+      continue-on-error: true
+      run: |
+        echo "Running deterministic non-interactive wizard expect test"
+        expect ./test-wizard-comprehensive/test_wizard_noninteractive.expect
+
+    - name: Run deterministic features add/remove test
+      continue-on-error: true
+      run: |
+        echo "Running deterministic features add/remove expect test"
+        expect ./test-menu/test_features_add_remove.expect
+
+    - name: Test project initialization
+      run: |
+        mkdir -p /tmp/test-ci-project
+        cd /tmp/test-ci-project
+        timeout 30 "$GITHUB_WORKSPACE/dcutil" init fast || echo "Init completed or timed out"
+        timeout 30 "$GITHUB_WORKSPACE/dcutil" schema validate || echo "Schema validation completed or timed out"
+
+    - name: Test volume management
+      run: |
+        mkdir -p /tmp/test-ci-project
+        cd /tmp/test-ci-project
+        timeout 30 "$GITHUB_WORKSPACE/dcutil" volumes list || echo "Volume list completed or timed out"
+
+    - name: Test library syntax
+      run: |
+        echo "Checking syntax of all library files..."
+        for lib in lib/*.sh; do
+          echo "Checking $lib..."
+          bash -n "$lib" || exit 1
+        done
+        echo "✅ All library files passed syntax check"
+
+    - name: Test completion generation
+      run: |
+        ./dcutil completion bash | grep -q "_dcutil"
+        ./dcutil completion zsh | grep -q "compdef"
+
+    - name: Test error handling
+      run: |
+        # Basic error handling test
+        ./dcutil nonexistent-command >/dev/null 2>&1 && exit 1 || true
+
+    - name: Test configuration validation
+      run: |
+        # Test malformed JSON
+        mkdir -p /tmp/test-config/.devcontainer
+        cd /tmp/test-config
+        echo '{"name": "test", "image": }' > .devcontainer/devcontainer.json
+        "$GITHUB_WORKSPACE/dcutil" schema validate 2>&1 | grep -q "error\|Error" || true
+
+    - name: Test backend switching
+      run: |
+        # Test that status command works (may not have containers yet)
+        ./dcutil status 2>&1 || echo "Status check completed"
+        # Test environment variable setting
+        DCUTIL_BACKEND=podman ./dcutil --help | grep -q "dcutil" || echo "Backend env var test completed"
+
+    - name: Clean up
+      run: |
+        docker system prune -f || true
+        podman system prune -f || true

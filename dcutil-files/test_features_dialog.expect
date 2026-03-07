@@ -1,0 +1,85 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Test script for dcutil features dialog functionality
+
+set timeout 30
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+spawn $dcutil_cmd
+
+# Wait for main menu
+expect {
+    "What would you like to do?" {
+        # Send option 9 to select "Manage devcontainer features"
+        send "9\r"
+    }
+    timeout {
+        puts "FAIL: Did not reach main menu"
+        exit 1
+    }
+}
+
+# Wait for feature management menu
+expect {
+    "Managing devcontainer features..." {
+        # Wait for the submenu to load
+        sleep 2
+        expect {
+            "What would you like to do?" {
+                # Test option 3 - View available features with search
+                send "3\r"
+                
+                expect {
+                    "Enter search term to filter features" {
+                        # Test searching for 'git' 
+                        send "git\r"
+                        
+                        expect {
+                            "Features matching 'git':" {
+                                puts "PASS: Search functionality works - found git features"
+                                # Send 'back' to return
+                                send "back\r"
+                                
+                                expect "Press Enter to continue viewing or type 'back' to return:"
+                                send "\r"
+                                
+                                # Go back to main feature menu
+                                send "5\r"  ;# Exit without saving
+                                
+                                expect {
+                                    "Exiting without saving changes" {
+                                        puts "PASS: Feature management completed successfully"
+                                        expect eof
+                                    }
+                                    timeout {
+                                        puts "FAIL: Did not complete feature management"
+                                        exit 1
+                                    }
+                                }
+                            }
+                            timeout {
+                                puts "FAIL: Search did not return results"
+                                exit 1
+                            }
+                        }
+                    }
+                    timeout {
+                        puts "FAIL: Did not reach search prompt"
+                        exit 1
+                    }
+                }
+            }
+            timeout {
+                puts "FAIL: Did not reach feature submenu"
+                exit 1
+            }
+        }
+    }
+    timeout {
+        puts "FAIL: Did not reach feature management"
+        exit 1
+    }
+}

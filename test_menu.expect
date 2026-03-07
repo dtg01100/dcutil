@@ -1,0 +1,118 @@
+#!/usr/bin/expect
+
+set timeout 30
+
+# Change to test directory if provided
+if {$argc >= 1} {
+    set test_dir [lindex $argv 0]
+    cd $test_dir
+}
+
+# Test menu choice 1 (up)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "1\r"
+expect {
+    "Starting your development environment" { puts "PASS: Menu choice 1" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 1"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 2 (enter)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "2\r"
+expect {
+    "Opening a shell in your environment" { puts "PASS: Menu choice 2" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 2"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 3 (down)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "3\r"
+expect {
+    "Stopping your environment" { puts "PASS: Menu choice 3" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 3"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 4 (status)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "4\r"
+expect {
+    "Checking environment status" { puts "PASS: Menu choice 4" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 4"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 5 (stats)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "5\r"
+expect {
+    "Showing resource usage" { puts "PASS: Menu choice 5" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 5"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 6 (init)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "6\r"
+expect {
+    "Setting up a new project" { puts "PASS: Menu choice 6" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 6"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 7 (logs)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "7\r"
+expect {
+    "Viewing logs" { puts "PASS: Menu choice 7" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 7"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 8 (volumes)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "8\r"
+expect {
+    "Managing shared storage" { puts "PASS: Menu choice 8" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 8"; exit 1 }
+}
+# # expect eof
+
+# Test menu choice 9 (help)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "9\r"
+# # expect eof
+puts "PASS: Menu choice 9 (help)"
+
+# Test menu choice 0 (exit)
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "0\r"
+expect {
+    "Goodbye!" { puts "PASS: Menu choice 0" }
+    timeout { puts "FAIL: Timeout waiting for menu choice 0"; exit 1 }
+}
+# # expect eof
+
+# Test invalid choice
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil
+expect "What would you like to do?"
+send "invalid\r"
+expect {
+    "Invalid choice" { puts "PASS: Invalid choice handling" }
+    timeout { puts "FAIL: Timeout waiting for invalid choice handling"; exit 1 }
+}
+# # expect eof
+
+puts "All menu tests completed"

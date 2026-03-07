@@ -1,0 +1,788 @@
+# Devcontainer Features Installation Log
+# Date: Tue Nov 25 09:53:27 EST 2025
+# Project: /var/home/dlafreniere/projects/dcutil
+
+Tue Nov 25 09:53:27 EST 2025: Installing ghcr.io/devcontainers/features/docker-in-docker:latest
++ DOCKER_VERSION=latest
++ USE_MOBY=true
++ MOBY_BUILDX_VERSION=latest
++ DOCKER_DASH_COMPOSE_VERSION=v2
++ AZURE_DNS_AUTO_DETECTION=true
++ DOCKER_DEFAULT_ADDRESS_POOL=
++ USERNAME=automatic
++ INSTALL_DOCKER_BUILDX=true
++ INSTALL_DOCKER_COMPOSE_SWITCH=true
++ MICROSOFT_GPG_KEYS_URI=https://packages.microsoft.com/keys/microsoft.asc
++ MICROSOFT_GPG_KEYS_ROLLING_URI=https://packages.microsoft.com/keys/microsoft-rolling.asc
++ DOCKER_MOBY_ARCHIVE_VERSION_CODENAMES='trixie bookworm buster bullseye bionic focal jammy noble'
++ DOCKER_LICENSED_ARCHIVE_VERSION_CODENAMES='trixie bookworm buster bullseye bionic focal hirsute impish jammy noble'
++ DISABLE_IP6_TABLES=false
++ set -e
++ rm -rf /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-backports_InRelease /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-backports_main_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-backports_universe_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-updates_InRelease /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-updates_main_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-updates_multiverse_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-updates_restricted_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble-updates_universe_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble_InRelease /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble_main_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble_multiverse_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble_restricted_binary-amd64_Packages.lz4 /var/lib/apt/lists/archive.ubuntu.com_ubuntu_dists_noble_universe_binary-amd64_Packages.lz4 /var/lib/apt/lists/auxfiles /var/lib/apt/lists/deb.nodesource.com_node%5f20.x_dists_nodistro_InRelease /var/lib/apt/lists/deb.nodesource.com_node%5f20.x_dists_nodistro_main_binary-amd64_Packages.lz4 /var/lib/apt/lists/lock /var/lib/apt/lists/packages.microsoft.com_repos_microsoft-ubuntu-noble-prod_dists_noble_InRelease /var/lib/apt/lists/packages.microsoft.com_repos_microsoft-ubuntu-noble-prod_dists_noble_main_binary-all_Packages.lz4 /var/lib/apt/lists/packages.microsoft.com_repos_microsoft-ubuntu-noble-prod_dists_noble_main_binary-amd64_Packages.lz4 /var/lib/apt/lists/partial /var/lib/apt/lists/security.ubuntu.com_ubuntu_dists_noble-security_InRelease /var/lib/apt/lists/security.ubuntu.com_ubuntu_dists_noble-security_main_binary-amd64_Packages.lz4 /var/lib/apt/lists/security.ubuntu.com_ubuntu_dists_noble-security_multiverse_binary-amd64_Packages.lz4 /var/lib/apt/lists/security.ubuntu.com_ubuntu_dists_noble-security_restricted_binary-amd64_Packages.lz4 /var/lib/apt/lists/security.ubuntu.com_ubuntu_dists_noble-security_universe_binary-amd64_Packages.lz4
+++ id -u
++ '[' 0 -ne 0 ']'
++ '[' automatic = auto ']'
++ '[' automatic = automatic ']'
++ USERNAME=
++ POSSIBLE_USERS=("vscode" "node" "codespace" "$(awk -v val=1000 -F ":" '$3==val{print $1}' /etc/passwd)")
+++ awk -v val=1000 -F : '$3==val{print $1}' /etc/passwd
++ for CURRENT_USER in "${POSSIBLE_USERS[@]}"
++ id -u vscode
++ USERNAME=vscode
++ break
++ '[' vscode = '' ']'
++ export DEBIAN_FRONTEND=noninteractive
++ DEBIAN_FRONTEND=noninteractive
++ . /etc/os-release
+++ PRETTY_NAME='Ubuntu 24.04.3 LTS'
+++ NAME=Ubuntu
+++ VERSION_ID=24.04
+++ VERSION='24.04.3 LTS (Noble Numbat)'
+++ VERSION_CODENAME=noble
+++ ID=ubuntu
+++ ID_LIKE=debian
+++ HOME_URL=https://www.ubuntu.com/
+++ SUPPORT_URL=https://help.ubuntu.com/
+++ BUG_REPORT_URL=https://bugs.launchpad.net/ubuntu/
+++ PRIVACY_POLICY_URL=https://www.ubuntu.com/legal/terms-and-policies/privacy-policy
+++ UBUNTU_CODENAME=noble
+++ LOGO=ubuntu-logo
+++ dpkg --print-architecture
++ architecture=amd64
++ '[' true = true ']'
++ '[' ubuntu = debian ']'
++ '[' true = true ']'
++ [[ trixie bookworm buster bullseye bionic focal jammy noble != *\n\o\b\l\e* ]]
++ echo 'Distro codename  '\''noble'\''  matched filter  '\''trixie bookworm buster bullseye bionic focal jammy noble'\'''
+Distro codename  'noble'  matched filter  'trixie bookworm buster bullseye bionic focal jammy noble'
++ check_packages apt-transport-https curl ca-certificates pigz iptables gnupg2 dirmngr wget jq
++ dpkg -s apt-transport-https curl ca-certificates pigz iptables gnupg2 dirmngr wget jq
++ type git
++ type iptables-legacy
++ update-alternatives --set iptables /usr/sbin/iptables-legacy
++ update-alternatives --set ip6tables /usr/sbin/ip6tables-legacy
++ '[' true = true ']'
++ engine_package_name=moby-engine
++ cli_package_name=moby-cli
++ curl -sSL https://packages.microsoft.com/keys/microsoft.asc
++ gpg --dearmor
++ curl -sSL https://packages.microsoft.com/keys/microsoft-rolling.asc
++ echo 'deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-archive-keyring.gpg] https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble main'
++ apt-get update
+Get:1 https://deb.nodesource.com/node_20.x nodistro InRelease [12.1 kB]
+Get:2 https://deb.nodesource.com/node_20.x nodistro/main amd64 Packages [12.9 kB]
+Get:3 https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble InRelease [3600 B]
+Get:4 https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble/main amd64 Packages [72.7 kB]
+Get:5 https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble/main all Packages [643 B]
+Get:6 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:7 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1174 kB]
+Get:8 http://security.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [33.1 kB]
+Get:9 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1680 kB]
+Get:10 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [2781 kB]
+Get:11 http://archive.ubuntu.com/ubuntu noble InRelease [256 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:13 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:14 http://archive.ubuntu.com/ubuntu noble/multiverse amd64 Packages [331 kB]
+Get:15 http://archive.ubuntu.com/ubuntu noble/restricted amd64 Packages [117 kB]
+Get:16 http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages [19.3 MB]
+Get:17 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages [1808 kB]
+Get:18 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [35.9 kB]
+Get:19 http://archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [2925 kB]
+Get:20 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1942 kB]
+Get:21 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [2050 kB]
+Get:22 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [33.9 kB]
+Get:23 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [49.4 kB]
+Fetched 35.0 MB in 17s (2071 kB/s)
+Reading package lists...
++ '[' latest = latest ']'
++ engine_version_suffix=
++ cli_version_suffix=
++ '[' true = true ']'
++ '[' latest = latest ']'
++ buildx_version_suffix=
++ type docker
++ type dockerd
++ echo 'Docker / Moby CLI and Engine already installed.'
++ echo 'Finished installing docker / moby!'
++ docker_home=/usr/libexec/docker
++ cli_plugins_dir=/usr/libexec/docker/cli-plugins
+Docker / Moby CLI and Engine already installed.
+Finished installing docker / moby!
++ '[' v2 '!=' none ']'
++ case "${architecture}" in
++ target_compose_arch=x86_64
++ docker_compose_path=/usr/local/bin/docker-compose
++ '[' v2 = v1 ']'
++ compose_version=2
++ docker_compose_url=https://github.com/docker/compose
++ find_version_from_git_tags compose_version https://github.com/docker/compose tags/v
++ local variable_name=compose_version
++ local requested_version=2
++ '[' 2 = none ']'
++ local repository=https://github.com/docker/compose
++ local prefix=tags/v
++ local separator=.
++ local last_part_optional=false
+++ echo 2
+++ grep -o .
+++ wc -l
++ '[' 1 '!=' 2 ']'
++ local 'escaped_separator=\.'
++ local last_part
++ '[' false = true ']'
++ last_part='\.[0-9]+'
++ local 'regex=tags/v\K[0-9]+\.[0-9]+\.[0-9]+$'
+++ git ls-remote --tags https://github.com/docker/compose
+++ grep -oP 'tags/v\K[0-9]+\.[0-9]+\.[0-9]+$'
+++ tr -d ' '
+++ tr . .
+++ sort -rV
++ local 'version_list=2.40.3
+2.40.2
+2.40.1
+2.40.0
+2.39.4
+2.39.3
+2.39.2
+2.39.1
+2.39.0
+2.38.2
+2.38.1
+2.38.0
+2.37.3
+2.37.2
+2.37.1
+2.37.0
+2.36.2
+2.36.1
+2.36.0
+2.35.1
+2.35.0
+2.34.0
+2.33.1
+2.33.0
+2.32.4
+2.32.3
+2.32.2
+2.32.1
+2.32.0
+2.31.0
+2.30.3
+2.30.2
+2.30.1
+2.30.0
+2.29.7
+2.29.6
+2.29.5
+2.29.4
+2.29.3
+2.29.2
+2.29.1
+2.29.0
+2.28.1
+2.28.0
+2.27.3
+2.27.2
+2.27.1
+2.27.0
+2.26.1
+2.26.0
+2.25.0
+2.24.7
+2.24.6
+2.24.5
+2.24.4
+2.24.3
+2.24.2
+2.24.1
+2.24.0
+2.23.3
+2.23.2
+2.23.1
+2.23.0
+2.22.0
+2.21.0
+2.20.3
+2.20.2
+2.20.1
+2.20.0
+2.19.1
+2.19.0
+2.18.1
+2.18.0
+2.17.3
+2.17.2
+2.17.1
+2.17.0
+2.16.0
+2.15.1
+2.15.0
+2.14.2
+2.14.1
+2.14.0
+2.13.0
+2.12.2
+2.12.1
+2.12.0
+2.11.2
+2.11.1
+2.11.0
+2.10.2
+2.10.1
+2.10.0
+2.9.0
+2.8.0
+2.7.0
+2.6.1
+2.6.0
+2.5.1
+2.5.0
+2.4.1
+2.4.0
+2.3.4
+2.3.3
+2.3.2
+2.3.1
+2.3.0
+2.2.3
+2.2.2
+2.2.1
+2.2.0
+2.1.1
+2.1.0
+2.0.1
+2.0.0
+1.25.2'
++ '[' 2 = latest ']'
++ '[' 2 = current ']'
++ '[' 2 = lts ']'
++ set +e
+++ echo '2.40.3
+2.40.2
+2.40.1
+2.40.0
+2.39.4
+2.39.3
+2.39.2
+2.39.1
+2.39.0
+2.38.2
+2.38.1
+2.38.0
+2.37.3
+2.37.2
+2.37.1
+2.37.0
+2.36.2
+2.36.1
+2.36.0
+2.35.1
+2.35.0
+2.34.0
+2.33.1
+2.33.0
+2.32.4
+2.32.3
+2.32.2
+2.32.1
+2.32.0
+2.31.0
+2.30.3
+2.30.2
+2.30.1
+2.30.0
+2.29.7
+2.29.6
+2.29.5
+2.29.4
+2.29.3
+2.29.2
+2.29.1
+2.29.0
+2.28.1
+2.28.0
+2.27.3
+2.27.2
+2.27.1
+2.27.0
+2.26.1
+2.26.0
+2.25.0
+2.24.7
+2.24.6
+2.24.5
+2.24.4
+2.24.3
+2.24.2
+2.24.1
+2.24.0
+2.23.3
+2.23.2
+2.23.1
+2.23.0
+2.22.0
+2.21.0
+2.20.3
+2.20.2
+2.20.1
+2.20.0
+2.19.1
+2.19.0
+2.18.1
+2.18.0
+2.17.3
+2.17.2
+2.17.1
+2.17.0
+2.16.0
+2.15.1
+2.15.0
+2.14.2
+2.14.1
+2.14.0
+2.13.0
+2.12.2
+2.12.1
+2.12.0
+2.11.2
+2.11.1
+2.11.0
+2.10.2
+2.10.1
+2.10.0
+2.9.0
+2.8.0
+2.7.0
+2.6.1
+2.6.0
+2.5.1
+2.5.0
+2.4.1
+2.4.0
+2.3.4
+2.3.3
+2.3.2
+2.3.1
+2.3.0
+2.2.3
+2.2.2
+2.2.1
+2.2.0
+2.1.1
+2.1.0
+2.0.1
+2.0.0
+1.25.2'
+++ grep -E -m 1 '^2([\.\s]|$)'
++ declare -g compose_version=2.40.3
++ set -e
++ '[' -z 2.40.3 ']'
++ echo '2.40.3
+2.40.2
+2.40.1
+2.40.0
+2.39.4
+2.39.3
+2.39.2
+2.39.1
+2.39.0
+2.38.2
+2.38.1
+2.38.0
+2.37.3
+2.37.2
+2.37.1
+2.37.0
+2.36.2
+2.36.1
+2.36.0
+2.35.1
+2.35.0
+2.34.0
+2.33.1
+2.33.0
+2.32.4
+2.32.3
+2.32.2
+2.32.1
+2.32.0
+2.31.0
+2.30.3
+2.30.2
+2.30.1
+2.30.0
+2.29.7
+2.29.6
+2.29.5
+2.29.4
+2.29.3
+2.29.2
+2.29.1
+2.29.0
+2.28.1
+2.28.0
+2.27.3
+2.27.2
+2.27.1
+2.27.0
+2.26.1
+2.26.0
+2.25.0
+2.24.7
+2.24.6
+2.24.5
+2.24.4
+2.24.3
+2.24.2
+2.24.1
+2.24.0
+2.23.3
+2.23.2
+2.23.1
+2.23.0
+2.22.0
+2.21.0
+2.20.3
+2.20.2
+2.20.1
+2.20.0
+2.19.1
+2.19.0
+2.18.1
+2.18.0
+2.17.3
+2.17.2
+2.17.1
+2.17.0
+2.16.0
+2.15.1
+2.15.0
+2.14.2
+2.14.1
+2.14.0
+2.13.0
+2.12.2
+2.12.1
+2.12.0
+2.11.2
+2.11.1
+2.11.0
+2.10.2
+2.10.1
+2.10.0
+2.9.0
+2.8.0
+2.7.0
+2.6.1
+2.6.0
+2.5.1
+2.5.0
+2.4.1
+2.4.0
+2.3.4
+2.3.3
+2.3.2
+2.3.1
+2.3.0
+2.2.3
+2.2.2
+2.2.1
+2.2.0
+2.1.1
+2.1.0
+2.0.1
+2.0.0
+1.25.2'
++ grep '^2\.40\.3$'
+compose_version=2.40.3
++ echo compose_version=2.40.3
++ echo '(*) Installing docker-compose 2.40.3...'
+(*) Installing docker-compose 2.40.3...
++ curl -fsSL https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64 -o /usr/local/bin/docker-compose
++ chmod +x /usr/local/bin/docker-compose
+++ curl -sSL https://github.com/docker/compose/releases/download/v2.40.3/docker-compose-linux-x86_64.sha256
+++ awk '{print $1}'
++ DOCKER_COMPOSE_SHA256=dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372
++ echo 'dba9d98e1ba5bfe11d88c99b9bd32fc4a0624a30fafe68eea34d61a3e42fd372  /usr/local/bin/docker-compose'
++ sha256sum -c docker-compose.sha256sum --ignore-missing
+/usr/local/bin/docker-compose: OK
++ mkdir -p /usr/libexec/docker/cli-plugins
++ cp /usr/local/bin/docker-compose /usr/libexec/docker/cli-plugins
++ '[' true = true ']'
++ type compose-switch
++ '[' -f /usr/local/share/docker-init.sh ']'
++ echo '/usr/local/share/docker-init.sh already exists, so exiting.'
+/usr/local/share/docker-init.sh already exists, so exiting.
++ rm -rf '/var/lib/apt/lists/*'
++ exit 0
+Tue Nov 25 09:53:59 EST 2025: Successfully installed ghcr.io/devcontainers/features/docker-in-docker:latest (container: dcutil-dcutil)
+Tue Nov 25 09:54:00 EST 2025: Installing ghcr.io/devcontainers/features/git:latest
++ GIT_VERSION=latest
++ USE_PPA_IF_AVAILABLE=
++ GIT_CORE_PPA_ARCHIVE_GPG_KEY=F911AB184317630C59970973E363C90F8F1B6217
+++ id -u
++ '[' 0 -ne 0 ']'
++ . /etc/os-release
+++ PRETTY_NAME='Ubuntu 24.04.3 LTS'
+++ NAME=Ubuntu
+++ VERSION_ID=24.04
+++ VERSION='24.04.3 LTS (Noble Numbat)'
+++ VERSION_CODENAME=noble
+++ ID=ubuntu
+++ ID_LIKE=debian
+++ HOME_URL=https://www.ubuntu.com/
+++ SUPPORT_URL=https://help.ubuntu.com/
+++ BUG_REPORT_URL=https://bugs.launchpad.net/ubuntu/
+++ PRIVACY_POLICY_URL=https://www.ubuntu.com/legal/terms-and-policies/privacy-policy
+++ UBUNTU_CODENAME=noble
+++ LOGO=ubuntu-logo
++ '[' ubuntu = debian ']'
++ '[' debian = debian ']'
++ ADJUSTED_ID=debian
++ '[' debian = rhel ']'
++ type apt-get
++ INSTALL_CMD=apt-get
++ clean_up
++ case $ADJUSTED_ID in
++ rm -rf '/var/lib/apt/lists/*'
++ export DEBIAN_FRONTEND=noninteractive
++ DEBIAN_FRONTEND=noninteractive
++ '[' latest = os-provided ']'
++ '[' latest = system ']'
++ '[' latest = latest ']'
++ '[' ubuntu = ubuntu ']'
++ '[' '' = true ']'
++ '[' debian = debian ']'
++ check_packages build-essential curl ca-certificates tar gettext libssl-dev zlib1g-dev 'libcurl?-openssl-dev' libexpat1-dev
++ '[' apt-get = apt-get ']'
++ dpkg -s build-essential curl ca-certificates tar gettext libssl-dev zlib1g-dev 'libcurl?-openssl-dev' libexpat1-dev
++ pkg_mgr_update
++ '[' apt-get = apt-get ']'
+++ find '/var/lib/apt/lists/*'
+++ wc -l
+find: '/var/lib/apt/lists/*': No such file or directory
++ '[' 0 = 0 ']'
++ echo 'Running apt-get update...'
++ apt-get update -y
+Running apt-get update...
+Get:1 https://deb.nodesource.com/node_20.x nodistro InRelease [12.1 kB]
+Get:2 https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble InRelease [3600 B]
+Get:3 http://security.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:4 https://deb.nodesource.com/node_20.x nodistro/main amd64 Packages [12.9 kB]
+Get:5 https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble/main amd64 Packages [72.7 kB]
+Get:6 https://packages.microsoft.com/repos/microsoft-ubuntu-noble-prod noble/main all Packages [643 B]
+Get:7 http://security.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [33.1 kB]
+Get:8 http://security.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [2781 kB]
+Get:9 http://security.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1174 kB]
+Get:10 http://security.ubuntu.com/ubuntu noble-security/main amd64 Packages [1680 kB]
+Get:11 http://archive.ubuntu.com/ubuntu noble InRelease [256 kB]
+Get:12 http://archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
+Get:13 http://archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:14 http://archive.ubuntu.com/ubuntu noble/universe amd64 Packages [19.3 MB]
+Get:15 http://archive.ubuntu.com/ubuntu noble/restricted amd64 Packages [117 kB]
+Get:16 http://archive.ubuntu.com/ubuntu noble/main amd64 Packages [1808 kB]
+Get:17 http://archive.ubuntu.com/ubuntu noble/multiverse amd64 Packages [331 kB]
+Get:18 http://archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [2050 kB]
+Get:19 http://archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [35.9 kB]
+Get:20 http://archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [2925 kB]
+Get:21 http://archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1942 kB]
+Get:22 http://archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [33.9 kB]
+Get:23 http://archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [49.4 kB]
+Fetched 35.0 MB in 20s (1720 kB/s)
+Reading package lists...
++ apt-get -y install --no-install-recommends build-essential curl ca-certificates tar gettext libssl-dev zlib1g-dev 'libcurl?-openssl-dev' libexpat1-dev
+Reading package lists...
+Building dependency tree...
+Reading state information...
+build-essential is already the newest version (12.10ubuntu1).
+curl is already the newest version (8.5.0-2ubuntu10.6).
+ca-certificates is already the newest version (20240203).
+tar is already the newest version (1.35+dfsg-3build1).
+gettext is already the newest version (0.21-14ubuntu2).
+libssl-dev is already the newest version (3.0.13-0ubuntu3.6).
+zlib1g-dev is already the newest version (1:1.3.dfsg-3.1ubuntu2.1).
+libcurl4-openssl-dev is already the newest version (8.5.0-2ubuntu10.6).
+libexpat1-dev is already the newest version (2.6.1-2ubuntu0.3).
+The following packages were automatically installed and are no longer required:
+  dbus dbus-bin dbus-daemon dbus-session-bus-common dbus-system-bus-common
+  fontconfig-config fonts-dejavu-core fonts-dejavu-mono gyp handlebars
+  libauthen-sasl-perl libcares2 libclone-perl libdata-dump-perl libdbus-1-3
+  libdeflate0 libdrm-amdgpu1 libdrm-common libdrm-intel1 libdrm2 libegl-mesa0
+  libegl1 libencode-locale-perl libfile-basedir-perl libfile-desktopentry-perl
+  libfile-listing-perl libfile-mimeinfo-perl libfont-afm-perl libfontconfig1
+  libfreetype6 libgbm1 libgdk-pixbuf-2.0-0 libgdk-pixbuf2.0-bin
+  libgdk-pixbuf2.0-common libgl1 libgl1-mesa-dri libgles2 libglib2.0-0t64
+  libglib2.0-data libglvnd0 libglx-mesa0 libglx0 libhtml-form-perl
+  libhtml-format-perl libhtml-parser-perl libhtml-tagset-perl
+  libhtml-tree-perl libhttp-cookies-perl libhttp-daemon-perl libhttp-date-perl
+  libhttp-message-perl libhttp-negotiate-perl libice6 libio-html-perl
+  libio-socket-ssl-perl libio-stringy-perl libipc-system-simple-perl libjbig0
+  libjpeg-turbo8 libjpeg8 libjs-async libjs-events libjs-inherits
+  libjs-is-typedarray libjs-prettify libjs-regenerate libjs-source-map
+  libjs-sprintf-js libjs-typedarray-to-buffer liblerc4 libllvm20
+  liblwp-mediatypes-perl liblwp-protocol-https-perl libmailtools-perl
+  libnet-dbus-perl libnet-http-perl libnet-smtp-ssl-perl libnet-ssleay-perl
+  libnotify-bin libnotify4 libpciaccess0 libpng16-16t64 libre2-10
+  libsensors-config libsensors5 libsharpyuv0 libsm6 libtext-iconv-perl
+  libtie-ixhash-perl libtiff6 libtimedate-perl libtry-tiny-perl liburi-perl
+  libuv1-dev libuv1t64 libvulkan1 libwayland-client0 libwayland-server0
+  libwebp7 libwww-perl libwww-robotrules-perl libx11-6 libx11-data
+  libx11-protocol-perl libx11-xcb1 libxau6 libxaw7 libxcb-dri3-0 libxcb-glx0
+  libxcb-present0 libxcb-randr0 libxcb-shape0 libxcb-shm0 libxcb-sync1
+  libxcb-xfixes0 libxcb1 libxcomposite1 libxcursor1 libxdmcp6 libxext6
+  libxfixes3 libxft2 libxi6 libxinerama1 libxkbfile1 libxml-parser-perl
+  libxml-twig-perl libxml-xpathengine-perl libxmu6 libxmuu1 libxpm4 libxrandr2
+  libxrender1 libxshmfence1 libxt6t64 libxtst6 libxv1 libxxf86dga1 libxxf86vm1
+  mesa-libgallium mesa-vulkan-drivers node-abbrev node-ampproject-remapping
+  node-ansi-escapes node-ansi-regex node-ansi-styles node-aproba
+  node-are-we-there-yet node-argparse node-arrify node-async node-async-each
+  node-auto-bind node-babel-plugin-add-module-exports node-babel7-runtime
+  node-balanced-match node-base64-js node-binary-extensions
+  node-brace-expansion node-busboy node-camelcase node-caniuse-lite
+  node-chownr node-chrome-trace-event node-ci-info node-cjs-module-lexer
+  node-cli-boxes node-cli-cursor node-clone node-clone-deep
+  node-collection-visit node-color-convert node-color-name node-colors
+  node-commander node-commondir node-concat-stream
+  node-console-control-strings node-convert-source-map node-core-js
+  node-core-js-pure node-core-util-is node-data-uri-to-buffer
+  node-decompress-response node-deep-is node-defaults node-define-property
+  node-delegates node-depd node-diff node-electron-to-chromium node-encoding
+  node-end-of-stream node-err-code node-error-ex node-es-module-lexer
+  node-escape-string-regexp node-eslint-utils node-eslint-visitor-keys
+  node-esquery node-estraverse node-esutils node-events node-fancy-log
+  node-fast-deep-equal node-fast-levenshtein node-fetch node-find-up
+  node-flatted node-for-in node-for-own node-foreground-child
+  node-fs-readdir-recursive node-fs-write-stream-atomic node-fs.realpath
+  node-function-bind node-functional-red-black-tree node-get-caller-file
+  node-get-stream node-get-value node-glob node-globals node-got
+  node-graceful-fs node-growl node-has-flag node-has-unicode node-has-value
+  node-has-values node-hosted-git-info node-iconv-lite node-ieee754 node-iferr
+  node-imurmurhash node-indent-string node-inflight node-inherits node-ini
+  node-interpret node-ip node-ip-regex node-is-arrayish node-is-binary-path
+  node-is-buffer node-is-descriptor node-is-extendable node-is-extglob
+  node-is-path-cwd node-is-plain-obj node-is-plain-object node-is-stream
+  node-is-typedarray node-is-windows node-isarray node-isexe node-isobject
+  node-js-tokens node-jsesc node-json-buffer node-json-parse-better-errors
+  node-json-schema node-json-schema-traverse node-json-stable-stringify
+  node-jsonify node-jsonparse node-kind-of node-levn node-loader-runner
+  node-locate-path node-lodash-packages node-log-driver node-lowercase-keys
+  node-lru-cache node-map-visit node-memfs node-merge-stream
+  node-mimic-response node-minimatch node-minimist node-minipass
+  node-mixin-deep node-mute-stream node-n3 node-negotiator node-neo-async
+  node-npm-run-path node-object-inspect node-object-visit node-once
+  node-optimist node-optionator node-osenv node-p-cancelable node-p-limit
+  node-p-locate node-p-map node-pascalcase node-path-dirname node-path-exists
+  node-path-is-absolute node-path-is-inside node-path-type node-pify
+  node-pkg-dir node-postcss-value-parser node-prelude-ls
+  node-process-nextick-args node-promise-inflight node-promise-retry
+  node-promzard node-prr node-pump node-punycode node-quick-lru
+  node-randombytes node-read node-readable-stream node-rechoir node-regenerate
+  node-regenerate-unicode-properties node-regenerator-runtime
+  node-regenerator-transform node-regexpp node-regjsgen node-repeat-string
+  node-require-directory node-require-from-string node-resolve
+  node-resolve-cwd node-resolve-from node-restore-cursor node-resumer
+  node-retry node-run-queue node-safe-buffer node-sellside-emitter
+  node-serialize-javascript node-set-blocking node-set-immediate-shim
+  node-shebang-command node-shebang-regex node-shell-quote node-signal-exit
+  node-slash node-slice-ansi node-source-list-map node-source-map
+  node-source-map-support node-spdx-correct node-spdx-exceptions
+  node-spdx-expression-parse node-spdx-license-ids node-sprintf-js node-ssri
+  node-stack-utils node-string-decoder node-strip-bom node-strip-json-comments
+  node-supports-color node-tapable node-terser node-text-table node-through
+  node-time-stamp node-to-fast-properties node-tslib node-type-check
+  node-typedarray node-typedarray-to-buffer node-undici
+  node-unicode-canonical-property-names-ecmascript
+  node-unicode-match-property-value-ecmascript
+  node-unicode-property-aliases-ecmascript node-unique-filename
+  node-unset-value node-uri-js node-util-deprecate node-uuid node-v8flags
+  node-validate-npm-package-license node-wcwidth.js node-webpack-sources
+  node-wordwrap node-wrappy node-write-file-atomic node-xtend node-y18n
+  node-yallist node-yaml perl-openssl-defaults python3-six shared-mime-info
+  x11-common x11-utils x11-xserver-utils xdg-user-dirs xdg-utils zutty
+Use 'apt autoremove' to remove them.
+0 upgraded, 0 newly installed, 0 to remove and 19 not upgraded.
++ check_packages libpcre2-dev
++ '[' apt-get = apt-get ']'
++ dpkg -s libpcre2-dev
++ '[' noble = focal ']'
++ '[' noble = bullseye ']'
++ '[' noble = bionic ']'
++ '[' noble = buster ']'
++ check_packages libpcre2-posix3
++ '[' apt-get = apt-get ']'
++ dpkg -s libpcre2-posix3
+++ echo latest
+++ grep -o '\.'
+++ wc -l
++ '[' 0 '!=' 2 ']'
++ requested_version=latest
+++ curl -sSL -H 'Accept: application/vnd.github.v3+json' https://api.github.com/repos/git/git/tags
+++ grep -oP '"name":\s*"v\K[0-9]+\.[0-9]+\.[0-9]+"'
+++ tr -d '"'
+++ sort -rV
++ version_list='2.52.0
+2.51.2
+2.51.1
+2.51.0
+2.50.1
+2.50.0
+2.49.1
+2.49.0
+2.48.2
+2.48.1
+2.48.0
+2.47.3
+2.47.2
+2.47.1
+2.47.0'
++ '[' latest = latest ']'
+++ echo '2.52.0
+2.51.2
+2.51.1
+2.51.0
+2.50.1
+2.50.0
+2.49.1
+2.49.0
+2.48.2
+2.48.1
+2.48.0
+2.47.3
+2.47.2
+2.47.1
+2.47.0'
+++ head -n 1
++ GIT_VERSION=2.52.0
++ '[' -z 2.52.0 ']'
++ echo '2.52.0
+2.51.2
+2.51.1
+2.51.0
+2.50.1
+2.50.0
+2.49.1
+2.49.0
+2.48.2
+2.48.1
+2.48.0
+2.47.3
+2.47.2
+2.47.1
+2.47.0'
++ grep '^2\.52\.0$'
+Downloading source for 2.52.0...
++ echo 'Downloading source for 2.52.0...'
++ curl -sL https://github.com/git/git/archive/v2.52.0.tar.gz
++ tar -xzC /tmp
+Building...
++ echo Building...
++ cd /tmp/git-2.52.0
++ git_options=("prefix=/usr/local")
++ git_options+=("sysconfdir=/etc")
++ git_options+=("USE_LIBPCRE=YesPlease")
++ '[' debian = alpine ']'
++ make -s prefix=/usr/local sysconfdir=/etc USE_LIBPCRE=YesPlease all
+GIT_VERSION=2.52.0
+    * new build flags
+    * new link flags
+    * new prefix flags

@@ -1,0 +1,266 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Test script specifically for dialog-based features menu
+# This tests the dialog functionality when dialog is available
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Function to test dialog features menu
+proc test_dialog_features_menu {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd menu
+    
+    expect {
+        "What would you like to do?" {
+            # Navigate to features menu
+            send "9\r"
+            
+            expect {
+                "Managing devcontainer features..." {
+                    # Wait for dialog to initialize
+                    sleep 2
+                    
+                    # Check if we're in dialog mode by looking for dialog-specific text
+                    expect {
+                        -re "Current features:" {
+                            # We're in dialog mode
+                            puts "PASS: Dialog mode detected for features"
+                            
+                            # Test dialog navigation
+                            # The dialog should show a menu with options
+                            # We'll simulate keyboard navigation
+                            
+                            # Test option 1: Add a feature
+                            send "1\r"
+                            expect {
+                                -re "Add Feature - Search" {
+                                    puts "PASS: Add feature dialog opened"
+                                    
+                                    # Test search functionality
+                                    send "git\r"
+                                    expect {
+                                        -re "Select a feature to add" {
+                                            puts "PASS: Feature selection dialog opened"
+                                            
+                                            # Select first feature (if available)
+                                            send "1\r"
+                                            expect {
+                                                -re "Feature.*has been added" {
+                                                    puts "PASS: Feature added via dialog"
+                                                    
+                                                    # Go back to main features menu
+                                                    send "4\r"  ;# Save and exit
+                                                    expect {
+                                                        -re "Changes have been saved" {
+                                                            puts "PASS: Changes saved via dialog"
+                                                        }
+                                                        timeout {
+                                                            send "5\r"  ;# Exit without saving
+                                                        }
+                                                    }
+                                                }
+                                                timeout {
+                                                    send "5\r"  ;# Exit without saving
+                                                }
+                                            }
+                                        }
+                                        -re "No features match" {
+                                            puts "INFO: No features match search, going back"
+                                            send "back\r"
+                                            expect "Press Enter to continue viewing"
+                                            send "\r"
+                                        }
+                                        timeout {
+                                            send "\r"
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                            
+                            # Test option 3: View features
+                            send "3\r"
+                            expect {
+                                -re "View Features - Search" {
+                                    puts "PASS: View features dialog opened"
+                                    
+                                    # Test search
+                                    send "node\r"
+                                    expect {
+                                        -re "Available features:" {
+                                            puts "PASS: Feature list displayed"
+                                            send "back\r"
+                                            expect "Press Enter to continue viewing"
+                                            send "\r"
+                                        }
+                                        timeout {
+                                            send "\r"
+                                        }
+                                    }
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                            
+                            # Test option 5: Exit without saving
+                            send "5\r"
+                            expect {
+                                -re "Exiting without saving changes" {
+                                    puts "PASS: Dialog exit works"
+                                }
+                                timeout {
+                                    send "\r"
+                                }
+                            }
+                        }
+                        -re "Managing devcontainer features..." {
+                            # We're in text mode, test text interface
+                            puts "INFO: Text mode interface (dialog not available)"
+                            test_text_features_menu()
+                        }
+                        timeout {
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Did not reach main menu"
+            exit 1
+        }
+    }
+    
+    expect eof
+}
+
+# Function to test text-based features menu
+proc test_text_features_menu {} {
+    global timeout
+    
+    expect {
+        "Managing devcontainer features..." {
+            puts "PASS: Text features menu loaded"
+            
+            # Test option 1: Add feature
+            send "1\r"
+            expect {
+                "Enter search term" {
+                    send "git\r"
+                    expect {
+                        "Features matching" {
+                            send "git\r"
+                            expect {
+                                "Adding feature" {
+                                    send "\r"
+                                    send "4\r"  ;# Save and exit
+                                    expect "Managing devcontainer features..."
+                                }
+                                timeout {
+                                    send "5\r"
+                                    expect "Managing devcontainer features..."
+                                }
+                            }
+                        }
+                        "No features match" {
+                            send "back\r"
+                            expect "Managing devcontainer features..."
+                        }
+                        timeout {
+                            send "\r"
+                            expect "Managing devcontainer features..."
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                    expect "Managing devcontainer features..."
+                }
+            }
+            
+            # Test option 3: View features
+            send "3\r"
+            expect {
+                "Enter search term to filter features" {
+                    send "node\r"
+                    expect {
+                        "Features matching" {
+                            send "back\r"
+                            expect "Press Enter to continue viewing"
+                            send "\r"
+                        }
+                        timeout {
+                            send "back\r"
+                            expect "Press Enter to continue viewing"
+                            send "\r"
+                        }
+                    }
+                }
+                timeout {
+                    send "\r"
+                    expect "Managing devcontainer features..."
+                }
+            }
+            
+            # Test option 5: Exit
+            send "5\r"
+            expect {
+                "Exiting without saving changes" {
+                    puts "PASS: Text features menu exit works"
+                }
+                timeout {
+                    send "\r"
+                }
+            }
+        }
+        timeout {
+            puts "FAIL: Did not reach features menu"
+            exit 1
+        }
+    }
+}
+
+# Function to test dialog verification
+proc test_dialog_verification {} {
+    global timeout dcutil_cmd
+    
+    spawn $dcutil_cmd verify-dialog
+    
+    expect {
+        "Dialog verification successful" {
+            puts "PASS: Dialog verification works"
+        }
+        "dialog command not available" {
+            puts "INFO: Dialog not available on this system"
+        }
+        timeout {
+            puts "FAIL: Dialog verification timed out"
+            exit 1
+        }
+    }
+    
+    expect eof
+}
+
+# Main execution
+puts "🖥️  Testing dialog functionality for dcutil features..."
+
+# Test dialog verification first
+test_dialog_verification
+
+# Test dialog features menu
+test_dialog_features_menu
+
+puts "🎉 Dialog functionality tests completed!"
+exit 0

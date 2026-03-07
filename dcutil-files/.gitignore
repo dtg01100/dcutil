@@ -1,0 +1,5 @@
+# Devcontainer / VS Code Remote - we don't develop in a container
+# Ignore devcontainer folder and any devcontainer json files
+/.devcontainer/
+/devcontainer.json
+/devcontainer.jsonc

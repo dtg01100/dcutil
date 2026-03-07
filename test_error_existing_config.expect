@@ -1,0 +1,21 @@
+#!/usr/bin/expect
+
+set timeout 30
+
+# Change to test directory if provided
+if {$argc >= 1} {
+    set test_dir [lindex $argv 0]
+    cd $test_dir
+}
+
+# Create a fake devcontainer.json to trigger the error
+exec mkdir -p .devcontainer
+exec sh -c "echo '{\"name\": \"existing\"}' > .devcontainer/devcontainer.json"
+
+spawn /var/home/dlafreniere/projects/dcutil/dcutil-files/dcutil init wizard
+
+# Should fail with existing config error
+expect "Devcontainer configuration already exists"
+# expect eof
+
+puts "PASS: Error condition test (existing config) completed"

@@ -1,0 +1,88 @@
+#!/usr/bin/env expect
+
+# Test dcutil volumes backup and restore functionality
+
+set timeout 120
+set cmd [lindex $argv 0]
+if {$cmd eq ""} { set cmd "./dcutil" }
+
+set TEST_DIR "test-volumes-restore"
+set HOST_DIR "/tmp/dcutil_test_backup_host"
+set BACKUP_PATH "$TEST_DIR/volume_backup.tar.gz"
+
+# Prepare directories
+spawn sh -c "rm -rf $TEST_DIR && mkdir -p $TEST_DIR && mkdir -p $TEST_DIR/.devcontainer && printf '{\"name\": \"Test\", \"image\": \"mcr.microsoft.com/devcontainers/base:ubuntu\",\"features\": {}}' > $TEST_DIR/.devcontainer/devcontainer.json; rm -rf $HOST_DIR; mkdir -p $HOST_DIR"
+expect eof
+
+# Create a file in host path
+spawn sh -c "echo 'hello' > $HOST_DIR/hello.txt"
+expect eof
+
+# Add volume
+spawn sh -c "${cmd} volumes add myvol $HOST_DIR /workspace $TEST_DIR"
+expect {
+    -re "Added volume|Added volume 'myvol'" {
+        puts "PASS: volumes add reported success"
+    }
+    timeout {
+        puts "FAIL: volumes add timed out"
+        exit 1
+    }
+}
+
+# Ensure we used test dir's devcontainer.json as volume config
+spawn sh -c "cat $TEST_DIR/.devcontainer/devcontainer.json"
+expect eof
+
+# Backup the volume
+spawn sh -c "${cmd} volumes backup myvol $BACKUP_PATH"
+expect {
+    -re "backed up successfully|Backup location:" {
+        puts "PASS: volumes backup completed"
+    }
+    timeout {
+        puts "FAIL: volumes backup timed out"
+        exit 1
+    }
+}
+
+# Remove the host file to verify restore
+spawn sh -c "rm -f $HOST_DIR/hello.txt"
+expect eof
+
+# Restore from backup - send 'y' to confirm
+spawn sh -c "${cmd} volumes restore myvol $BACKUP_PATH"
+expect {
+    -re "Continue\?|This will overwrite the current volume contents" {
+        send "y\r"
+    }
+    timeout {
+        puts "FAIL: volumes restore did not prompt for confirmation"
+        exit 1
+    }
+}
+
+expect {
+    -re "Restoring|restored|completed|success|Volume 'myvol'" {
+        puts "PASS: volumes restore completed"
+    }
+    timeout {
+        puts "FAIL: volumes restore timed out"
+        exit 1
+    }
+}
+
+# Verify file restored
+spawn sh -c "test -f $HOST_DIR/hello.txt && echo 'OK' || echo 'MISSING'"
+expect {
+    -re "OK" { puts "PASS: File restored from backup" }
+    -re "MISSING" { puts "FAIL: File missing after restore"; exit 1 }
+    timeout { puts "FAIL: verification timed out"; exit 1 }
+}
+
+# Cleanup
+spawn sh -c "rm -rf $TEST_DIR $HOST_DIR"
+expect eof
+
+puts "🎉 Volumes backup/restore tests completed successfully!"
+exit 0

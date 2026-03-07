@@ -1,0 +1,147 @@
+#!/home/linuxbrew/.linuxbrew/bin/expect
+
+# Dialog mode menu testing
+# Tests menu functionality with dialog interface
+
+set timeout 60
+set dcutil_cmd [lindex $argv 0]
+if {$dcutil_cmd eq ""} {
+    set dcutil_cmd "./dcutil"
+}
+
+# Test dialog mode menu functionality
+proc test_menu_dialog_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing dcutil menu in DIALOG mode..."
+    
+    # Ensure dialog is enabled (don't set DCUTIL_DISABLE_DIALOG)
+    spawn env DCUTIL_FORCE_DIALOG=1 $dcutil_cmd menu
+    
+    expect {
+        "dcutil - Main Menu" {
+            puts "✓ Dialog mode menu loaded successfully"
+            
+            # Test help option (H)
+            send "H\r"
+            
+            expect {
+                "Help" {
+                    puts "✓ Help dialog loaded in dialog mode"
+                    send "\r" ;# Dismiss msgbox
+                    
+                    expect "dcutil - Main Menu"
+                    puts "✓ Returned to menu after help"
+                }
+                timeout {
+                    puts "✗ FAIL: Help dialog failed to load in dialog mode"
+                    exit 1
+                }
+            }
+            
+            # Test exit option (Q)
+            send "Q\r"
+            
+            expect {
+                "Goodbye!" {
+                    puts "✓ Exit option works in dialog mode"
+                }
+                timeout {
+                    puts "✗ FAIL: Exit option failed in dialog mode"
+                    exit 1
+                }
+            }
+            
+            puts "✅ Dialog mode menu tests PASSED"
+        }
+        timeout {
+            puts "✗ FAIL: Dialog mode menu failed to load"
+            exit 1
+        }
+    }
+}
+
+# Test feature management in dialog mode
+proc test_features_dialog_mode {} {
+    global timeout dcutil_cmd
+    
+    puts "🧪 Testing dcutil features in DIALOG mode..."
+    
+    spawn env DCUTIL_FORCE_DIALOG=1 $dcutil_cmd menu
+    
+    expect {
+        "dcutil - Main Menu" {
+            send "F\r"
+            
+            expect {
+                "Devcontainer Features Management" {
+                    puts "✓ Features menu loaded in dialog mode"
+                    
+                    # Test view features (option 3)
+                    send "3\r"
+                    
+                    expect {
+                        "View Features - Search" {
+                            puts "✓ View features search loaded"
+                            send "\r" ;# Empty search
+                            
+                            expect {
+                                "Available Features" {
+                                    puts "✓ Available Features list displayed"
+                                    send "\r" ;# Close msgbox
+                                    
+                                    expect "View Features - Search"
+                                    send "\x1b" ;# Escape to exit the search loop
+                                    
+                                    expect "Devcontainer Features Management"
+                                    puts "✓ Returned to features menu"
+                                }
+                                timeout {
+                                    puts "✗ FAIL: Available Features list failed to load"
+                                    exit 1
+                                }
+                            }
+                        }
+                        timeout {
+                            puts "✗ FAIL: View features search failed to load"
+                            exit 1
+                        }
+                    }
+                    
+                    # Test exit without saving (option 5)
+                    send "5\r"
+                    
+                    expect {
+                        "dcutil - Main Menu" {
+                            puts "✓ Exit without saving works in dialog mode"
+                        }
+                        timeout {
+                            puts "✗ FAIL: Exit without saving failed in dialog mode"
+                            exit 1
+                        }
+                    }
+                    
+                    puts "✅ Dialog mode features tests PASSED"
+                }
+                timeout {
+                    puts "✗ FAIL: Features menu failed to load in dialog mode"
+                    exit 1
+                }
+            }
+        }
+        timeout {
+            puts "✗ FAIL: Menu failed to load"
+            exit 1
+        }
+    }
+}
+
+# Main execution
+puts "========================================="
+puts "🧪 Dialog Mode Menu Testing"
+puts "========================================="
+
+test_menu_dialog_mode
+test_features_dialog_mode
+
+puts "🎉 All dialog mode tests completed successfully!"
